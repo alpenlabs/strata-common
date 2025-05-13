@@ -14,7 +14,7 @@ pub const MAX_TYPE: TypeId = 0x7fff;
 pub type TypeId = u16;
 
 /// Error types from parsing messages.
-#[derive(Debug, Error)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Error)]
 pub enum Error {
     /// Type provided is out of bounds.
     #[error("invalid type (ty {0})")]
@@ -201,4 +201,58 @@ fn encode_into_buf_unchecked(ty: TypeId, body: impl IntoIterator<Item = u8>, int
     }
 
     into.extend(body);
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Error, Msg, MsgRef, OwnedMsg};
+
+    #[test]
+    fn test_vectors() {
+        const TESTS: &[(u16, &[u8], &[u8])] = &[
+            (0, "hello".as_bytes(), &[0x00, 0x68, 0x65, 0x6c, 0x6c, 0x6f]),
+            (1, &[], &[0x01]),
+            (0x7f, &[0x00, 0xff], &[0x7f, 0x00, 0xff]),
+            (0x80, "abc".as_bytes(), &[0x80, 0x80, 0x61, 0x62, 0x63]),
+            (0x1234, "xyz".as_bytes(), &[0x92, 0x34, 0x78, 0x79, 0x7a]),
+            (0x7fff, &[0x10, 0x20], &[0xff, 0xff, 0x10, 0x20]),
+        ];
+
+        for (ty, body, exp_enc) in TESTS {
+            eprintln!("trying type ID {ty}");
+
+            // Encode from ref.
+            let buf_ref = MsgRef::new(*ty, body).expect("test: type in bounds");
+            assert_eq!(buf_ref.to_vec(), exp_enc.to_vec());
+
+            // Encode from owned.
+            let buf_owned = OwnedMsg::new(*ty, body.to_vec()).expect("test: type in bounds");
+            assert_eq!(buf_owned.to_vec(), exp_enc.to_vec());
+
+            // Decode from ref.
+            let m_ref = MsgRef::try_from(*exp_enc).expect("test: parse test vector");
+            assert_eq!(m_ref.ty(), *ty);
+            assert_eq!(m_ref.body(), *body);
+
+            // Decode from owned.
+            let m_owned = OwnedMsg::try_from(*exp_enc).expect("test: parse test vector");
+            assert_eq!(m_owned.ty(), *ty);
+            assert_eq!(m_owned.body(), *body);
+        }
+    }
+
+    #[test]
+    fn test_decode_errors() {
+        const TESTS: &[(&[u8], Error)] = &[
+            (&[], Error::BufEmpty),
+            (&[0x80], Error::BufTooShort),
+            (&[0x80, 0x00], Error::NonminimalEncoding(0)),
+            (&[0x80, 0x7f], Error::NonminimalEncoding(0x7f)),
+        ];
+
+        for (buf, exp_err) in TESTS {
+            let m1 = OwnedMsg::try_from(*buf);
+            assert_eq!(m1, Err(*exp_err));
+        }
+    }
 }
