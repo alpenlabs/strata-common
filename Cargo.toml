@@ -1,7 +1,10 @@
 [workspace]
-members = []
+members = ["crates/l1/tx-parser"]
+resolver = "2"
 
 [workspace.dependencies]
+bitcoin = { version = "0.32.6" }
+thiserror = "2.0.12"
 
 [workspace.lints]
 rust.missing_debug_implementations = "warn"
