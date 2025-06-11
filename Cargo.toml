@@ -1,8 +1,11 @@
 [workspace]
-members = ["crates/l1/tx-parser"]
+members = ["crates/l1proto/txfmt"]
+
 resolver = "2"
 
 [workspace.dependencies]
+strata-l1-txfmt = { path = "crates/l1proto/txfmt" }
+
 bitcoin = { version = "0.32.6" }
 thiserror = "2.0.12"
 
