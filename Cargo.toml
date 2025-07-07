@@ -1,13 +1,17 @@
 [workspace]
-members = ["crates/l1proto/txfmt"]
+members = [
+  "crates/l1proto/txfmt",
+  "crates/msg-fmt",
+]
 
-resolver = "2"
+resolver = "3"
 
 [workspace.dependencies]
 strata-l1-txfmt = { path = "crates/l1proto/txfmt" }
+strata-msg-fmt = { path = "crates/msg-fmt/" }
 
 bitcoin = { version = "0.32.6" }
-thiserror = "2.0.12"
+thiserror = "2"
 
 [workspace.lints]
 rust.missing_debug_implementations = "warn"
