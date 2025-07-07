@@ -40,6 +40,8 @@ pub struct TagDataRef<'tx> {
 }
 
 impl<'tx> TagDataRef<'tx> {
+    /// Constructs a new instance from data fields, checking that they are
+    /// compliant.
     pub fn new(
         subproto_id: SubprotocolId,
         tx_type: TxType,
@@ -56,6 +58,7 @@ impl<'tx> TagDataRef<'tx> {
         })
     }
 
+    /// Constructs a new instance from data fields, without validating them.
     #[cfg(test)]
     pub(crate) fn new_unchecked(
         subproto_id: SubprotocolId,
@@ -69,14 +72,17 @@ impl<'tx> TagDataRef<'tx> {
         }
     }
 
-    pub fn subproto_id(&self) -> u8 {
+    /// Gets the subprotocol ID.
+    pub fn subproto_id(&self) -> SubprotocolId {
         self.subproto_id
     }
 
+    /// Gets the tx type field.
     pub fn tx_type(&self) -> u8 {
         self.tx_type
     }
 
+    /// Gets the aux data slice.
     pub fn aux_data(&self) -> &[u8] {
         self.aux_data
     }
@@ -89,6 +95,7 @@ pub struct ParseConfig {
 }
 
 impl ParseConfig {
+    /// Constructs a new instance.
     pub fn new(magic_bytes: MagicBytes) -> Self {
         Self { magic_bytes }
     }
@@ -135,7 +142,7 @@ impl ParseConfig {
         buf.extend_from_slice(&self.magic_bytes);
         buf.push(td.subproto_id);
         buf.push(td.tx_type);
-        buf.extend_from_slice(&td.aux_data);
+        buf.extend_from_slice(td.aux_data);
 
         // Sanity check.
         assert!(buf.len() <= MAX_OP_RETURN_LEN, "tag: invalid buf");
