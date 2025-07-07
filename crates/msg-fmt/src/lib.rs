@@ -156,7 +156,7 @@ pub fn check_type(ty: TypeId) -> Result<(), Error> {
 ///
 /// Prefer [`Msg`] or [`OwnedMsg`].
 fn try_decode_msg(buf: &[u8]) -> Result<(TypeId, &[u8]), Error> {
-    if buf.len() < 1 {
+    if buf.is_empty() {
         return Err(Error::BufEmpty);
     }
 
