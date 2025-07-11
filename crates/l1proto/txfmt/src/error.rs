@@ -6,18 +6,23 @@ use crate::types::MagicBytes;
 /// Errors for decoding tx format types.
 #[derive(Debug, Error)]
 pub enum TxFmtError {
+    /// Tx is missing output 0.
     #[error("tx missing output 0")]
     MissingOutput0,
 
+    /// Tx output 0 is not an OP_RETURN output.
     #[error("tag output not OP_RETURN")]
     NotOpret,
 
+    /// OP_RETURN output is malformed.
     #[error("tag output malformed OP_RETURN")]
     MalformedOpret,
 
+    /// Tag had unexpected magic value.
     #[error("tx had incorrect magic (found {0:?})")]
     MismatchMagic(MagicBytes),
 
+    /// Tag aux data too long.
     #[error("aux data was too long")]
     AuxTooLong,
 
