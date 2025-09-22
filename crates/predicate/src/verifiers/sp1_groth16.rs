@@ -68,7 +68,8 @@ impl PredicateVerifier for Sp1Groth16VerifierImpl {
         // 1. program_id (embedded in the verifying key)
         // 2. hash(public_values) (computed from claim)
         // Try SHA-256 hash first as it's the default for SP1
-        let fr_sha2 = sha256_to_fr(claim).map_err(|e| PredicateError::ValidationFailed {
+        let fr_sha2 = sha256_to_fr(claim).map_err(|e| PredicateError::VerificationFailed {
+            predicate_type: SP1_GROTH16_PREDICATE_TYPE,
             reason: e.to_string(),
         })?;
 
@@ -78,13 +79,15 @@ impl PredicateVerifier for Sp1Groth16VerifierImpl {
         }
 
         // Fallback: try Blake3 hash for compatibility with different SP1 configurations
-        let fr_blake3 = blake3_to_fr(claim).map_err(|e| PredicateError::ValidationFailed {
+        let fr_blake3 = blake3_to_fr(claim).map_err(|e| PredicateError::VerificationFailed {
+            predicate_type: SP1_GROTH16_PREDICATE_TYPE,
             reason: e.to_string(),
         })?;
 
         // Retry verification with Blake3 hash using zkaleido's verifier
         verify_sp1_groth16_algebraic(program, proof, &fr_blake3).map_err(|e| {
-            PredicateError::ValidationFailed {
+            PredicateError::VerificationFailed {
+                predicate_type: SP1_GROTH16_PREDICATE_TYPE,
                 reason: e.to_string(),
             }
         })
@@ -121,8 +124,8 @@ mod tests {
     fn assert_validation_failed(result: Result<()>) {
         let err = result.unwrap_err();
         match err {
-            PredicateError::ValidationFailed { .. } => {
-                // ValidationFailed doesn't have predicate_type field, so just check the variant
+            PredicateError::VerificationFailed { predicate_type, .. } => {
+                assert_eq!(predicate_type, SP1_GROTH16_PREDICATE_TYPE);
             }
             _ => panic!("Expected ValidationFailed, got: {err:?}"),
         }

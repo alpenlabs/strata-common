@@ -73,7 +73,10 @@ impl PredicateImpl {
         witness: &[u8],
     ) -> Result<(), PredicateError> {
         match self {
-            PredicateImpl::NeverAccept => Err(PredicateError::VerificationFailed),
+            PredicateImpl::NeverAccept => Err(PredicateError::VerificationFailed {
+                predicate_type: NEVER_ACCEPT_PREDICATE_TYPE,
+                reason: "never accept".to_string(),
+            }),
             PredicateImpl::AlwaysAccept => Ok(()),
             PredicateImpl::Schnorr(schnorr) => schnorr.verify(condition, claim, witness),
             PredicateImpl::Sp1Groth16Verifier(sp1) => sp1.verify(condition, claim, witness),

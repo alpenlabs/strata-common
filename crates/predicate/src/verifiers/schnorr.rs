@@ -60,7 +60,10 @@ impl PredicateVerifier for SchnorrVerifier {
         // The verify method expects a properly formatted message
         pubkey
             .verify(claim, signature)
-            .map_err(|_e| PredicateError::VerificationFailed)
+            .map_err(|e| PredicateError::VerificationFailed {
+                predicate_type: BIP340_SCHNORR_PREDICATE_TYPE,
+                reason: e.to_string(),
+            })
     }
 }
 
@@ -98,8 +101,8 @@ mod tests {
     fn assert_verification_failed(result: Result<()>) {
         let err = result.unwrap_err();
         match err {
-            PredicateError::VerificationFailed => {
-                // VerificationFailed doesn't have additional fields, so just check the variant
+            PredicateError::VerificationFailed { predicate_type, .. } => {
+                assert_eq!(predicate_type, BIP340_SCHNORR_PREDICATE_TYPE);
             }
             _ => panic!("Expected VerificationFailed, got: {err:?}"),
         }

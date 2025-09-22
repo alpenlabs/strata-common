@@ -30,29 +30,15 @@ pub enum PredicateError {
     },
 
     // === Verification Errors ===
-    /// Predicate validation failed during verification setup.
-    #[error("predicate validation failed: {reason}")]
-    ValidationFailed {
-        /// The reason for validation failure.
+    /// Witness does not satisfy the predicate with claim.
+    #[error("witness verification failed for claim in {predicate_type}: {reason}")]
+    VerificationFailed {
+        /// The predicate type that failed verification.
+        predicate_type: u8,
+        /// The reason for verification failure.
         reason: String,
     },
-
-    /// Witness verification failed - witness does not satisfy the predicate.
-    #[error("witness verification failed")]
-    VerificationFailed,
-
-    // === Serialization Errors ===
-    /// Serialization or deserialization error.
-    #[error("serialization error: {0}")]
-    SerializationError(String),
 }
 
 /// Result type alias for predicate operations.
 pub(crate) type Result<T> = std::result::Result<T, PredicateError>;
-
-// Implement From conversions for common error types
-impl From<borsh::io::Error> for PredicateError {
-    fn from(err: borsh::io::Error) -> Self {
-        PredicateError::SerializationError(err.to_string())
-    }
-}
