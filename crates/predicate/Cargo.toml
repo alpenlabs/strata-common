@@ -14,7 +14,7 @@ thiserror.workspace = true
 zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", branch = "feat/expose-types" }
 
 [dev-dependencies]
+hex.workspace = true
 rand.workspace = true
 sp1-verifier = "5.2.1"
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", branch = "feat/expose-types" }
-hex.workspace = true
