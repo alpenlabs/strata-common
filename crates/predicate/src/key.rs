@@ -3,6 +3,56 @@
 use crate::constants::{NEVER_ACCEPT_PREDICATE_TYPE, PredicateType};
 use crate::errors::Result;
 
+/// A trait for accessing predicate key data regardless of whether it's owned or borrowed.
+///
+/// This trait provides a common interface for both owned and borrowed predicate keys,
+/// allowing code to work with predicate keys generically without caring about ownership.
+pub trait AsPredicateKey {
+    /// Returns the raw predicate key bytes.
+    ///
+    /// The format is: [type: u8][condition: bytes...]
+    fn as_bytes(&self) -> &[u8];
+
+    /// Returns the predicate type identifier.
+    ///
+    /// If the data is empty, returns [`NEVER_ACCEPT_PREDICATE_TYPE`].
+    /// Otherwise, returns the first byte as the predicate type.
+    fn predicate_type(&self) -> PredicateType {
+        let bytes = self.as_bytes();
+        if bytes.is_empty() {
+            NEVER_ACCEPT_PREDICATE_TYPE
+        } else {
+            bytes[0]
+        }
+    }
+
+    /// Returns the condition data for this predicate key.
+    ///
+    /// If the data is empty, returns an empty slice.
+    /// Otherwise, returns all bytes except the first (type) byte.
+    fn condition(&self) -> &[u8] {
+        let bytes = self.as_bytes();
+        if bytes.is_empty() { &[] } else { &bytes[1..] }
+    }
+
+    /// Verifies that a witness satisfies this predicate key for a given claim.
+    ///
+    /// This is a convenience method that delegates to the global [`verify_claim_witness`] function.
+    ///
+    /// # Arguments
+    /// * `claim` - The claim bytes to verify against
+    /// * `witness` - The witness bytes to verify
+    ///
+    /// # Returns
+    /// * `Ok(())` if verification succeeds
+    /// * `Err(PredicateError)` if verification fails or an error occurs
+    ///
+    /// [`verify_claim_witness`]: crate::verify_claim_witness
+    fn verify_claim_witness(&self, claim: &[u8], witness: &[u8]) -> Result<()> {
+        crate::verify_claim_witness(self, claim, witness)
+    }
+}
+
 /// A predicate key encodes a formal boolean statement with a type identifier.
 ///
 /// As defined in the SPS-predicate-fmt specification, a predicate key consists of:
@@ -17,6 +67,17 @@ pub struct PredicateKey {
     /// Raw bytes containing the type (first byte) and condition data (remaining bytes).
     /// If empty, represents the "never accept" predicate type.
     data: Vec<u8>,
+}
+
+/// A zero-copy predicate key that borrows from a buffer.
+///
+/// This is useful for parsing predicate keys without allocating when you already have
+/// the data in a buffer and want to avoid copying it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PredicateKeyBuf<'b> {
+    /// Raw bytes containing the type (first byte) and condition data (remaining bytes).
+    /// If empty, represents the "never accept" predicate type.
+    buf: &'b [u8],
 }
 
 impl PredicateKey {
@@ -52,59 +113,43 @@ impl PredicateKey {
         }
     }
 
-    /// Returns a reference to the serialized predicate key bytes.
-    ///
-    /// The format is: [type: u8][condition: bytes...]
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.data
-    }
-
     /// Consumes the predicate key and returns the serialized bytes.
     ///
     /// The format is: [type: u8][condition: bytes...]
     pub fn into_bytes(self) -> Vec<u8> {
         self.data
     }
+}
 
-    /// Returns the predicate type identifier.
-    ///
-    /// If the data is empty, returns [`NEVER_ACCEPT_PREDICATE_TYPE`].
-    /// Otherwise, returns the first byte as the predicate type.
-    pub fn predicate_type(&self) -> PredicateType {
-        if self.data.is_empty() {
-            NEVER_ACCEPT_PREDICATE_TYPE
-        } else {
-            self.data[0]
-        }
+impl AsPredicateKey for PredicateKey {
+    fn as_bytes(&self) -> &[u8] {
+        &self.data
     }
+}
 
-    /// Returns the condition data for this predicate key.
+impl<'b> PredicateKeyBuf<'b> {
+    /// Creates a new predicate key buffer from borrowed bytes.
     ///
-    /// If the data is empty, returns an empty slice.
-    /// Otherwise, returns all bytes except the first (type) byte.
-    pub fn condition(&self) -> &[u8] {
-        if self.data.is_empty() {
-            &[]
-        } else {
-            &self.data[1..]
-        }
-    }
-
-    /// Verifies that a witness satisfies this predicate key for a given claim.
-    ///
-    /// This is a convenience method that delegates to the global [`verify_claim_witness`] function.
+    /// The format is: [type: u8][condition: bytes...]
+    /// An empty byte array represents the "never accept" predicate.
     ///
     /// # Arguments
-    /// * `claim` - The claim bytes to verify against
-    /// * `witness` - The witness bytes to verify
+    /// * `buf` - Borrowed predicate key data
+    pub fn new(buf: &'b [u8]) -> Self {
+        Self { buf }
+    }
+
+    /// Converts this borrowed predicate key into an owned [`PredicateKey`].
     ///
-    /// # Returns
-    /// * `Ok(())` if verification succeeds
-    /// * `Err(PredicateError)` if verification fails or an error occurs
-    ///
-    /// [`verify_claim_witness`]: crate::verify_claim_witness
-    pub fn verify_claim_witness(&self, claim: &[u8], witness: &[u8]) -> Result<()> {
-        crate::verify_claim_witness(self, claim, witness)
+    /// This allocates and copies the buffer data.
+    pub fn to_owned(&self) -> PredicateKey {
+        PredicateKey::from_bytes(self.buf)
+    }
+}
+
+impl<'b> AsPredicateKey for PredicateKeyBuf<'b> {
+    fn as_bytes(&self) -> &[u8] {
+        self.buf
     }
 }
 
@@ -145,5 +190,54 @@ mod tests {
         // Round-trip should work
         let restored = PredicateKey::from_bytes(serialized);
         assert_eq!(predkey, restored);
+    }
+
+    #[test]
+    fn test_empty_predicate_key_buf() {
+        let empty_buf = PredicateKeyBuf::new(&[]);
+
+        // Empty predicate key buffer should return NEVER_ACCEPT_PREDICATE_TYPE
+        assert_eq!(empty_buf.predicate_type(), NEVER_ACCEPT_PREDICATE_TYPE);
+
+        // Condition should be empty
+        assert_eq!(empty_buf.condition(), &[]);
+
+        // Should be able to convert to owned
+        let owned = empty_buf.to_owned();
+        assert_eq!(owned.as_bytes(), &[]);
+    }
+
+    #[test]
+    fn test_non_empty_predicate_key_buf() {
+        let data = [ALWAYS_ACCEPT_PREDICATE_TYPE]
+            .iter()
+            .chain(b"test_condition")
+            .copied()
+            .collect::<Vec<u8>>();
+        let key_buf = PredicateKeyBuf::new(&data);
+
+        // Should return the correct predicate type
+        assert_eq!(key_buf.predicate_type(), ALWAYS_ACCEPT_PREDICATE_TYPE);
+
+        // Should return the correct condition
+        assert_eq!(key_buf.condition(), b"test_condition");
+
+        // Should return the correct bytes
+        assert_eq!(key_buf.as_bytes(), &data);
+
+        // Should be able to convert to owned
+        let owned = key_buf.to_owned();
+        assert_eq!(owned.predicate_type(), ALWAYS_ACCEPT_PREDICATE_TYPE);
+        assert_eq!(owned.condition(), b"test_condition");
+    }
+
+    #[test]
+    fn test_predicate_key_buf_lifetime() {
+        let data = vec![ALWAYS_ACCEPT_PREDICATE_TYPE, 42, 43, 44];
+
+        // This should work - the buffer outlives the PredicateKeyBuf
+        let key_buf = PredicateKeyBuf::new(&data);
+        assert_eq!(key_buf.predicate_type(), ALWAYS_ACCEPT_PREDICATE_TYPE);
+        assert_eq!(key_buf.condition(), &[42, 43, 44]);
     }
 }

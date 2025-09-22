@@ -38,7 +38,7 @@
 //! ### Basic Verification
 //!
 //! ```rust
-//! use strata_predicate::{PredicateKey, verify_claim_witness, ALWAYS_ACCEPT_PREDICATE_TYPE};
+//! use strata_predicate::{AsPredicateKey, PredicateKey, verify_claim_witness, ALWAYS_ACCEPT_PREDICATE_TYPE};
 //!
 //! // Create a predicate key (always accept type for testing)
 //! let predkey = PredicateKey::new(ALWAYS_ACCEPT_PREDICATE_TYPE, b"test_condition".to_vec());
@@ -50,7 +50,7 @@
 //! // Verify using the global function
 //! verify_claim_witness(&predkey, claim, witness).unwrap();
 //!
-//! // Or verify using the predicate key method
+//! // Or verify using the predicate key method (requires AsPredicateKey trait in scope)
 //! predkey.verify_claim_witness(claim, witness).unwrap();
 //! ```
 //!
@@ -90,6 +90,8 @@
 //!
 //! The crate exposes:
 //! - [`PredicateKey`]: Core predicate key type with serialization support
+//! - [`PredicateKeyBuf`]: Zero-copy borrowed variant of predicate key
+//! - [`AsPredicateKey`]: Trait providing common functionality for both predicate key types
 //! - [`verify_claim_witness`]: Main verification function
 //! - Predicate type constants: [`NEVER_ACCEPT_PREDICATE_TYPE`], [`ALWAYS_ACCEPT_PREDICATE_TYPE`],
 //!   [`BIP340_SCHNORR_PREDICATE_TYPE`], [`SP1_GROTH16_PREDICATE_TYPE`]
@@ -102,7 +104,7 @@ mod verifier;
 mod verifiers;
 
 // Re-export main API
-pub use key::PredicateKey;
+pub use key::{AsPredicateKey, PredicateKey, PredicateKeyBuf};
 
 // Re-export predicate type constants for convenience
 pub use constants::{
@@ -126,7 +128,10 @@ use verifiers::PredicateImpl;
 /// # Returns
 /// * `Ok(())` if verification succeeds
 /// * `Err(PredicateError)` if verification fails or an error occurs
-pub fn verify_claim_witness(predicate: &PredicateKey, claim: &[u8], witness: &[u8]) -> Result<()> {
+pub fn verify_claim_witness<P>(predicate: &P, claim: &[u8], witness: &[u8]) -> Result<()>
+where
+    P: AsPredicateKey + ?Sized,
+{
     let predicate_impl = PredicateImpl::try_from(predicate.predicate_type())?;
     predicate_impl.verify_claim_witness(predicate.condition(), claim, witness)
 }
