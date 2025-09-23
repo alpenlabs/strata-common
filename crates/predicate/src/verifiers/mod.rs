@@ -9,10 +9,7 @@ pub(crate) mod sp1_groth16;
 pub(crate) use schnorr::SchnorrVerifier;
 pub(crate) use sp1_groth16::Sp1Groth16VerifierImpl;
 
-use crate::constants::{
-    ALWAYS_ACCEPT_PREDICATE_TYPE, BIP340_SCHNORR_PREDICATE_TYPE, NEVER_ACCEPT_PREDICATE_TYPE,
-    PredicateType, SP1_GROTH16_PREDICATE_TYPE,
-};
+use crate::constants::PredicateTypeId;
 use crate::errors::PredicateError;
 use crate::verifier::PredicateVerifier;
 
@@ -37,20 +34,16 @@ impl PredicateImpl {
     /// Creates a predicate implementation instance from a predicate type ID.
     ///
     /// # Arguments
-    /// * `predicate_type` - The predicate type identifier
+    /// * `predicate_type_id` - The predicate type identifier
     ///
     /// # Returns
-    /// * `Ok(PredicateImplementation)` if the type is supported
-    /// * `Err(PredicateError::InvalidPredicateType)` if the type is not supported
-    pub(crate) fn try_from(predicate_type: PredicateType) -> Result<Self, PredicateError> {
-        match predicate_type {
-            NEVER_ACCEPT_PREDICATE_TYPE => Ok(PredicateImpl::NeverAccept),
-            ALWAYS_ACCEPT_PREDICATE_TYPE => Ok(PredicateImpl::AlwaysAccept),
-            BIP340_SCHNORR_PREDICATE_TYPE => Ok(PredicateImpl::Schnorr(SchnorrVerifier)),
-            SP1_GROTH16_PREDICATE_TYPE => {
-                Ok(PredicateImpl::Sp1Groth16Verifier(Sp1Groth16VerifierImpl))
-            }
-            invalid_type => Err(PredicateError::InvalidPredicateType(invalid_type)),
+    /// * The corresponding predicate implementation
+    pub(crate) fn from(predicate_type_id: PredicateTypeId) -> Self {
+        match predicate_type_id {
+            PredicateTypeId::NeverAccept => PredicateImpl::NeverAccept,
+            PredicateTypeId::AlwaysAccept => PredicateImpl::AlwaysAccept,
+            PredicateTypeId::Bip340Schnorr => PredicateImpl::Schnorr(SchnorrVerifier),
+            PredicateTypeId::Sp1Groth16 => PredicateImpl::Sp1Groth16Verifier(Sp1Groth16VerifierImpl),
         }
     }
 
@@ -74,7 +67,7 @@ impl PredicateImpl {
     ) -> Result<(), PredicateError> {
         match self {
             PredicateImpl::NeverAccept => Err(PredicateError::VerificationFailed {
-                predicate_type: NEVER_ACCEPT_PREDICATE_TYPE,
+                id: PredicateTypeId::NeverAccept,
                 reason: "never accept".to_string(),
             }),
             PredicateImpl::AlwaysAccept => Ok(()),

@@ -9,7 +9,7 @@ use zkaleido_sp1_groth16_verifier::{
     verify_sp1_groth16_algebraic,
 };
 
-use crate::constants::SP1_GROTH16_PREDICATE_TYPE;
+use crate::constants::PredicateTypeId;
 use crate::errors::{PredicateError, Result};
 use crate::verifier::PredicateVerifier;
 
@@ -43,7 +43,7 @@ impl PredicateVerifier for Sp1Groth16VerifierImpl {
     fn parse_condition(&self, condition: &[u8]) -> Result<Self::Predicate> {
         // Parse condition bytes as SP1Groth16Verifier (contains program ID + verifying key)
         borsh::from_slice(condition).map_err(|e| PredicateError::PredicateParsingFailed {
-            predicate_type: SP1_GROTH16_PREDICATE_TYPE,
+            id: PredicateTypeId::Sp1Groth16,
             reason: e.to_string(),
         })
     }
@@ -52,7 +52,7 @@ impl PredicateVerifier for Sp1Groth16VerifierImpl {
         // Parse witness bytes as Groth16Proof using zkaleido's loader
         Groth16Proof::load_from_gnark_bytes(witness).map_err(|e| {
             PredicateError::WitnessParsingFailed {
-                predicate_type: SP1_GROTH16_PREDICATE_TYPE,
+                id: PredicateTypeId::Sp1Groth16,
                 reason: e.to_string(),
             }
         })
@@ -69,7 +69,7 @@ impl PredicateVerifier for Sp1Groth16VerifierImpl {
         // 2. hash(public_values) (computed from claim)
         // Try SHA-256 hash first as it's the default for SP1
         let fr_sha2 = sha256_to_fr(claim).map_err(|e| PredicateError::VerificationFailed {
-            predicate_type: SP1_GROTH16_PREDICATE_TYPE,
+            id: PredicateTypeId::Sp1Groth16,
             reason: e.to_string(),
         })?;
 
@@ -80,14 +80,14 @@ impl PredicateVerifier for Sp1Groth16VerifierImpl {
 
         // Fallback: try Blake3 hash for compatibility with different SP1 configurations
         let fr_blake3 = blake3_to_fr(claim).map_err(|e| PredicateError::VerificationFailed {
-            predicate_type: SP1_GROTH16_PREDICATE_TYPE,
+            id: PredicateTypeId::Sp1Groth16,
             reason: e.to_string(),
         })?;
 
         // Retry verification with Blake3 hash using zkaleido's verifier
         verify_sp1_groth16_algebraic(program, proof, &fr_blake3).map_err(|e| {
             PredicateError::VerificationFailed {
-                predicate_type: SP1_GROTH16_PREDICATE_TYPE,
+                id: PredicateTypeId::Sp1Groth16,
                 reason: e.to_string(),
             }
         })
@@ -104,8 +104,8 @@ mod tests {
     fn assert_predicate_parsing_failed(result: Result<()>) {
         let err = result.unwrap_err();
         match err {
-            PredicateError::PredicateParsingFailed { predicate_type, .. } => {
-                assert_eq!(predicate_type, SP1_GROTH16_PREDICATE_TYPE);
+            PredicateError::PredicateParsingFailed { id, .. } => {
+                assert_eq!(id, PredicateTypeId::Sp1Groth16);
             }
             _ => panic!("Expected PredicateParsingFailed, got: {err:?}"),
         }
@@ -114,8 +114,8 @@ mod tests {
     fn assert_witness_parsing_failed(result: Result<()>) {
         let err = result.unwrap_err();
         match err {
-            PredicateError::WitnessParsingFailed { predicate_type, .. } => {
-                assert_eq!(predicate_type, SP1_GROTH16_PREDICATE_TYPE);
+            PredicateError::WitnessParsingFailed { id, .. } => {
+                assert_eq!(id, PredicateTypeId::Sp1Groth16);
             }
             _ => panic!("Expected WitnessParsingFailed, got: {err:?}"),
         }
@@ -124,8 +124,8 @@ mod tests {
     fn assert_validation_failed(result: Result<()>) {
         let err = result.unwrap_err();
         match err {
-            PredicateError::VerificationFailed { predicate_type, .. } => {
-                assert_eq!(predicate_type, SP1_GROTH16_PREDICATE_TYPE);
+            PredicateError::VerificationFailed { id, .. } => {
+                assert_eq!(id, PredicateTypeId::Sp1Groth16);
             }
             _ => panic!("Expected ValidationFailed, got: {err:?}"),
         }

@@ -3,7 +3,7 @@
 use k256::schnorr::{Signature, VerifyingKey};
 use signature::Verifier;
 
-use crate::constants::BIP340_SCHNORR_PREDICATE_TYPE;
+use crate::constants::PredicateTypeId;
 use crate::errors::{PredicateError, Result};
 use crate::verifier::PredicateVerifier;
 
@@ -24,13 +24,13 @@ impl PredicateVerifier for SchnorrVerifier {
         // BIP-340 requires exactly 32 bytes for x-only public keys
         if condition.len() != 32 {
             return Err(PredicateError::PredicateParsingFailed {
-                predicate_type: BIP340_SCHNORR_PREDICATE_TYPE,
+                id: PredicateTypeId::Bip340Schnorr,
                 reason: format!("expected 32 bytes, got {}", condition.len()),
             });
         }
 
         VerifyingKey::from_bytes(condition).map_err(|e| PredicateError::PredicateParsingFailed {
-            predicate_type: BIP340_SCHNORR_PREDICATE_TYPE,
+            id: PredicateTypeId::Bip340Schnorr,
             reason: e.to_string(),
         })
     }
@@ -39,13 +39,13 @@ impl PredicateVerifier for SchnorrVerifier {
         // BIP-340 Schnorr signatures are exactly 64 bytes
         if witness.len() != 64 {
             return Err(PredicateError::WitnessParsingFailed {
-                predicate_type: BIP340_SCHNORR_PREDICATE_TYPE,
+                id: PredicateTypeId::Bip340Schnorr,
                 reason: format!("expected 64 bytes, got {}", witness.len()),
             });
         }
 
         Signature::try_from(witness).map_err(|e| PredicateError::WitnessParsingFailed {
-            predicate_type: BIP340_SCHNORR_PREDICATE_TYPE,
+            id: PredicateTypeId::Bip340Schnorr,
             reason: e.to_string(),
         })
     }
@@ -61,7 +61,7 @@ impl PredicateVerifier for SchnorrVerifier {
         pubkey
             .verify(claim, signature)
             .map_err(|e| PredicateError::VerificationFailed {
-                predicate_type: BIP340_SCHNORR_PREDICATE_TYPE,
+                id: PredicateTypeId::Bip340Schnorr,
                 reason: e.to_string(),
             })
     }
@@ -74,15 +74,15 @@ mod tests {
     use signature::Signer;
 
     use super::SchnorrVerifier;
-    use crate::constants::BIP340_SCHNORR_PREDICATE_TYPE;
+    use crate::constants::PredicateTypeId;
     use crate::errors::{PredicateError, Result};
     use crate::verifier::PredicateVerifier;
 
     fn assert_predicate_parsing_failed(result: Result<()>) {
         let err = result.unwrap_err();
         match err {
-            PredicateError::PredicateParsingFailed { predicate_type, .. } => {
-                assert_eq!(predicate_type, BIP340_SCHNORR_PREDICATE_TYPE);
+            PredicateError::PredicateParsingFailed { id, .. } => {
+                assert_eq!(id, PredicateTypeId::Bip340Schnorr);
             }
             _ => panic!("Expected PredicateParsingFailed, got: {err:?}"),
         }
@@ -91,8 +91,8 @@ mod tests {
     fn assert_witness_parsing_failed(result: Result<()>) {
         let err = result.unwrap_err();
         match err {
-            PredicateError::WitnessParsingFailed { predicate_type, .. } => {
-                assert_eq!(predicate_type, BIP340_SCHNORR_PREDICATE_TYPE);
+            PredicateError::WitnessParsingFailed { id, .. } => {
+                assert_eq!(id, PredicateTypeId::Bip340Schnorr);
             }
             _ => panic!("Expected WitnessParsingFailed, got: {err:?}"),
         }
@@ -101,8 +101,8 @@ mod tests {
     fn assert_verification_failed(result: Result<()>) {
         let err = result.unwrap_err();
         match err {
-            PredicateError::VerificationFailed { predicate_type, .. } => {
-                assert_eq!(predicate_type, BIP340_SCHNORR_PREDICATE_TYPE);
+            PredicateError::VerificationFailed { id, .. } => {
+                assert_eq!(id, PredicateTypeId::Bip340Schnorr);
             }
             _ => panic!("Expected VerificationFailed, got: {err:?}"),
         }

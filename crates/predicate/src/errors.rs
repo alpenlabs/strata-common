@@ -2,6 +2,8 @@
 
 use thiserror::Error;
 
+use crate::constants::PredicateTypeId;
+
 /// Errors that can occur when working with predicates, claims, and witnesses.
 #[derive(Clone, Debug, Error)]
 pub enum PredicateError {
@@ -12,29 +14,29 @@ pub enum PredicateError {
 
     // === Parsing Errors ===
     /// Predicate condition parsing failed.
-    #[error("predicate parsing failed for type {predicate_type}: {reason}")]
+    #[error("predicate parsing failed for type {id}: {reason}")]
     PredicateParsingFailed {
         /// The predicate type that failed to parse.
-        predicate_type: u8,
+        id: PredicateTypeId,
         /// The reason for parsing failure.
         reason: String,
     },
 
     /// Witness parsing failed.
-    #[error("witness parsing failed for type {predicate_type}: {reason}")]
+    #[error("witness parsing failed for type {id}: {reason}")]
     WitnessParsingFailed {
         /// The predicate type that failed witness parsing.
-        predicate_type: u8,
+        id: PredicateTypeId,
         /// The reason for witness parsing failure.
         reason: String,
     },
 
     // === Verification Errors ===
     /// Witness does not satisfy the predicate with claim.
-    #[error("witness verification failed for claim in {predicate_type}: {reason}")]
+    #[error("witness verification failed for claim in {id}: {reason}")]
     VerificationFailed {
         /// The predicate type that failed verification.
-        predicate_type: u8,
+        id: PredicateTypeId,
         /// The reason for verification failure.
         reason: String,
     },

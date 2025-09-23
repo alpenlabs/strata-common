@@ -1,6 +1,6 @@
 //! Predicate key implementation and type registry.
 
-use crate::constants::{NEVER_ACCEPT_PREDICATE_TYPE, PredicateType};
+use crate::constants::NEVER_ACCEPT_PREDICATE_TYPE;
 use crate::errors::Result;
 
 /// A trait for accessing predicate key data regardless of whether it's owned or borrowed.
@@ -17,7 +17,7 @@ pub trait AsPredicateKey {
     ///
     /// If the data is empty, returns [`NEVER_ACCEPT_PREDICATE_TYPE`].
     /// Otherwise, returns the first byte as the predicate type.
-    fn predicate_type(&self) -> PredicateType {
+    fn predicate_type(&self) -> u8 {
         let bytes = self.as_bytes();
         if bytes.is_empty() {
             NEVER_ACCEPT_PREDICATE_TYPE
@@ -93,7 +93,7 @@ impl PredicateKey {
     ///
     /// let predkey = PredicateKey::new(ALWAYS_ACCEPT_PREDICATE_TYPE, b"test".to_vec());
     /// ```
-    pub fn new(predicate_type: PredicateType, condition: Vec<u8>) -> Self {
+    pub fn new(predicate_type: u8, condition: Vec<u8>) -> Self {
         let mut data = Vec::with_capacity(1 + condition.len());
         data.push(predicate_type);
         data.extend_from_slice(&condition);
