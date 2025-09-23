@@ -38,10 +38,10 @@
 //! ### Basic Verification
 //!
 //! ```rust
-//! use strata_predicate::{AsPredicateKey, PredicateKey, verify_claim_witness, ALWAYS_ACCEPT_PREDICATE_TYPE};
+//! use strata_predicate::{AsPredicateKey, PredicateKey, verify_claim_witness, PredicateTypeId};
 //!
 //! // Create a predicate key (always accept type for testing)
-//! let predkey = PredicateKey::new(ALWAYS_ACCEPT_PREDICATE_TYPE, b"test_condition".to_vec());
+//! let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test_condition".to_vec());
 //!
 //! // Define claim and witness data
 //! let claim = b"hello world";
@@ -57,10 +57,10 @@
 //! ### Serialization and Deserialization
 //!
 //! ```rust
-//! use strata_predicate::{PredicateKey, ALWAYS_ACCEPT_PREDICATE_TYPE};
+//! use strata_predicate::{PredicateKey, PredicateTypeId};
 //!
 //! // Create a predicate key
-//! let predkey = PredicateKey::new(ALWAYS_ACCEPT_PREDICATE_TYPE, b"condition_data".to_vec());
+//! let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"condition_data".to_vec());
 //!
 //! // Serialize to bytes
 //! let bytes = predkey.clone().into_bytes();
@@ -74,16 +74,16 @@
 //!
 //! Each predicate type is identified by a unique constant:
 //!
-//! - **Never Accept** ([`NEVER_ACCEPT_PREDICATE_TYPE`] = 0):
+//! - **Never Accept** ([`PredicateTypeId::NeverAccept`] = 0):
 //!   Never accepts any witness for any claim. Represents an empty/invalid predicate.
 //!
-//! - **Always Accept** ([`ALWAYS_ACCEPT_PREDICATE_TYPE`] = 1):
+//! - **Always Accept** ([`PredicateTypeId::AlwaysAccept`] = 1):
 //!   Accepts any witness for any claim. Used for testing and placeholder scenarios.
 //!
-//! - **Schnorr BIP-340** ([`BIP340_SCHNORR_PREDICATE_TYPE`] = 10):
+//! - **Schnorr BIP-340** ([`PredicateTypeId::Bip340Schnorr`] = 10):
 //!   Schnorr signature verification using BIP-340 standard. Expects 32-byte x-only public keys.
 //!
-//! - **SP1 Groth16 Verifier** ([`SP1_GROTH16_PREDICATE_TYPE`] = 20):
+//! - **SP1 Groth16 Verifier** ([`PredicateTypeId::Sp1Groth16`] = 20):
 //!   Zero-knowledge proof verification for SP1-generated Groth16 proofs.
 //!
 //! ## Public API
@@ -93,11 +93,10 @@
 //! - [`PredicateKeyBuf`]: Zero-copy borrowed variant of predicate key
 //! - [`AsPredicateKey`]: Trait providing common functionality for both predicate key types
 //! - [`verify_claim_witness`]: Main verification function
-//! - Predicate type constants: [`NEVER_ACCEPT_PREDICATE_TYPE`], [`ALWAYS_ACCEPT_PREDICATE_TYPE`],
-//!   [`BIP340_SCHNORR_PREDICATE_TYPE`], [`SP1_GROTH16_PREDICATE_TYPE`]
+//! - [`PredicateTypeId`]: Enum representing all supported predicate types
 //!
 
-pub mod constants;
+pub mod type_ids;
 mod errors;
 pub mod key;
 mod verifier;
@@ -107,10 +106,7 @@ mod verifiers;
 pub use key::{AsPredicateKey, PredicateKey, PredicateKeyBuf};
 
 // Re-export predicate type constants and enum for convenience
-pub use constants::{
-    ALWAYS_ACCEPT_PREDICATE_TYPE, BIP340_SCHNORR_PREDICATE_TYPE, NEVER_ACCEPT_PREDICATE_TYPE,
-    PredicateTypeId, SP1_GROTH16_PREDICATE_TYPE,
-};
+pub use type_ids::PredicateTypeId;
 
 // Internal imports for the verify_claim_witness function
 use errors::Result;

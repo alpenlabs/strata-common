@@ -3,7 +3,7 @@
 use k256::schnorr::{Signature, VerifyingKey};
 use signature::Verifier;
 
-use crate::constants::PredicateTypeId;
+use crate::type_ids::PredicateTypeId;
 use crate::errors::{PredicateError, Result};
 use crate::verifier::PredicateVerifier;
 
@@ -74,7 +74,7 @@ mod tests {
     use signature::Signer;
 
     use super::SchnorrVerifier;
-    use crate::constants::PredicateTypeId;
+    use crate::type_ids::PredicateTypeId;
     use crate::errors::{PredicateError, Result};
     use crate::verifier::PredicateVerifier;
 

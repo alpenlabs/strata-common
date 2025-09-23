@@ -9,7 +9,7 @@ use zkaleido_sp1_groth16_verifier::{
     verify_sp1_groth16_algebraic,
 };
 
-use crate::constants::PredicateTypeId;
+use crate::type_ids::PredicateTypeId;
 use crate::errors::{PredicateError, Result};
 use crate::verifier::PredicateVerifier;
 

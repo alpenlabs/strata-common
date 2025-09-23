@@ -2,7 +2,7 @@
 
 use thiserror::Error;
 
-use crate::constants::PredicateTypeId;
+use crate::type_ids::PredicateTypeId;
 
 /// Errors that can occur when working with predicates, claims, and witnesses.
 #[derive(Clone, Debug, Error)]

@@ -9,7 +9,7 @@ pub(crate) mod sp1_groth16;
 pub(crate) use schnorr::SchnorrVerifier;
 pub(crate) use sp1_groth16::Sp1Groth16VerifierImpl;
 
-use crate::constants::PredicateTypeId;
+use crate::type_ids::PredicateTypeId;
 use crate::errors::PredicateError;
 use crate::verifier::PredicateVerifier;
 

@@ -1,6 +1,6 @@
 //! Predicate key implementation and type registry.
 
-use crate::constants::PredicateTypeId;
+use crate::type_ids::PredicateTypeId;
 use crate::errors::Result;
 
 /// A trait for accessing predicate key data regardless of whether it's owned or borrowed.
@@ -27,9 +27,9 @@ pub trait AsPredicateKey {
     ///
     /// # Examples
     /// ```
-    /// use strata_predicate::{AsPredicateKey, PredicateKey, PredicateTypeId, ALWAYS_ACCEPT_PREDICATE_TYPE};
+    /// use strata_predicate::{AsPredicateKey, PredicateKey, PredicateTypeId};
     ///
-    /// let predkey = PredicateKey::new(ALWAYS_ACCEPT_PREDICATE_TYPE, b"test".to_vec());
+    /// let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test".to_vec());
     /// let (type_id, condition) = predkey.decode().unwrap();
     /// assert_eq!(type_id, PredicateTypeId::AlwaysAccept);
     /// assert_eq!(condition, b"test");
@@ -104,13 +104,13 @@ impl PredicateKey {
     ///
     /// # Examples
     /// ```
-    /// use strata_predicate::{PredicateKey, ALWAYS_ACCEPT_PREDICATE_TYPE};
+    /// use strata_predicate::{PredicateKey, PredicateTypeId};
     ///
-    /// let predkey = PredicateKey::new(ALWAYS_ACCEPT_PREDICATE_TYPE, b"test".to_vec());
+    /// let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test".to_vec());
     /// ```
-    pub fn new(predicate_type: u8, condition: Vec<u8>) -> Self {
+    pub fn new(predicate_type: PredicateTypeId, condition: Vec<u8>) -> Self {
         let mut data = Vec::with_capacity(1 + condition.len());
-        data.push(predicate_type);
+        data.push(predicate_type.as_u8());
         data.extend_from_slice(&condition);
         Self { data }
     }
@@ -171,10 +171,7 @@ impl<'b> AsPredicateKey for PredicateKeyBuf<'b> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constants::{
-        ALWAYS_ACCEPT_PREDICATE_TYPE, BIP340_SCHNORR_PREDICATE_TYPE, NEVER_ACCEPT_PREDICATE_TYPE,
-        SP1_GROTH16_PREDICATE_TYPE,
-    };
+    use crate::type_ids::PredicateTypeId;
 
     #[test]
     fn test_empty_predicate_key() {
@@ -191,7 +188,10 @@ mod tests {
 
     #[test]
     fn test_non_empty_predicate_key() {
-        let predkey = PredicateKey::new(ALWAYS_ACCEPT_PREDICATE_TYPE, b"test_condition".to_vec());
+        let predkey = PredicateKey::new(
+            PredicateTypeId::AlwaysAccept,
+            b"test_condition".to_vec(),
+        );
 
         // Should decode to correct type and condition
         let (type_id, condition) = predkey.decode().unwrap();
@@ -200,7 +200,7 @@ mod tests {
 
         // Serialization should work correctly
         let serialized = predkey.as_bytes();
-        assert_eq!(serialized[0], ALWAYS_ACCEPT_PREDICATE_TYPE);
+        assert_eq!(serialized[0], PredicateTypeId::AlwaysAccept.as_u8());
         assert_eq!(&serialized[1..], b"test_condition");
 
         // Round-trip should work
@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn test_non_empty_predicate_key_buf() {
-        let data = [ALWAYS_ACCEPT_PREDICATE_TYPE]
+        let data = [PredicateTypeId::AlwaysAccept.as_u8()]
             .iter()
             .chain(b"test_condition")
             .copied()
@@ -249,25 +249,27 @@ mod tests {
     #[test]
     fn test_decode_valid_predicate_types() {
         // Test NeverAccept (0)
-        let predkey = PredicateKey::new(NEVER_ACCEPT_PREDICATE_TYPE, b"test".to_vec());
+        let predkey = PredicateKey::new(PredicateTypeId::NeverAccept, b"test".to_vec());
         let (type_id, condition) = predkey.decode().unwrap();
         assert_eq!(type_id, PredicateTypeId::NeverAccept);
         assert_eq!(condition, b"test");
 
         // Test AlwaysAccept (1)
-        let predkey = PredicateKey::new(ALWAYS_ACCEPT_PREDICATE_TYPE, b"condition".to_vec());
+        let predkey =
+            PredicateKey::new(PredicateTypeId::AlwaysAccept, b"condition".to_vec());
         let (type_id, condition) = predkey.decode().unwrap();
         assert_eq!(type_id, PredicateTypeId::AlwaysAccept);
         assert_eq!(condition, b"condition");
 
         // Test Bip340Schnorr (10)
-        let predkey = PredicateKey::new(BIP340_SCHNORR_PREDICATE_TYPE, b"pubkey32".to_vec());
+        let predkey =
+            PredicateKey::new(PredicateTypeId::Bip340Schnorr, b"pubkey32".to_vec());
         let (type_id, condition) = predkey.decode().unwrap();
         assert_eq!(type_id, PredicateTypeId::Bip340Schnorr);
         assert_eq!(condition, b"pubkey32");
 
         // Test Sp1Groth16 (20)
-        let predkey = PredicateKey::new(SP1_GROTH16_PREDICATE_TYPE, b"vk_data".to_vec());
+        let predkey = PredicateKey::new(PredicateTypeId::Sp1Groth16, b"vk_data".to_vec());
         let (type_id, condition) = predkey.decode().unwrap();
         assert_eq!(type_id, PredicateTypeId::Sp1Groth16);
         assert_eq!(condition, b"vk_data");
@@ -276,7 +278,7 @@ mod tests {
     #[test]
     fn test_decode_invalid_predicate_type() {
         // Test invalid predicate type (99 is not supported)
-        let invalid_predkey = PredicateKey::new(99, b"test".to_vec());
+        let invalid_predkey = PredicateKey::from_bytes(&[99, b't', b'e', b's', b't']);
         let result = invalid_predkey.decode();
 
         assert!(result.is_err());
@@ -291,7 +293,7 @@ mod tests {
     #[test]
     fn test_decode_single_byte_predicate() {
         // Test predicate key with only the type byte, no condition
-        let predkey = PredicateKey::from_bytes(&[ALWAYS_ACCEPT_PREDICATE_TYPE]);
+        let predkey = PredicateKey::from_bytes(&[PredicateTypeId::AlwaysAccept.as_u8()]);
         let (type_id, condition) = predkey.decode().unwrap();
 
         assert_eq!(type_id, PredicateTypeId::AlwaysAccept);
