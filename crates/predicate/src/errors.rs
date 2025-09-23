@@ -1,5 +1,4 @@
 //! Error types for the predicate format library.
-
 use thiserror::Error;
 
 use crate::type_ids::PredicateTypeId;
@@ -43,4 +42,4 @@ pub enum PredicateError {
 }
 
 /// Result type alias for predicate operations.
-pub(crate) type Result<T> = std::result::Result<T, PredicateError>;
+pub(crate) type PredicateResult<T> = std::result::Result<T, PredicateError>;

@@ -3,8 +3,8 @@
 use k256::schnorr::{Signature, VerifyingKey};
 use signature::Verifier;
 
+use crate::errors::{PredicateError, PredicateResult};
 use crate::type_ids::PredicateTypeId;
-use crate::errors::{PredicateError, Result};
 use crate::verifier::PredicateVerifier;
 
 /// Schnorr BIP-340 signature verifier.
@@ -20,33 +20,39 @@ impl PredicateVerifier for SchnorrVerifier {
     type Condition = VerifyingKey;
     type Witness = Signature;
 
-    fn parse_condition(&self, condition: &[u8]) -> Result<Self::Condition> {
+    fn parse_condition(&self, condition: &[u8]) -> PredicateResult<Self::Condition> {
         // BIP-340 requires exactly 32 bytes for x-only public keys
         if condition.len() != 32 {
             return Err(PredicateError::PredicateParsingFailed {
                 id: PredicateTypeId::Bip340Schnorr,
-                reason: format!("expected 32 bytes, got {}", condition.len()),
+                reason: format!(
+                    "expected 32-byte x-only public key, got {} bytes",
+                    condition.len()
+                ),
             });
         }
 
         VerifyingKey::from_bytes(condition).map_err(|e| PredicateError::PredicateParsingFailed {
             id: PredicateTypeId::Bip340Schnorr,
-            reason: e.to_string(),
+            reason: format!("invalid x-only public key: {e}"),
         })
     }
 
-    fn parse_witness(&self, witness: &[u8]) -> Result<Self::Witness> {
+    fn parse_witness(&self, witness: &[u8]) -> PredicateResult<Self::Witness> {
         // BIP-340 Schnorr signatures are exactly 64 bytes
         if witness.len() != 64 {
             return Err(PredicateError::WitnessParsingFailed {
                 id: PredicateTypeId::Bip340Schnorr,
-                reason: format!("expected 64 bytes, got {}", witness.len()),
+                reason: format!(
+                    "expected 64-byte BIP-340 Schnorr signature, got {} bytes",
+                    witness.len()
+                ),
             });
         }
 
         Signature::try_from(witness).map_err(|e| PredicateError::WitnessParsingFailed {
             id: PredicateTypeId::Bip340Schnorr,
-            reason: e.to_string(),
+            reason: format!("invalid BIP-340 Schnorr signature: {e}"),
         })
     }
 
@@ -55,7 +61,7 @@ impl PredicateVerifier for SchnorrVerifier {
         pubkey: &Self::Condition,
         claim: &[u8],
         signature: &Self::Witness,
-    ) -> Result<()> {
+    ) -> PredicateResult<()> {
         // For BIP-340 Schnorr signatures, the message should be properly hashed
         // The verify method expects a properly formatted message
         pubkey
@@ -74,39 +80,11 @@ mod tests {
     use signature::Signer;
 
     use super::SchnorrVerifier;
+    use crate::test_utils::{
+        assert_predicate_parsing_failed, assert_verification_failed, assert_witness_parsing_failed,
+    };
     use crate::type_ids::PredicateTypeId;
-    use crate::errors::{PredicateError, Result};
     use crate::verifier::PredicateVerifier;
-
-    fn assert_predicate_parsing_failed(result: Result<()>) {
-        let err = result.unwrap_err();
-        match err {
-            PredicateError::PredicateParsingFailed { id, .. } => {
-                assert_eq!(id, PredicateTypeId::Bip340Schnorr);
-            }
-            _ => panic!("Expected PredicateParsingFailed, got: {err:?}"),
-        }
-    }
-
-    fn assert_witness_parsing_failed(result: Result<()>) {
-        let err = result.unwrap_err();
-        match err {
-            PredicateError::WitnessParsingFailed { id, .. } => {
-                assert_eq!(id, PredicateTypeId::Bip340Schnorr);
-            }
-            _ => panic!("Expected WitnessParsingFailed, got: {err:?}"),
-        }
-    }
-
-    fn assert_verification_failed(result: Result<()>) {
-        let err = result.unwrap_err();
-        match err {
-            PredicateError::VerificationFailed { id, .. } => {
-                assert_eq!(id, PredicateTypeId::Bip340Schnorr);
-            }
-            _ => panic!("Expected VerificationFailed, got: {err:?}"),
-        }
-    }
 
     fn load_predicate_claim_witness() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
         // Generate random message
@@ -167,21 +145,21 @@ mod tests {
         let mut larger_predicate = predicate.clone();
         larger_predicate.extend_from_slice(&[0u8; 10]);
         let res = verifier.verify(&larger_predicate, &claim, &witness);
-        assert_predicate_parsing_failed(res);
+        assert_predicate_parsing_failed(res, PredicateTypeId::Bip340Schnorr);
 
         let mut larger_predicate = predicate.clone();
         larger_predicate.extend_from_slice(&[0u8; 1]);
         let res = verifier.verify(&larger_predicate, &claim, &witness);
-        assert_predicate_parsing_failed(res);
+        assert_predicate_parsing_failed(res, PredicateTypeId::Bip340Schnorr);
 
         // Test with shorter predicate
         let shorter_predicate = &predicate[..predicate.len() - 5];
         let res = verifier.verify(shorter_predicate, &claim, &witness);
-        assert_predicate_parsing_failed(res);
+        assert_predicate_parsing_failed(res, PredicateTypeId::Bip340Schnorr);
 
         let shorter_predicate = &predicate[1..];
         let res = verifier.verify(shorter_predicate, &claim, &witness);
-        assert_predicate_parsing_failed(res);
+        assert_predicate_parsing_failed(res, PredicateTypeId::Bip340Schnorr);
     }
 
     #[test]
@@ -193,17 +171,17 @@ mod tests {
         let mut larger_witness = witness.clone();
         larger_witness.extend_from_slice(&[0u8; 10]);
         let res = verifier.verify(&predicate, &claim, &larger_witness);
-        assert_witness_parsing_failed(res);
+        assert_witness_parsing_failed(res, PredicateTypeId::Bip340Schnorr);
 
         // Test with shorter witness
         let shorter_witness = &witness[..witness.len() - 5];
         let res = verifier.verify(&predicate, &claim, shorter_witness);
-        assert_witness_parsing_failed(res);
+        assert_witness_parsing_failed(res, PredicateTypeId::Bip340Schnorr);
 
         // Test with modified bytes inside witness
         witness[0] = witness[0].wrapping_add(1);
         let res = verifier.verify(&predicate, &claim, &witness);
-        assert_verification_failed(res);
+        assert_verification_failed(res, PredicateTypeId::Bip340Schnorr);
     }
 
     #[test]
@@ -215,16 +193,16 @@ mod tests {
         let mut larger_claim = claim.clone();
         larger_claim.extend_from_slice(&[0u8; 10]);
         let res = verifier.verify(&predicate, &larger_claim, &witness);
-        assert_verification_failed(res);
+        assert_verification_failed(res, PredicateTypeId::Bip340Schnorr);
 
         // Test with shorter claim
         let shorter_claim = &claim[..claim.len() - 2];
         let res = verifier.verify(&predicate, shorter_claim, &witness);
-        assert_verification_failed(res);
+        assert_verification_failed(res, PredicateTypeId::Bip340Schnorr);
 
         // Test with modified bytes inside claim
         claim[0] = claim[0].wrapping_add(1);
         let res = verifier.verify(&predicate, &claim, &witness);
-        assert_verification_failed(res);
+        assert_verification_failed(res, PredicateTypeId::Bip340Schnorr);
     }
 }

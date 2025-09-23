@@ -38,7 +38,7 @@
 //! ### Basic Verification
 //!
 //! ```rust
-//! use strata_predicate::{AsPredicateKey, PredicateKey, verify_claim_witness, PredicateTypeId};
+//! use strata_predicate::{PredicateKey, verify_claim_witness, PredicateTypeId};
 //!
 //! // Create a predicate key (always accept type for testing)
 //! let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test_condition".to_vec());
@@ -48,27 +48,12 @@
 //! let witness = b"test_signature";
 //!
 //! // Verify using the global function
-//! verify_claim_witness(&predkey, claim, witness).unwrap();
+//! verify_claim_witness(predkey.as_bytes(), claim, witness).unwrap();
 //!
-//! // Or verify using the predicate key method (requires AsPredicateKey trait in scope)
+//! // Or verify using the predicate key method
 //! predkey.verify_claim_witness(claim, witness).unwrap();
 //! ```
 //!
-//! ### Serialization and Deserialization
-//!
-//! ```rust
-//! use strata_predicate::{PredicateKey, PredicateTypeId};
-//!
-//! // Create a predicate key
-//! let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"condition_data".to_vec());
-//!
-//! // Serialize to bytes
-//! let bytes = predkey.clone().into_bytes();
-//!
-//! // Deserialize from bytes
-//! let restored = PredicateKey::from_bytes(&bytes);
-//! assert_eq!(predkey, restored);
-//! ```
 //!
 //! ## Supported Predicate Types
 //!
@@ -91,25 +76,26 @@
 //! The crate exposes:
 //! - [`PredicateKey`]: Core predicate key type with serialization support
 //! - [`PredicateKeyBuf`]: Zero-copy borrowed variant of predicate key
-//! - [`AsPredicateKey`]: Trait providing common functionality for both predicate key types
 //! - [`verify_claim_witness`]: Main verification function
 //! - [`PredicateTypeId`]: Enum representing all supported predicate types
 //!
 
-pub mod type_ids;
 mod errors;
 pub mod key;
+#[cfg(test)]
+mod test_utils;
+pub mod type_ids;
 mod verifier;
 mod verifiers;
 
 // Re-export main API
-pub use key::{AsPredicateKey, PredicateKey, PredicateKeyBuf};
+pub use key::{PredicateKey, PredicateKeyBuf};
 
 // Re-export predicate type constants and enum for convenience
 pub use type_ids::PredicateTypeId;
 
 // Internal imports for the verify_claim_witness function
-use errors::Result;
+use errors::PredicateResult;
 use verifiers::VerifierType;
 
 /// Verifies that a witness satisfies a predicate key for a given claim.
@@ -117,18 +103,19 @@ use verifiers::VerifierType;
 /// This is the main verification function as specified in SPS-predicate-fmt.
 ///
 /// # Arguments
-/// * `predicate` - The predicate key containing the type and condition data
+/// * `predicate_bytes` - The raw predicate key bytes in format [type: u8][condition: bytes...]
 /// * `claim` - The claim bytes to verify against
 /// * `witness` - The witness bytes to verify
 ///
 /// # Returns
 /// * `Ok(())` if verification succeeds
 /// * `Err(PredicateError)` if verification fails or an error occurs
-pub fn verify_claim_witness<P>(predicate: &P, claim: &[u8], witness: &[u8]) -> Result<()>
-where
-    P: AsPredicateKey + ?Sized,
-{
-    let (type_id, condition) = predicate.decode()?;
+pub fn verify_claim_witness(
+    predicate_bytes: &[u8],
+    claim: &[u8],
+    witness: &[u8],
+) -> PredicateResult<()> {
+    let (type_id, condition) = key::decode_predicate_key(predicate_bytes)?;
     let verifier = VerifierType::from(type_id);
     verifier.verify_claim_witness(condition, claim, witness)
 }

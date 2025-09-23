@@ -7,10 +7,10 @@ pub(crate) mod schnorr;
 pub(crate) mod sp1_groth16;
 
 pub(crate) use schnorr::SchnorrVerifier;
-pub(crate) use sp1_groth16::Sp1Groth16VerifierImpl;
+pub(crate) use sp1_groth16::Sp1Groth16Verifier;
 
-use crate::type_ids::PredicateTypeId;
 use crate::errors::PredicateError;
+use crate::type_ids::PredicateTypeId;
 use crate::verifier::PredicateVerifier;
 
 /// Enum representing all supported verifier types and their implementations.
@@ -27,26 +27,21 @@ pub(crate) enum VerifierType {
     /// Schnorr BIP-340 signature verifier.
     Schnorr(SchnorrVerifier),
     /// SP1 Groth16 zero-knowledge proof verifier.
-    Sp1Groth16Verifier(Sp1Groth16VerifierImpl),
+    Sp1Groth16(Sp1Groth16Verifier),
 }
 
-impl VerifierType {
-    /// Creates a verifier instance from a predicate type ID.
-    ///
-    /// # Arguments
-    /// * `predicate_type_id` - The predicate type identifier
-    ///
-    /// # Returns
-    /// * The corresponding verifier implementation
-    pub(crate) fn from(predicate_type_id: PredicateTypeId) -> Self {
+impl From<PredicateTypeId> for VerifierType {
+    fn from(predicate_type_id: PredicateTypeId) -> Self {
         match predicate_type_id {
             PredicateTypeId::NeverAccept => VerifierType::NeverAccept,
             PredicateTypeId::AlwaysAccept => VerifierType::AlwaysAccept,
             PredicateTypeId::Bip340Schnorr => VerifierType::Schnorr(SchnorrVerifier),
-            PredicateTypeId::Sp1Groth16 => VerifierType::Sp1Groth16Verifier(Sp1Groth16VerifierImpl),
+            PredicateTypeId::Sp1Groth16 => VerifierType::Sp1Groth16(Sp1Groth16Verifier),
         }
     }
+}
 
+impl VerifierType {
     /// Verifies that a witness satisfies the predicate for a given claim.
     ///
     /// This method dispatches to the appropriate predicate-specific verification logic.
@@ -72,7 +67,7 @@ impl VerifierType {
             }),
             VerifierType::AlwaysAccept => Ok(()),
             VerifierType::Schnorr(schnorr) => schnorr.verify(condition, claim, witness),
-            VerifierType::Sp1Groth16Verifier(sp1) => sp1.verify(condition, claim, witness),
+            VerifierType::Sp1Groth16(sp1) => sp1.verify(condition, claim, witness),
         }
     }
 }

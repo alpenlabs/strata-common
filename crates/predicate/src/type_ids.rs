@@ -1,6 +1,7 @@
 //! Constants for predicate types and values.
 
 use core::fmt;
+
 use crate::errors::PredicateError;
 
 /// Predicate type identifiers.
@@ -54,4 +55,3 @@ impl fmt::Display for PredicateTypeId {
         }
     }
 }
-
