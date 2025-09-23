@@ -20,19 +20,19 @@ use crate::verifier::PredicateVerifier;
 ///
 /// ## Predicate Format
 /// - **Condition**: Borsh-serialized `SP1Groth16Verifier` from zkaleido
-/// - **Witness**: Verifying key hash tag (4 bytes) + Groth16 proof bytes
+/// - **Witness**: Groth16 proof bytes
 /// - **Claim**: Public values to be hashed and verified
 ///
 /// ## Verification Process
-/// 1. Parses condition as `SP1Groth16Verifier` containing program ID and verifying key
-/// 2. Validates witness hash tag matches the verifying key hash
+/// 1. Parses condition as `Groth16VerifyingKey` containing program ID and verifying key
+/// 2. Parses witness as `Groth16Proof` using gnark format
 /// 3. Attempts verification with SHA-256 hash of claim as public input
-/// 4. Falls back to Blake3 hash if SHA-256 verification fails
+/// 4. Falls back to Blake3 hash if SHA-256 verification fails (for compatibility)
 /// 5. Returns success if either hash method validates the proof
 ///
 /// SP1's Groth16 circuit expects two public inputs:
-/// - `program_id`: Identifier of the SP1 program
-/// - `hash(public_values)`: SHA-256 or Blake3 hash of the claim
+/// - `program_id`: Identifier of the SP1 program (embedded in verifying key)
+/// - `hash(public_values)`: SHA-256 or Blake3 hash of the claim data
 #[derive(Debug, Default)]
 pub(crate) struct Sp1Groth16Verifier;
 
@@ -67,6 +67,7 @@ impl PredicateVerifier for Sp1Groth16Verifier {
         // SP1's Groth16 circuit expects two public inputs:
         // 1. program_id (embedded in the verifying key)
         // 2. hash(public_values) (computed from claim)
+
         // Try SHA-256 hash first as it's the default for SP1
         let fr_sha2 = sha256_to_fr(claim).map_err(|e| PredicateError::VerificationFailed {
             id: PredicateTypeId::Sp1Groth16,

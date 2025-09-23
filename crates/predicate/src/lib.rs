@@ -48,7 +48,8 @@
 //! let witness = b"test_signature";
 //!
 //! // Verify using the global function
-//! verify_claim_witness(&predkey.as_bytes(), claim, witness).unwrap();
+//! let predicate_bytes = predkey.as_buf_ref().to_bytes();
+//! verify_claim_witness(&predicate_bytes, claim, witness).unwrap();
 //!
 //! // Or verify using the predicate key method
 //! predkey.verify_claim_witness(claim, witness).unwrap();
@@ -115,7 +116,7 @@ pub fn verify_claim_witness(
     claim: &[u8],
     witness: &[u8],
 ) -> PredicateResult<()> {
-    let predicate = PredicateKeyBuf::try_new(predicate_bytes)?;
+    let predicate = PredicateKeyBuf::try_from(predicate_bytes)?;
     let verifier = VerifierType::from(predicate.id());
-    verifier.verify_claim_witness(predicate.data(), claim, witness)
+    verifier.verify_claim_witness(predicate.condition(), claim, witness)
 }

@@ -1,20 +1,51 @@
-//! Constants for predicate types and values.
+//! Constants and enumerations for predicate type identifiers.
+//!
+//! This module defines the [`PredicateTypeId`] enum that represents all supported
+//! predicate types in the SPS-predicate-fmt specification. Each type has a unique
+//! numeric identifier and corresponds to a specific verification backend.
+//!
+//! The type IDs are designed to be stable and extensible - new predicate types
+//! can be added without breaking existing serialized predicate keys.
 
 use core::fmt;
 
 use crate::errors::PredicateError;
 
 /// Predicate type identifiers.
+///
+/// Each variant corresponds to a specific verification backend and has a stable
+/// numeric value that's used in the serialized predicate format. The values are
+/// chosen to allow for future expansion while maintaining backward compatibility.
+///
+/// ## Type Categories:
+/// - **0-9**: Control flow predicates (never/always accept)
+/// - **10-19**: Digital signature predicates
+/// - **20-29**: Zero-knowledge proof predicates
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PredicateTypeId {
-    /// Never accepts any witness for any claim predicate type.
+    /// Never accepts any witness for any claim.
+    ///
+    /// Represents an invalid/empty predicate that will always fail verification.
+    /// Useful for placeholder scenarios where you need a guaranteed-fail predicate.
     NeverAccept = 0,
-    /// Always accepts any witness for any claim predicate type.
+
+    /// Always accepts any witness for any claim.
+    ///
+    /// Used for testing scenarios and placeholder predicates where verification
+    /// should always succeed regardless of the witness or claim content.
     AlwaysAccept = 1,
-    /// Schnorr signature verification using BIP-340 predicate type.
+
+    /// Schnorr signature verification using BIP-340 standard.
+    ///
+    /// Expects 32-byte x-only public keys and 64-byte signatures.
+    /// Used for Bitcoin-compatible Schnorr signature verification.
     Bip340Schnorr = 10,
-    /// SP1 Groth16 verifier program verification predicate type.
+
+    /// SP1 Groth16 zero-knowledge proof verification.
+    ///
+    /// Verifies SP1-generated Groth16 proofs with program ID and public values.
+    /// Supports both SHA-256 and Blake3 hashing for claim data.
     Sp1Groth16 = 20,
 }
 

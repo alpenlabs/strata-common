@@ -1,6 +1,11 @@
 //! Implementation for Schnorr BIP-340 signature verification.
 
 use k256::schnorr::{Signature, VerifyingKey};
+
+/// BIP-340 x-only public key size in bytes.
+const BIP340_PUBKEY_SIZE: usize = 32;
+/// BIP-340 Schnorr signature size in bytes.
+const BIP340_SIGNATURE_SIZE: usize = 64;
 use signature::Verifier;
 
 use crate::errors::{PredicateError, PredicateResult};
@@ -22,11 +27,12 @@ impl PredicateVerifier for SchnorrVerifier {
 
     fn parse_condition(&self, condition: &[u8]) -> PredicateResult<Self::Condition> {
         // BIP-340 requires exactly 32 bytes for x-only public keys
-        if condition.len() != 32 {
+        if condition.len() != BIP340_PUBKEY_SIZE {
             return Err(PredicateError::PredicateParsingFailed {
                 id: PredicateTypeId::Bip340Schnorr,
                 reason: format!(
-                    "expected 32-byte x-only public key, got {} bytes",
+                    "expected {}-byte x-only public key, got {} bytes",
+                    BIP340_PUBKEY_SIZE,
                     condition.len()
                 ),
             });
@@ -40,11 +46,12 @@ impl PredicateVerifier for SchnorrVerifier {
 
     fn parse_witness(&self, witness: &[u8]) -> PredicateResult<Self::Witness> {
         // BIP-340 Schnorr signatures are exactly 64 bytes
-        if witness.len() != 64 {
+        if witness.len() != BIP340_SIGNATURE_SIZE {
             return Err(PredicateError::WitnessParsingFailed {
                 id: PredicateTypeId::Bip340Schnorr,
                 reason: format!(
-                    "expected 64-byte BIP-340 Schnorr signature, got {} bytes",
+                    "expected {}-byte BIP-340 Schnorr signature, got {} bytes",
+                    BIP340_SIGNATURE_SIZE,
                     witness.len()
                 ),
             });
