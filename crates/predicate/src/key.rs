@@ -8,7 +8,7 @@ use crate::verifiers::VerifierType;
 ///
 /// As defined in the SPS-predicate-fmt specification, a predicate key consists of:
 /// - `id`: PredicateTypeId - Indicates which predicate backend to use
-/// - `condition`: Vec<u8> - Backend-specific predicate condition bytes
+/// - `condition`: `Vec<u8>` - Backend-specific predicate condition bytes
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PredicateKey {
     /// The predicate type identifier.
