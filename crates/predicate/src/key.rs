@@ -2,65 +2,40 @@
 
 use crate::errors::PredicateResult;
 use crate::type_ids::PredicateTypeId;
-
-/// Decodes predicate key bytes into type ID and condition data.
-///
-/// This function decodes the raw predicate key bytes into their structured components:
-/// the predicate type as a strongly-typed enum and the condition data as a byte slice.
-/// This is the primary way to access predicate key components in a type-safe manner.
-///
-/// For empty predicate keys, returns `PredicateTypeId::NeverAccept` with empty condition data.
-///
-/// # Arguments
-/// * `predicate_bytes` - The raw predicate key bytes in format [type: u8][condition: bytes...]
-///
-/// # Returns
-/// * `Ok((PredicateTypeId, &[u8]))` - The predicate type ID and condition data
-/// * `Err(PredicateError)` - Error if the predicate type is invalid
-pub(crate) fn decode_predicate_key(
-    predicate_bytes: &[u8],
-) -> PredicateResult<(PredicateTypeId, &[u8])> {
-    if predicate_bytes.is_empty() {
-        Ok((PredicateTypeId::NeverAccept, &[]))
-    } else {
-        let type_id = PredicateTypeId::try_from(predicate_bytes[0])?;
-        Ok((type_id, &predicate_bytes[1..]))
-    }
-}
+use crate::verifiers::VerifierType;
 
 /// A predicate key encodes a formal boolean statement with a type identifier.
 ///
 /// As defined in the SPS-predicate-fmt specification, a predicate key consists of:
-/// - `type`: u8 - Indicates which predicate backend to use
-/// - `condition`: bytes - Backend-specific predicate condition data
-///
-/// Each predicate type has its own interpretation of the condition data:
-///
-/// An empty predicate key represents the "never accept" predicate.
+/// - `id`: PredicateTypeId - Indicates which predicate backend to use
+/// - `data`: Vec<u8> - Backend-specific predicate data
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PredicateKey {
-    /// Raw bytes containing the type (first byte) and condition data (remaining bytes).
-    /// If empty, represents the "never accept" predicate type.
+    /// The predicate type identifier.
+    id: PredicateTypeId,
+    /// Backend-specific predicate data.
     data: Vec<u8>,
 }
 
 /// A zero-copy predicate key that borrows from a buffer.
 ///
-/// This is useful for parsing predicate keys without allocating when you already have
-/// the data in a buffer and want to avoid copying it.
+/// This provides efficient parsing of predicate keys without allocation when you already have
+/// the serialized data in memory. It references the same structure as PredicateKey but with
+/// borrowed data instead of owned data.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PredicateKeyBuf<'b> {
-    /// Raw bytes containing the type (first byte) and condition data (remaining bytes).
-    /// If empty, represents the "never accept" predicate type.
+    /// The predicate type identifier.
+    id: PredicateTypeId,
+    /// Backend-specific predicate data.
     data: &'b [u8],
 }
 
 impl PredicateKey {
-    /// Creates a new predicate key from a type identifier and condition data.
+    /// Creates a new predicate key from a type identifier and data.
     ///
     /// # Arguments
-    /// * `predicate_type` - The type of predicate backend to use
-    /// * `condition` - The condition data for this predicate type
+    /// * `id` - The predicate type identifier indicating which backend to use
+    /// * `data` - The backend-specific predicate data
     ///
     /// # Examples
     /// ```
@@ -68,11 +43,18 @@ impl PredicateKey {
     ///
     /// let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test".to_vec());
     /// ```
-    pub fn new(predicate_type: PredicateTypeId, condition: Vec<u8>) -> Self {
-        let mut data = Vec::with_capacity(1 + condition.len());
-        data.push(predicate_type.as_u8());
-        data.extend_from_slice(&condition);
-        Self { data }
+    pub fn new(id: PredicateTypeId, data: Vec<u8>) -> Self {
+        Self { id, data }
+    }
+
+    /// Returns the predicate type identifier.
+    pub fn id(&self) -> PredicateTypeId {
+        self.id
+    }
+
+    /// Returns a reference to the predicate-specific data.
+    pub fn data(&self) -> &[u8] {
+        &self.data
     }
 
     /// Creates a predicate key that always accepts any witness for any claim.
@@ -88,23 +70,20 @@ impl PredicateKey {
     /// This represents an empty/invalid predicate that will reject all verification attempts.
     /// This is equivalent to creating a predicate key from empty bytes.
     pub fn never_accept() -> Self {
-        PredicateKey { data: Vec::new() }
+        PredicateKey {
+            id: PredicateTypeId::NeverAccept,
+            data: Vec::new(),
+        }
     }
 
-    /// Returns the raw predicate key bytes.
+    /// Returns a borrowed view of this predicate key as a `PredicateKeyBuf`.
     ///
-    /// The format is: [type: u8][condition: bytes...]
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.data
-    }
-
-    /// Decodes the predicate key into its type ID and condition data.
-    ///
-    /// # Returns
-    /// * `Ok((PredicateTypeId, &[u8]))` - The predicate type ID and condition data
-    /// * `Err(PredicateError)` - Error if the predicate type is invalid
-    pub fn decode(&self) -> PredicateResult<(PredicateTypeId, &[u8])> {
-        decode_predicate_key(&self.data)
+    /// This provides zero-copy access to the predicate key data.
+    pub fn as_buf_ref(&self) -> PredicateKeyBuf<'_> {
+        PredicateKeyBuf {
+            id: self.id,
+            data: &self.data,
+        }
     }
 
     /// Verifies that a witness satisfies this predicate key for a given claim.
@@ -117,21 +96,14 @@ impl PredicateKey {
     /// * `Ok(())` if verification succeeds
     /// * `Err(PredicateError)` if verification fails or an error occurs
     pub fn verify_claim_witness(&self, claim: &[u8], witness: &[u8]) -> PredicateResult<()> {
-        crate::verify_claim_witness(&self.data, claim, witness)
-    }
-
-    /// Consumes the predicate key and returns the serialized bytes.
-    ///
-    /// The format is: [type: u8][condition: bytes...]
-    pub fn into_bytes(self) -> Vec<u8> {
-        self.data
+        self.as_buf_ref().verify_claim_witness(claim, witness)
     }
 }
 
 impl<'b> PredicateKeyBuf<'b> {
     /// Creates a new predicate key buffer from borrowed bytes with validation.
     ///
-    /// The format is: [type: u8][condition: bytes...]
+    /// The format is: [id: u8][data: bytes...]
     /// An empty byte array represents the "never accept" predicate.
     ///
     /// This method validates that the first byte (if present) represents a valid
@@ -147,28 +119,54 @@ impl<'b> PredicateKeyBuf<'b> {
         // Validate the bytes by attempting to decode them
         if data.is_empty() {
             // Empty is valid (represents NeverAccept)
-            Ok(Self { data })
+            Ok(Self {
+                id: PredicateTypeId::NeverAccept,
+                data: &[],
+            })
         } else {
             // Validate the first byte is a valid predicate type
-            PredicateTypeId::try_from(data[0])?;
-            Ok(Self { data })
+            let id = PredicateTypeId::try_from(data[0])?;
+            Ok(Self {
+                id,
+                data: &data[1..],
+            })
         }
+    }
+
+    /// Returns the predicate type identifier.
+    pub fn id(&self) -> PredicateTypeId {
+        self.id
+    }
+
+    /// Returns the predicate-specific data.
+    pub fn data(&self) -> &[u8] {
+        self.data
     }
 
     /// Returns the raw predicate key bytes.
     ///
-    /// The format is: [type: u8][condition: bytes...]
-    pub fn as_bytes(&self) -> &[u8] {
-        self.data
+    /// The format is: [id: u8][data: bytes...]
+    /// An empty byte array represents the "never accept" predicate.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        // Handle the special case of NeverAccept with empty data
+        if self.id == PredicateTypeId::NeverAccept && self.data.is_empty() {
+            return Vec::new();
+        }
+
+        let mut bytes = Vec::with_capacity(1 + self.data.len());
+        bytes.push(self.id.as_u8());
+        bytes.extend_from_slice(self.data);
+        bytes
     }
 
-    /// Decodes the predicate key into its type ID and condition data.
+    /// Converts this borrowed predicate key into an owned [`PredicateKey`].
     ///
-    /// # Returns
-    /// * `Ok((PredicateTypeId, &[u8]))` - The predicate type ID and condition data
-    /// * `Err(PredicateError)` - Error if the predicate type is invalid
-    pub fn decode(&self) -> PredicateResult<(PredicateTypeId, &[u8])> {
-        decode_predicate_key(self.data)
+    /// This allocates and copies the buffer data.
+    pub fn to_owned(&self) -> PredicateKey {
+        PredicateKey {
+            id: self.id,
+            data: self.data.to_vec(),
+        }
     }
 
     /// Verifies that a witness satisfies this predicate key for a given claim.
@@ -181,19 +179,8 @@ impl<'b> PredicateKeyBuf<'b> {
     /// * `Ok(())` if verification succeeds
     /// * `Err(PredicateError)` if verification fails or an error occurs
     pub fn verify_claim_witness(&self, claim: &[u8], witness: &[u8]) -> PredicateResult<()> {
-        crate::verify_claim_witness(self.data, claim, witness)
-    }
-
-    /// Converts this borrowed predicate key into an owned [`PredicateKey`].
-    ///
-    /// This allocates and copies the buffer data without validation.
-    /// Use [`try_to_owned`] if you need validation.
-    ///
-    /// [`try_to_owned`]: Self::try_to_owned
-    pub fn to_owned(&self) -> PredicateKey {
-        PredicateKey {
-            data: self.data.to_vec(),
-        }
+        let verifier = VerifierType::from(self.id);
+        verifier.verify_claim_witness(self.data(), claim, witness)
     }
 }
 
@@ -206,94 +193,61 @@ mod tests {
     fn test_empty_predicate_key_buf() {
         let empty_buf = PredicateKeyBuf::try_new(&[]).unwrap();
 
-        // Empty predicate key buffer should decode to NeverAccept with empty condition
-        let (type_id, condition) = empty_buf.decode().unwrap();
-        assert_eq!(type_id, PredicateTypeId::NeverAccept);
-        assert_eq!(condition, &[]);
+        // Empty predicate key buffer should decode to NeverAccept with empty data
+        assert_eq!(empty_buf.id(), PredicateTypeId::NeverAccept);
+        assert_eq!(empty_buf.data(), &[]);
 
         // Should be able to convert to owned
         let owned = empty_buf.to_owned();
-        assert_eq!(owned.as_bytes(), &[]);
+        assert_eq!(owned.as_buf_ref().to_bytes(), vec![]); // Fixed: empty bytes for NeverAccept
     }
 
     #[test]
     fn test_non_empty_predicate_key_buf() {
-        let data = [PredicateTypeId::AlwaysAccept.as_u8()]
+        let original_data = [PredicateTypeId::AlwaysAccept.as_u8()]
             .iter()
             .chain(b"test_condition")
             .copied()
             .collect::<Vec<u8>>();
-        let key_buf = PredicateKeyBuf::try_new(&data).unwrap();
+        let key_buf = PredicateKeyBuf::try_new(&original_data).unwrap();
 
-        // Should decode to correct type and condition
-        let (type_id, condition) = key_buf.decode().unwrap();
-        assert_eq!(type_id, PredicateTypeId::AlwaysAccept);
-        assert_eq!(condition, b"test_condition");
+        // Should decode to correct type and data
+        assert_eq!(key_buf.id(), PredicateTypeId::AlwaysAccept);
+        assert_eq!(key_buf.data(), b"test_condition");
 
         // Should return the correct bytes
-        assert_eq!(key_buf.as_bytes(), &data);
+        assert_eq!(key_buf.to_bytes(), original_data);
 
         // Should be able to convert to owned
         let owned = key_buf.to_owned();
-        let (owned_type_id, owned_condition) = owned.decode().unwrap();
-        assert_eq!(owned_type_id, PredicateTypeId::AlwaysAccept);
-        assert_eq!(owned_condition, b"test_condition");
+        assert_eq!(owned.id(), PredicateTypeId::AlwaysAccept);
+        assert_eq!(owned.data(), b"test_condition");
     }
 
     #[test]
     fn test_non_empty_predicate_key() {
         let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test_condition".to_vec());
 
-        // Should decode to correct type and condition
-        let (type_id, condition) = predkey.decode().unwrap();
-        assert_eq!(type_id, PredicateTypeId::AlwaysAccept);
-        assert_eq!(condition, b"test_condition");
+        // Should have correct type and data
+        assert_eq!(predkey.id(), PredicateTypeId::AlwaysAccept);
+        assert_eq!(predkey.data(), b"test_condition");
 
-        // Serialization should work correctly
-        let serialized = predkey.as_bytes();
+        // Serialization should work correctly through buf_ref
+        let serialized = predkey.as_buf_ref().to_bytes();
         assert_eq!(serialized[0], PredicateTypeId::AlwaysAccept.as_u8());
         assert_eq!(&serialized[1..], b"test_condition");
 
         // Round-trip should work through PredicateKeyBuf
-        let restored_buf = PredicateKeyBuf::try_new(serialized).unwrap();
+        let restored_buf = PredicateKeyBuf::try_new(&serialized).unwrap();
         let restored = restored_buf.to_owned();
         assert_eq!(predkey, restored);
     }
 
     #[test]
-    fn test_decode_valid_predicate_types() {
-        // Test NeverAccept (0)
-        let predkey = PredicateKey::new(PredicateTypeId::NeverAccept, b"test".to_vec());
-        let (type_id, condition) = predkey.decode().unwrap();
-        assert_eq!(type_id, PredicateTypeId::NeverAccept);
-        assert_eq!(condition, b"test");
-
-        // Test AlwaysAccept (1)
-        let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"condition".to_vec());
-        let (type_id, condition) = predkey.decode().unwrap();
-        assert_eq!(type_id, PredicateTypeId::AlwaysAccept);
-        assert_eq!(condition, b"condition");
-
-        // Test Bip340Schnorr (10)
-        let predkey = PredicateKey::new(PredicateTypeId::Bip340Schnorr, b"pubkey32".to_vec());
-        let (type_id, condition) = predkey.decode().unwrap();
-        assert_eq!(type_id, PredicateTypeId::Bip340Schnorr);
-        assert_eq!(condition, b"pubkey32");
-
-        // Test Sp1Groth16 (20)
-        let predkey = PredicateKey::new(PredicateTypeId::Sp1Groth16, b"vk_data".to_vec());
-        let (type_id, condition) = predkey.decode().unwrap();
-        assert_eq!(type_id, PredicateTypeId::Sp1Groth16);
-        assert_eq!(condition, b"vk_data");
-    }
-
-    #[test]
-    fn test_decode_invalid_predicate_type() {
-        // Test invalid predicate type (99 is not supported)
-        let invalid_predkey = PredicateKey {
-            data: vec![99, b't', b'e', b's', b't'],
-        };
-        let result = invalid_predkey.decode();
+    fn test_predicate_type_validation() {
+        // Test invalid predicate type (99 is not supported) through PredicateKeyBuf
+        let invalid_bytes = vec![99u8, b't', b'e', b's', b't'];
+        let result = PredicateKeyBuf::try_new(&invalid_bytes);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -302,20 +256,15 @@ mod tests {
             }
             _ => panic!("Expected InvalidPredicateType error"),
         }
-    }
 
-    #[test]
-    fn test_decode_single_byte_predicate() {
-        // Test predicate key with only the type byte, no condition
+        // Test that always_accept() creates correct predicate
         let predkey = PredicateKey::always_accept();
-        let (type_id, condition) = predkey.decode().unwrap();
-
-        assert_eq!(type_id, PredicateTypeId::AlwaysAccept);
-        assert_eq!(condition, &[]);
+        assert_eq!(predkey.id(), PredicateTypeId::AlwaysAccept);
+        assert_eq!(predkey.data(), &[]);
     }
 
     #[test]
-    fn test_validation_through_predicate_key_buf() {
+    fn test_predicate_key_buf_validation() {
         // Valid predicate types should succeed
         assert!(PredicateKeyBuf::try_new(&[PredicateTypeId::AlwaysAccept.as_u8()]).is_ok());
         assert!(PredicateKeyBuf::try_new(&[PredicateTypeId::Bip340Schnorr.as_u8(), 0x01]).is_ok());
@@ -323,22 +272,35 @@ mod tests {
         // Empty bytes should succeed (NeverAccept)
         assert!(PredicateKeyBuf::try_new(&[]).is_ok());
 
-        // Invalid predicate type should fail
+        // Invalid predicate types should fail
         assert!(PredicateKeyBuf::try_new(&[99]).is_err());
         assert!(PredicateKeyBuf::try_new(&[255, 0x01, 0x02]).is_err());
-    }
 
-    #[test]
-    fn test_predicate_key_buf_validation_flow() {
-        // Valid data should work through try_new
+        // Valid data should work through try_new and convert properly
         let valid_data = [PredicateTypeId::AlwaysAccept.as_u8(), 0x01, 0x02];
         let key_buf = PredicateKeyBuf::try_new(&valid_data).unwrap();
         let owned = key_buf.to_owned();
-        let (type_id, _) = owned.decode().unwrap();
-        assert_eq!(type_id, PredicateTypeId::AlwaysAccept);
+        assert_eq!(owned.id(), PredicateTypeId::AlwaysAccept);
+    }
 
-        // Invalid data should fail at try_new step
-        let invalid_data = [99u8, 0x01, 0x02];
-        assert!(PredicateKeyBuf::try_new(&invalid_data).is_err());
+    #[test]
+    fn test_conversions_and_round_trips() {
+        // Test conversion with data
+        let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test_data".to_vec());
+        let key_buf = predkey.as_buf_ref();
+
+        // Should have same type and data
+        assert_eq!(key_buf.id(), predkey.id());
+        assert_eq!(key_buf.data(), predkey.data());
+
+        // Test round-trip conversion
+        let back_to_owned = key_buf.to_owned();
+        assert_eq!(predkey, back_to_owned);
+
+        // Test never_accept special case
+        let never_accept = PredicateKey::never_accept();
+        assert_eq!(never_accept.id(), PredicateTypeId::NeverAccept);
+        assert_eq!(never_accept.data(), &[]);
+        assert_eq!(never_accept.as_buf_ref().to_bytes(), vec![]);
     }
 }
