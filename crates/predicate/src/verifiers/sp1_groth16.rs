@@ -37,10 +37,10 @@ use crate::verifier::PredicateVerifier;
 pub(crate) struct Sp1Groth16VerifierImpl;
 
 impl PredicateVerifier for Sp1Groth16VerifierImpl {
-    type Predicate = Groth16VerifyingKey;
+    type Condition = Groth16VerifyingKey;
     type Witness = Groth16Proof;
 
-    fn parse_condition(&self, condition: &[u8]) -> Result<Self::Predicate> {
+    fn parse_condition(&self, condition: &[u8]) -> Result<Self::Condition> {
         // Parse condition bytes as SP1Groth16Verifier (contains program ID + verifying key)
         borsh::from_slice(condition).map_err(|e| PredicateError::PredicateParsingFailed {
             id: PredicateTypeId::Sp1Groth16,
@@ -60,7 +60,7 @@ impl PredicateVerifier for Sp1Groth16VerifierImpl {
 
     fn verify_inner(
         &self,
-        program: &Self::Predicate,
+        program: &Self::Condition,
         claim: &[u8],
         proof: &Self::Witness,
     ) -> Result<()> {

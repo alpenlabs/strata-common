@@ -17,10 +17,10 @@ use crate::verifier::PredicateVerifier;
 pub(crate) struct SchnorrVerifier;
 
 impl PredicateVerifier for SchnorrVerifier {
-    type Predicate = VerifyingKey;
+    type Condition = VerifyingKey;
     type Witness = Signature;
 
-    fn parse_condition(&self, condition: &[u8]) -> Result<Self::Predicate> {
+    fn parse_condition(&self, condition: &[u8]) -> Result<Self::Condition> {
         // BIP-340 requires exactly 32 bytes for x-only public keys
         if condition.len() != 32 {
             return Err(PredicateError::PredicateParsingFailed {
@@ -52,7 +52,7 @@ impl PredicateVerifier for SchnorrVerifier {
 
     fn verify_inner(
         &self,
-        pubkey: &Self::Predicate,
+        pubkey: &Self::Condition,
         claim: &[u8],
         signature: &Self::Witness,
     ) -> Result<()> {

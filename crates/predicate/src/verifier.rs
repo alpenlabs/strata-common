@@ -16,14 +16,14 @@ use crate::errors::Result;
 pub(crate) trait PredicateVerifier {
     /// The predicate condition type for this implementation.
     /// This can be a structured type that parses the raw condition bytes.
-    type Predicate;
+    type Condition;
 
     /// The witness type for this implementation.
     /// This can be a structured type that parses the raw witness bytes.
     type Witness;
 
     /// Parses raw condition bytes into the structured predicate type.
-    fn parse_condition(&self, condition: &[u8]) -> Result<Self::Predicate>;
+    fn parse_condition(&self, condition: &[u8]) -> Result<Self::Condition>;
 
     /// Parses raw witness bytes into the structured witness type.
     fn parse_witness(&self, witness: &[u8]) -> Result<Self::Witness>;
@@ -31,7 +31,7 @@ pub(crate) trait PredicateVerifier {
     /// Internal verification method that takes parsed predicate and witness types.
     fn verify_inner(
         &self,
-        predicate: &Self::Predicate,
+        predicate: &Self::Condition,
         claim: &[u8],
         witness: &Self::Witness,
     ) -> Result<()>;
