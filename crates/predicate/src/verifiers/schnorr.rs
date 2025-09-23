@@ -7,9 +7,9 @@ use crate::constants::PredicateTypeId;
 use crate::errors::{PredicateError, Result};
 use crate::verifier::PredicateVerifier;
 
-/// Implementation for Schnorr BIP-340 signatures.
+/// Schnorr BIP-340 signature verifier.
 ///
-/// This implementation provides:
+/// This verifier provides:
 /// - condition: 32-byte x-only public key
 /// - claim: message to be signed (serialized as claim bundle)
 /// - witness: 64-byte Schnorr signature

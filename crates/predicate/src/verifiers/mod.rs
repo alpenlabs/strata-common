@@ -13,37 +13,37 @@ use crate::constants::PredicateTypeId;
 use crate::errors::PredicateError;
 use crate::verifier::PredicateVerifier;
 
-/// Enum representing all supported predicate types and their implementations.
+/// Enum representing all supported verifier types and their implementations.
 ///
 /// This enum serves as a dispatch mechanism to route verification calls to the
 /// appropriate predicate-specific implementation based on the predicate type.
-/// Each variant contains the implementation for a specific predicate backend.
+/// Each variant contains the implementation for a specific verifier backend.
 #[derive(Debug)]
-pub(crate) enum PredicateImpl {
-    /// Never accept predicate implementation (always fails verification).
+pub(crate) enum VerifierType {
+    /// Never accept verifier (always fails verification).
     NeverAccept,
-    /// Always accept predicate implementation (for testing and placeholders).
+    /// Always accept verifier (for testing and placeholders).
     AlwaysAccept,
-    /// Schnorr BIP-340 signature predicate implementation.
+    /// Schnorr BIP-340 signature verifier.
     Schnorr(SchnorrVerifier),
-    /// SP1 Groth16 zero-knowledge proof verifier implementation.
+    /// SP1 Groth16 zero-knowledge proof verifier.
     Sp1Groth16Verifier(Sp1Groth16VerifierImpl),
 }
 
-impl PredicateImpl {
-    /// Creates a predicate implementation instance from a predicate type ID.
+impl VerifierType {
+    /// Creates a verifier instance from a predicate type ID.
     ///
     /// # Arguments
     /// * `predicate_type_id` - The predicate type identifier
     ///
     /// # Returns
-    /// * The corresponding predicate implementation
+    /// * The corresponding verifier implementation
     pub(crate) fn from(predicate_type_id: PredicateTypeId) -> Self {
         match predicate_type_id {
-            PredicateTypeId::NeverAccept => PredicateImpl::NeverAccept,
-            PredicateTypeId::AlwaysAccept => PredicateImpl::AlwaysAccept,
-            PredicateTypeId::Bip340Schnorr => PredicateImpl::Schnorr(SchnorrVerifier),
-            PredicateTypeId::Sp1Groth16 => PredicateImpl::Sp1Groth16Verifier(Sp1Groth16VerifierImpl),
+            PredicateTypeId::NeverAccept => VerifierType::NeverAccept,
+            PredicateTypeId::AlwaysAccept => VerifierType::AlwaysAccept,
+            PredicateTypeId::Bip340Schnorr => VerifierType::Schnorr(SchnorrVerifier),
+            PredicateTypeId::Sp1Groth16 => VerifierType::Sp1Groth16Verifier(Sp1Groth16VerifierImpl),
         }
     }
 
@@ -66,13 +66,13 @@ impl PredicateImpl {
         witness: &[u8],
     ) -> Result<(), PredicateError> {
         match self {
-            PredicateImpl::NeverAccept => Err(PredicateError::VerificationFailed {
+            VerifierType::NeverAccept => Err(PredicateError::VerificationFailed {
                 id: PredicateTypeId::NeverAccept,
                 reason: "never accept".to_string(),
             }),
-            PredicateImpl::AlwaysAccept => Ok(()),
-            PredicateImpl::Schnorr(schnorr) => schnorr.verify(condition, claim, witness),
-            PredicateImpl::Sp1Groth16Verifier(sp1) => sp1.verify(condition, claim, witness),
+            VerifierType::AlwaysAccept => Ok(()),
+            VerifierType::Schnorr(schnorr) => schnorr.verify(condition, claim, witness),
+            VerifierType::Sp1Groth16Verifier(sp1) => sp1.verify(condition, claim, witness),
         }
     }
 }

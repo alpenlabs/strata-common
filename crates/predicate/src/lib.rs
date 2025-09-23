@@ -107,11 +107,14 @@ mod verifiers;
 pub use key::{AsPredicateKey, PredicateKey, PredicateKeyBuf};
 
 // Re-export predicate type constants and enum for convenience
-pub use constants::PredicateTypeId;
+pub use constants::{
+    ALWAYS_ACCEPT_PREDICATE_TYPE, BIP340_SCHNORR_PREDICATE_TYPE, NEVER_ACCEPT_PREDICATE_TYPE,
+    PredicateTypeId, SP1_GROTH16_PREDICATE_TYPE,
+};
 
 // Internal imports for the verify_claim_witness function
 use errors::{PredicateError, Result};
-use verifiers::PredicateImpl;
+use verifiers::VerifierType;
 
 /// Verifies that a witness satisfies a predicate key for a given claim.
 ///
@@ -131,6 +134,6 @@ where
 {
     let predicate_type_id = PredicateTypeId::try_from(predicate.predicate_type())
         .map_err(PredicateError::InvalidPredicateType)?;
-    let predicate_impl = PredicateImpl::from(predicate_type_id);
+    let predicate_impl = VerifierType::from(predicate_type_id);
     predicate_impl.verify_claim_witness(predicate.condition(), claim, witness)
 }

@@ -1,6 +1,6 @@
 //! Predicate verification trait definition.
 //!
-//! This module provides the [`PredicateImpl`] trait that defines how different predicate
+//! This module provides the [`PredicateVerifier`] trait that defines how different predicate
 //! types parse their conditions and witnesses, and verify claims, as specified in
 //! SPS-predicate-fmt.
 //!
