@@ -113,7 +113,7 @@ pub use constants::{
 };
 
 // Internal imports for the verify_claim_witness function
-use errors::{PredicateError, Result};
+use errors::Result;
 use verifiers::VerifierType;
 
 /// Verifies that a witness satisfies a predicate key for a given claim.
@@ -132,8 +132,7 @@ pub fn verify_claim_witness<P>(predicate: &P, claim: &[u8], witness: &[u8]) -> R
 where
     P: AsPredicateKey + ?Sized,
 {
-    let predicate_type_id = PredicateTypeId::try_from(predicate.predicate_type())
-        .map_err(PredicateError::InvalidPredicateType)?;
-    let predicate_impl = VerifierType::from(predicate_type_id);
-    predicate_impl.verify_claim_witness(predicate.condition(), claim, witness)
+    let (type_id, condition) = predicate.decode()?;
+    let verifier = VerifierType::from(type_id);
+    verifier.verify_claim_witness(condition, claim, witness)
 }

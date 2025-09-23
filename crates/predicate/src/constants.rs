@@ -1,6 +1,7 @@
 //! Constants for predicate types and values.
 
 use core::fmt;
+use crate::errors::PredicateError;
 
 /// Predicate type identifiers.
 #[repr(u8)]
@@ -30,7 +31,7 @@ impl From<PredicateTypeId> for u8 {
 }
 
 impl TryFrom<u8> for PredicateTypeId {
-    type Error = u8;
+    type Error = crate::errors::PredicateError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -38,7 +39,7 @@ impl TryFrom<u8> for PredicateTypeId {
             1 => Ok(PredicateTypeId::AlwaysAccept),
             10 => Ok(PredicateTypeId::Bip340Schnorr),
             20 => Ok(PredicateTypeId::Sp1Groth16),
-            invalid => Err(invalid),
+            invalid => Err(PredicateError::InvalidPredicateType(invalid)),
         }
     }
 }

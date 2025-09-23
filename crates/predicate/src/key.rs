@@ -1,6 +1,6 @@
 //! Predicate key implementation and type registry.
 
-use crate::constants::NEVER_ACCEPT_PREDICATE_TYPE;
+use crate::constants::PredicateTypeId;
 use crate::errors::Result;
 
 /// A trait for accessing predicate key data regardless of whether it's owned or borrowed.
@@ -13,26 +13,41 @@ pub trait AsPredicateKey {
     /// The format is: [type: u8][condition: bytes...]
     fn as_bytes(&self) -> &[u8];
 
-    /// Returns the predicate type identifier.
+    /// Decodes the predicate key into its type ID and condition data.
     ///
-    /// If the data is empty, returns [`NEVER_ACCEPT_PREDICATE_TYPE`].
-    /// Otherwise, returns the first byte as the predicate type.
-    fn predicate_type(&self) -> u8 {
+    /// This method decodes the raw predicate key bytes into their structured components:
+    /// the predicate type as a strongly-typed enum and the condition data as a byte slice.
+    /// This is the primary way to access predicate key components in a type-safe manner.
+    ///
+    /// For empty predicate keys, returns `PredicateTypeId::NeverAccept` with empty condition data.
+    ///
+    /// # Returns
+    /// * `Ok((PredicateTypeId, &[u8]))` - The predicate type ID and condition data
+    /// * `Err(u8)` - The invalid predicate type byte if decoding fails
+    ///
+    /// # Examples
+    /// ```
+    /// use strata_predicate::{AsPredicateKey, PredicateKey, PredicateTypeId, ALWAYS_ACCEPT_PREDICATE_TYPE};
+    ///
+    /// let predkey = PredicateKey::new(ALWAYS_ACCEPT_PREDICATE_TYPE, b"test".to_vec());
+    /// let (type_id, condition) = predkey.decode().unwrap();
+    /// assert_eq!(type_id, PredicateTypeId::AlwaysAccept);
+    /// assert_eq!(condition, b"test");
+    ///
+    /// // Empty predicate keys return NeverAccept
+    /// let empty = PredicateKey::from_bytes(&[]);
+    /// let (type_id, condition) = empty.decode().unwrap();
+    /// assert_eq!(type_id, PredicateTypeId::NeverAccept);
+    /// assert_eq!(condition, &[]);
+    /// ```
+    fn decode(&self) -> Result<(PredicateTypeId, &[u8])> {
         let bytes = self.as_bytes();
         if bytes.is_empty() {
-            NEVER_ACCEPT_PREDICATE_TYPE
+            Ok((PredicateTypeId::NeverAccept, &[]))
         } else {
-            bytes[0]
+            let type_id = PredicateTypeId::try_from(bytes[0])?;
+            Ok((type_id, &bytes[1..]))
         }
-    }
-
-    /// Returns the condition data for this predicate key.
-    ///
-    /// If the data is empty, returns an empty slice.
-    /// Otherwise, returns all bytes except the first (type) byte.
-    fn condition(&self) -> &[u8] {
-        let bytes = self.as_bytes();
-        if bytes.is_empty() { &[] } else { &bytes[1..] }
     }
 
     /// Verifies that a witness satisfies this predicate key for a given claim.
@@ -156,17 +171,19 @@ impl<'b> AsPredicateKey for PredicateKeyBuf<'b> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constants::ALWAYS_ACCEPT_PREDICATE_TYPE;
+    use crate::constants::{
+        ALWAYS_ACCEPT_PREDICATE_TYPE, BIP340_SCHNORR_PREDICATE_TYPE, NEVER_ACCEPT_PREDICATE_TYPE,
+        SP1_GROTH16_PREDICATE_TYPE,
+    };
 
     #[test]
     fn test_empty_predicate_key() {
         let empty_predkey = PredicateKey::from_bytes(&[]);
 
-        // Empty predicate key should return NEVER_ACCEPT_PREDICATE_TYPE
-        assert_eq!(empty_predkey.predicate_type(), NEVER_ACCEPT_PREDICATE_TYPE);
-
-        // Condition should be empty
-        assert_eq!(empty_predkey.condition(), &[]);
+        // Empty predicate key should decode to NeverAccept with empty condition
+        let (type_id, condition) = empty_predkey.decode().unwrap();
+        assert_eq!(type_id, PredicateTypeId::NeverAccept);
+        assert_eq!(condition, &[]);
 
         // Serialization should work
         assert_eq!(empty_predkey.as_bytes(), vec![]);
@@ -176,11 +193,10 @@ mod tests {
     fn test_non_empty_predicate_key() {
         let predkey = PredicateKey::new(ALWAYS_ACCEPT_PREDICATE_TYPE, b"test_condition".to_vec());
 
-        // Should return the correct predicate type
-        assert_eq!(predkey.predicate_type(), ALWAYS_ACCEPT_PREDICATE_TYPE);
-
-        // Should return the correct condition
-        assert_eq!(predkey.condition(), b"test_condition");
+        // Should decode to correct type and condition
+        let (type_id, condition) = predkey.decode().unwrap();
+        assert_eq!(type_id, PredicateTypeId::AlwaysAccept);
+        assert_eq!(condition, b"test_condition");
 
         // Serialization should work correctly
         let serialized = predkey.as_bytes();
@@ -196,11 +212,10 @@ mod tests {
     fn test_empty_predicate_key_buf() {
         let empty_buf = PredicateKeyBuf::new(&[]);
 
-        // Empty predicate key buffer should return NEVER_ACCEPT_PREDICATE_TYPE
-        assert_eq!(empty_buf.predicate_type(), NEVER_ACCEPT_PREDICATE_TYPE);
-
-        // Condition should be empty
-        assert_eq!(empty_buf.condition(), &[]);
+        // Empty predicate key buffer should decode to NeverAccept with empty condition
+        let (type_id, condition) = empty_buf.decode().unwrap();
+        assert_eq!(type_id, PredicateTypeId::NeverAccept);
+        assert_eq!(condition, &[]);
 
         // Should be able to convert to owned
         let owned = empty_buf.to_owned();
@@ -216,28 +231,70 @@ mod tests {
             .collect::<Vec<u8>>();
         let key_buf = PredicateKeyBuf::new(&data);
 
-        // Should return the correct predicate type
-        assert_eq!(key_buf.predicate_type(), ALWAYS_ACCEPT_PREDICATE_TYPE);
-
-        // Should return the correct condition
-        assert_eq!(key_buf.condition(), b"test_condition");
+        // Should decode to correct type and condition
+        let (type_id, condition) = key_buf.decode().unwrap();
+        assert_eq!(type_id, PredicateTypeId::AlwaysAccept);
+        assert_eq!(condition, b"test_condition");
 
         // Should return the correct bytes
         assert_eq!(key_buf.as_bytes(), &data);
 
         // Should be able to convert to owned
         let owned = key_buf.to_owned();
-        assert_eq!(owned.predicate_type(), ALWAYS_ACCEPT_PREDICATE_TYPE);
-        assert_eq!(owned.condition(), b"test_condition");
+        let (owned_type_id, owned_condition) = owned.decode().unwrap();
+        assert_eq!(owned_type_id, PredicateTypeId::AlwaysAccept);
+        assert_eq!(owned_condition, b"test_condition");
     }
 
     #[test]
-    fn test_predicate_key_buf_lifetime() {
-        let data = vec![ALWAYS_ACCEPT_PREDICATE_TYPE, 42, 43, 44];
+    fn test_decode_valid_predicate_types() {
+        // Test NeverAccept (0)
+        let predkey = PredicateKey::new(NEVER_ACCEPT_PREDICATE_TYPE, b"test".to_vec());
+        let (type_id, condition) = predkey.decode().unwrap();
+        assert_eq!(type_id, PredicateTypeId::NeverAccept);
+        assert_eq!(condition, b"test");
 
-        // This should work - the buffer outlives the PredicateKeyBuf
-        let key_buf = PredicateKeyBuf::new(&data);
-        assert_eq!(key_buf.predicate_type(), ALWAYS_ACCEPT_PREDICATE_TYPE);
-        assert_eq!(key_buf.condition(), &[42, 43, 44]);
+        // Test AlwaysAccept (1)
+        let predkey = PredicateKey::new(ALWAYS_ACCEPT_PREDICATE_TYPE, b"condition".to_vec());
+        let (type_id, condition) = predkey.decode().unwrap();
+        assert_eq!(type_id, PredicateTypeId::AlwaysAccept);
+        assert_eq!(condition, b"condition");
+
+        // Test Bip340Schnorr (10)
+        let predkey = PredicateKey::new(BIP340_SCHNORR_PREDICATE_TYPE, b"pubkey32".to_vec());
+        let (type_id, condition) = predkey.decode().unwrap();
+        assert_eq!(type_id, PredicateTypeId::Bip340Schnorr);
+        assert_eq!(condition, b"pubkey32");
+
+        // Test Sp1Groth16 (20)
+        let predkey = PredicateKey::new(SP1_GROTH16_PREDICATE_TYPE, b"vk_data".to_vec());
+        let (type_id, condition) = predkey.decode().unwrap();
+        assert_eq!(type_id, PredicateTypeId::Sp1Groth16);
+        assert_eq!(condition, b"vk_data");
+    }
+
+    #[test]
+    fn test_decode_invalid_predicate_type() {
+        // Test invalid predicate type (99 is not supported)
+        let invalid_predkey = PredicateKey::new(99, b"test".to_vec());
+        let result = invalid_predkey.decode();
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            crate::errors::PredicateError::InvalidPredicateType(invalid_type) => {
+                assert_eq!(invalid_type, 99);
+            }
+            _ => panic!("Expected InvalidPredicateType error"),
+        }
+    }
+
+    #[test]
+    fn test_decode_single_byte_predicate() {
+        // Test predicate key with only the type byte, no condition
+        let predkey = PredicateKey::from_bytes(&[ALWAYS_ACCEPT_PREDICATE_TYPE]);
+        let (type_id, condition) = predkey.decode().unwrap();
+
+        assert_eq!(type_id, PredicateTypeId::AlwaysAccept);
+        assert_eq!(condition, &[]);
     }
 }
