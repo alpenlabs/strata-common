@@ -1,5 +1,10 @@
 [workspace]
-members = ["crates/codec", "crates/l1proto/txfmt", "crates/msg-fmt", "crates/predicate"]
+members = [
+  "crates/codec",
+  "crates/l1proto/txfmt",
+  "crates/msg-fmt",
+  "crates/predicate",
+]
 
 resolver = "3"
 
