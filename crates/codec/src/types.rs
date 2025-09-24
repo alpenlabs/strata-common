@@ -108,7 +108,7 @@ macro_rules! impl_int_codec {
             }
 
             fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-                Ok(enc.write_buf(&self.to_be_bytes())?)
+                enc.write_buf(&self.to_be_bytes())
             }
         }
     };
