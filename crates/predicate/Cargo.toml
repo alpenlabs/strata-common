@@ -1,0 +1,20 @@
+[package]
+name = "strata-predicate"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+borsh.workspace = true
+k256 = { version = "0.13.4", features = ["schnorr"] }
+signature = "2.2"
+thiserror.workspace = true
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", branch = "feat/expose-types" }
+
+[dev-dependencies]
+hex.workspace = true
+rand.workspace = true
+sp1-verifier = "5.2.1"
+zkaleido = { git = "https://github.com/alpenlabs/zkaleido", branch = "feat/expose-types" }

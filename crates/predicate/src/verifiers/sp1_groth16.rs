@@ -1,0 +1,210 @@
+//! SP1 Groth16 proof verification implementation.
+//!
+//! This module provides predicate verification for SP1-generated Groth16 proofs
+//! using types and verification functions from the `zkaleido-sp1-groth16-verifier` crate.
+
+use zkaleido_sp1_groth16_verifier::{
+    Groth16Proof, Groth16VerifyingKey,
+    hashes::{blake3_to_fr, sha256_to_fr},
+    verify_sp1_groth16_algebraic,
+};
+
+use crate::errors::{PredicateError, PredicateResult};
+use crate::type_ids::PredicateTypeId;
+use crate::verifier::PredicateVerifier;
+
+/// SP1 Groth16 proof verifier.
+///
+/// This verifier verifies SP1-generated Groth16 proofs using the
+/// `zkaleido-sp1-groth16-verifier` crate. The verifier expects:
+///
+/// ## Predicate Format
+/// - **Condition**: Borsh-serialized `SP1Groth16Verifier` from zkaleido
+/// - **Witness**: Groth16 proof bytes
+/// - **Claim**: Public values to be hashed and verified
+///
+/// ## Verification Process
+/// 1. Parses condition as `Groth16VerifyingKey` containing program ID and verifying key
+/// 2. Parses witness as `Groth16Proof` using gnark format
+/// 3. Attempts verification with SHA-256 hash of claim as public input
+/// 4. Falls back to Blake3 hash if SHA-256 verification fails (for compatibility)
+/// 5. Returns success if either hash method validates the proof
+///
+/// SP1's Groth16 circuit expects two public inputs:
+/// - `program_id`: Identifier of the SP1 program (embedded in verifying key)
+/// - `hash(public_values)`: SHA-256 or Blake3 hash of the claim data
+#[derive(Debug, Default)]
+pub(crate) struct Sp1Groth16Verifier;
+
+impl PredicateVerifier for Sp1Groth16Verifier {
+    type Condition = Groth16VerifyingKey;
+    type Witness = Groth16Proof;
+
+    fn parse_condition(&self, condition: &[u8]) -> PredicateResult<Self::Condition> {
+        // Parse condition bytes as SP1Groth16Verifier (contains program ID + verifying key)
+        borsh::from_slice(condition).map_err(|e| PredicateError::PredicateParsingFailed {
+            id: PredicateTypeId::Sp1Groth16,
+            reason: format!("failed to parse SP1 Groth16 verifying key from condition data: {e}",),
+        })
+    }
+
+    fn parse_witness(&self, witness: &[u8]) -> PredicateResult<Self::Witness> {
+        // Parse witness bytes as Groth16Proof using zkaleido's loader
+        Groth16Proof::load_from_gnark_bytes(witness).map_err(|e| {
+            PredicateError::WitnessParsingFailed {
+                id: PredicateTypeId::Sp1Groth16,
+                reason: format!("failed to parse Groth16 proof from witness data: {e}"),
+            }
+        })
+    }
+
+    fn verify_inner(
+        &self,
+        program: &Self::Condition,
+        claim: &[u8],
+        proof: &Self::Witness,
+    ) -> PredicateResult<()> {
+        // SP1's Groth16 circuit expects two public inputs:
+        // 1. program_id (embedded in the verifying key)
+        // 2. hash(public_values) (computed from claim)
+
+        // Try SHA-256 hash first as it's the default for SP1
+        let fr_sha2 = sha256_to_fr(claim).map_err(|e| PredicateError::VerificationFailed {
+            id: PredicateTypeId::Sp1Groth16,
+            reason: format!("failed to compute SHA-256 hash of claim: {e}"),
+        })?;
+
+        // Attempt algebraic verification using zkaleido's verifier with SHA-256 hash
+        if verify_sp1_groth16_algebraic(program, proof, &fr_sha2).is_ok() {
+            return Ok(());
+        }
+
+        // Fallback: try Blake3 hash for compatibility with different SP1 configurations
+        let fr_blake3 = blake3_to_fr(claim).map_err(|e| PredicateError::VerificationFailed {
+            id: PredicateTypeId::Sp1Groth16,
+            reason: format!("failed to compute Blake3 hash of claim: {e}"),
+        })?;
+
+        // Retry verification with Blake3 hash using zkaleido's verifier
+        verify_sp1_groth16_algebraic(program, proof, &fr_blake3).map_err(|e| {
+            PredicateError::VerificationFailed {
+                id: PredicateTypeId::Sp1Groth16,
+                reason: format!("SP1 Groth16 proof verification failed with both SHA-256 and Blake3 hashing: {e}"),
+            }
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{
+        assert_predicate_parsing_failed, assert_verification_failed, assert_witness_parsing_failed,
+    };
+    use sp1_verifier::GROTH16_VK_BYTES;
+    use zkaleido::ProofReceiptWithMetadata;
+    use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
+
+    fn load_predicate_claim_witness() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        let program_id_hex = "00eb7fd5709e4b833db86054ba4acca001a3aa5f18b7e7d0d96d0f1d340b4e34";
+        let program_id: [u8; 32] = hex::decode(program_id_hex).unwrap().try_into().unwrap();
+
+        let verifier = SP1Groth16Verifier::load(&GROTH16_VK_BYTES, program_id).unwrap();
+        let proof_file = format!("data/proofs/fibonacci_sp1_0x{program_id_hex}.proof");
+        let receipt = ProofReceiptWithMetadata::load(proof_file)
+            .unwrap()
+            .receipt()
+            .clone();
+
+        let predicate = borsh::to_vec(&verifier.vk).unwrap();
+        let claim = receipt.public_values().as_bytes().to_vec();
+        let witness = receipt.proof().as_bytes()[4..].to_vec();
+
+        (predicate, claim, witness)
+    }
+
+    #[test]
+    fn test_sp1_groth16_predicate_verification() {
+        let (predicate, claim, witness) = load_predicate_claim_witness();
+        let verifier = Sp1Groth16Verifier;
+        let res = verifier.verify(&predicate, &claim, &witness);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_sp1_groth16_invalid_predicate() {
+        let (predicate, claim, witness) = load_predicate_claim_witness();
+        let verifier = Sp1Groth16Verifier;
+
+        // Test with larger predicates
+        let mut larger_predicate = predicate.clone();
+        larger_predicate.extend_from_slice(&[0u8; 10]);
+        let res = verifier.verify(&larger_predicate, &claim, &witness);
+        assert_predicate_parsing_failed(res, PredicateTypeId::Sp1Groth16);
+
+        let mut larger_predicate = predicate.clone();
+        larger_predicate.extend_from_slice(&[0u8; 1]);
+        let res = verifier.verify(&larger_predicate, &claim, &witness);
+        assert_predicate_parsing_failed(res, PredicateTypeId::Sp1Groth16);
+
+        // Test with shorter predicate
+        let shorter_predicate = &predicate[..predicate.len() - 5];
+        let res = verifier.verify(shorter_predicate, &claim, &witness);
+        assert_predicate_parsing_failed(res, PredicateTypeId::Sp1Groth16);
+
+        let shorter_predicate = &predicate[1..];
+        let res = verifier.verify(shorter_predicate, &claim, &witness);
+        assert_predicate_parsing_failed(res, PredicateTypeId::Sp1Groth16);
+
+        let mut larger_predicate = predicate.clone();
+        larger_predicate.extend_from_slice(&[0u8; 10]);
+        let same_size_predicate = &larger_predicate[10..];
+        assert_eq!(same_size_predicate.len(), predicate.len());
+        let res = verifier.verify(same_size_predicate, &claim, &witness);
+        assert_predicate_parsing_failed(res, PredicateTypeId::Sp1Groth16);
+    }
+
+    #[test]
+    fn test_sp1_groth16_invalid_witness() {
+        let (predicate, claim, mut witness) = load_predicate_claim_witness();
+        let verifier = Sp1Groth16Verifier;
+
+        // Test with larger witness
+        let mut larger_witness = witness.clone();
+        larger_witness.extend_from_slice(&[0u8; 10]);
+        let res = verifier.verify(&predicate, &claim, &larger_witness);
+        assert_witness_parsing_failed(res, PredicateTypeId::Sp1Groth16);
+
+        // Test with shorter witness
+        let shorter_witness = &witness[..witness.len() - 5];
+        let res = verifier.verify(&predicate, &claim, shorter_witness);
+        assert_witness_parsing_failed(res, PredicateTypeId::Sp1Groth16);
+
+        // Test with modified bytes inside witness
+        witness[0] = witness[0].wrapping_add(1);
+        let res = verifier.verify(&predicate, &claim, &witness);
+        assert_witness_parsing_failed(res, PredicateTypeId::Sp1Groth16);
+    }
+
+    #[test]
+    fn test_sp1_groth16_invalid_claim() {
+        let (predicate, mut claim, witness) = load_predicate_claim_witness();
+        let verifier = Sp1Groth16Verifier;
+
+        // Test with larger claim
+        let mut larger_claim = claim.clone();
+        larger_claim.extend_from_slice(&[0u8; 10]);
+        let res = verifier.verify(&predicate, &larger_claim, &witness);
+        assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
+
+        // Test with shorter claim
+        let shorter_claim = &claim[..claim.len() - 2];
+        let res = verifier.verify(&predicate, shorter_claim, &witness);
+        assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
+
+        // Test with modified bytes inside claim
+        claim[0] = claim[0].wrapping_add(1);
+        let res = verifier.verify(&predicate, &claim, &witness);
+        assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
+    }
+}
