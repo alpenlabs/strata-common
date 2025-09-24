@@ -97,7 +97,6 @@ pub use type_ids::PredicateTypeId;
 
 // Internal imports for the verify_claim_witness function
 use errors::PredicateResult;
-use verifiers::VerifierType;
 
 /// Verifies that a witness satisfies a predicate key for a given claim.
 ///
@@ -117,6 +116,5 @@ pub fn verify_claim_witness(
     witness: &[u8],
 ) -> PredicateResult<()> {
     let predicate = PredicateKeyBuf::try_from(predicate_bytes)?;
-    let verifier = VerifierType::from(predicate.id());
-    verifier.verify_claim_witness(predicate.condition(), claim, witness)
+    predicate.verify_claim_witness(claim, witness)
 }
