@@ -30,7 +30,6 @@ macro_rules! impl_type_flat_struct {
         }
     } => {
         $( #[ $sattr ] )*
-        #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
         $v struct $name {
             $(
                 $( #[ $fattr ] )*

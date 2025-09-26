@@ -27,9 +27,7 @@ pub trait Encoder {
 /// Impl for byte arrays.
 impl<const N: usize> Codec for [u8; N] {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let mut buf = [0; N];
-        dec.read_buf(&mut buf)?;
-        Ok(buf)
+        dec.read_arr::<N>()
     }
 
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
