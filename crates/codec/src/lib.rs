@@ -1,4 +1,4 @@
-//! Special purpose binary encoding format.
+//! Special purpose binary encoding framework.
 
 mod errors;
 pub use errors::CodecError;
