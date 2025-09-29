@@ -24,6 +24,14 @@ pub trait Encoder {
     fn write_buf(&mut self, buf: &[u8]) -> Result<(), CodecError>;
 }
 
+/// Encoding to a vec buffer.
+impl Encoder for Vec<u8> {
+    fn write_buf(&mut self, buf: &[u8]) -> Result<(), CodecError> {
+        self.extend_from_slice(buf);
+        Ok(())
+    }
+}
+
 /// Impl for byte arrays.
 impl<const N: usize> Codec for [u8; N] {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
@@ -35,68 +43,22 @@ impl<const N: usize> Codec for [u8; N] {
     }
 }
 
-/// Decoder for an arbitrary [`AsRef`] on a byte slice.
-#[derive(Debug)]
-pub struct BufDecoder<B> {
-    buf: B,
-    at: usize,
-}
-
-impl<B: AsRef<[u8]>> BufDecoder<B> {
-    /// Constructs a new instance.
-    pub fn new(buf: B) -> Self {
-        Self { buf, at: 0 }
-    }
-
-    /// Returns the length of the underlying buffer.
-    pub fn len(&self) -> usize {
-        self.buf.as_ref().len()
-    }
-
-    /// Returns if the underlying buffer is empty.
-    pub fn is_empty(&self) -> bool {
-        self.buf.as_ref().is_empty()
-    }
-
-    /// Returns the total number of remaining bytes that can be read.
-    pub fn remaining(&self) -> usize {
-        self.len() - self.at
-    }
-
-    /// Returns the slice of the remaining unread bytes, which might be empty.
-    fn rest(&self) -> &[u8] {
-        &self.buf.as_ref()[self.at..]
-    }
-}
-
-impl<B: AsRef<[u8]>> Decoder for BufDecoder<B> {
-    fn read_buf(&mut self, into: &mut [u8]) -> Result<(), CodecError> {
-        if into.len() > self.remaining() {
-            return Err(CodecError::OverrunInput);
+impl Codec for bool {
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let b = dec.read_arr::<1>()?;
+        match b[0] {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(CodecError::InvalidVariant),
         }
-
-        into.copy_from_slice(&self.rest()[..into.len()]);
-        Ok(())
     }
 
-    fn read_arr<const N: usize>(&mut self) -> Result<[u8; N], CodecError> {
-        if N > self.remaining() {
-            return Err(CodecError::OverrunInput);
-        }
-
-        let mut buf = [0; N];
-        buf.copy_from_slice(&self.rest()[..N]);
-        Ok(buf)
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        enc.write_buf([if self { 1 } else { 0 }])
     }
 }
 
-impl Encoder for Vec<u8> {
-    fn write_buf(&mut self, buf: &[u8]) -> Result<(), CodecError> {
-        self.extend_from_slice(buf);
-        Ok(())
-    }
-}
-
+/// Simple macro to wrap the fixed size int types, not much to see.
 macro_rules! impl_int_codec {
     ( $ity:ident $bytes:literal ) => {
         impl Codec for $ity {
