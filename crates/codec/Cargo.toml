@@ -1,0 +1,14 @@
+[package]
+name = "strata-codec"
+version = "0.1.0"
+edition = "2024"
+readme = "README.md"
+description = "Special purpose binary encoding framework"
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true
