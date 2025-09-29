@@ -6,8 +6,9 @@ description = "Property testing macros and utilities for strata-codec"
 
 [dependencies]
 strata-codec = { path = "../codec" }
-proptest = "1.4"
+
 paste = "1.0"
+proptest = "1.4"
 
 [lints]
 workspace = true
