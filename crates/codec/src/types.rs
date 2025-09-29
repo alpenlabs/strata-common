@@ -49,12 +49,12 @@ impl Codec for bool {
         match b[0] {
             0 => Ok(false),
             1 => Ok(true),
-            _ => Err(CodecError::InvalidVariant),
+            _ => Err(CodecError::InvalidVariant("bool")),
         }
     }
 
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        enc.write_buf([if self { 1 } else { 0 }])
+        enc.write_buf(&[if *self { 1 } else { 0 }])
     }
 }
 
