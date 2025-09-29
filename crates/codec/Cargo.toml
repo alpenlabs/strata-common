@@ -8,5 +8,7 @@ description = "Special purpose binary encoding framework"
 [dependencies]
 thiserror.workspace = true
 
+[dev-dependencies]
+
 [lints]
 workspace = true

@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e61023525533fe68d17fd51f04376c9c9a579ba11f4f1fbe826db7b2826afa94 # shrinks to value = Red
+cc 09ed30d72ee8421db9d3a9dd686ef3acff6534f12feb601863cd08a0a7725a94 # shrinks to value = Point3D { x: 0, y: 0, z: 0 }
+cc 034fd01bee38284e669e0a8293fd227e605a13d8cb2f3894fba71969c993cade # shrinks to value = ComplexData { id: 0, active: false, position: Point3D { x: 0, y: 0, z: 0 }, checksum: [0, 0, 0, 0] }

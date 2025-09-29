@@ -1,0 +1,13 @@
+[package]
+name = "strata-codec-tests"
+version = "0.1.0"
+edition = "2024"
+description = "Property testing macros and utilities for strata-codec"
+
+[dependencies]
+strata-codec = { path = "../codec" }
+proptest = "1.4"
+paste = "1.0"
+
+[lints]
+workspace = true

@@ -49,6 +49,7 @@ impl<B: AsRef<[u8]>> Decoder for BufDecoder<B> {
         }
 
         into.copy_from_slice(&self.rest()[..into.len()]);
+        self.at += into.len();
         Ok(())
     }
 
@@ -59,6 +60,7 @@ impl<B: AsRef<[u8]>> Decoder for BufDecoder<B> {
 
         let mut buf = [0; N];
         buf.copy_from_slice(&self.rest()[..N]);
+        self.at += N;
         Ok(buf)
     }
 }
