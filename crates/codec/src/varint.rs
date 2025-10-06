@@ -76,6 +76,20 @@ impl Varint {
     }
 }
 
+impl TryFrom<usize> for Varint {
+    type Error = CodecError;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        Self::new_usize(value).ok_or(CodecError::OobInteger)
+    }
+}
+
+impl From<Varint> for usize {
+    fn from(value: Varint) -> Self {
+        value.inner() as usize
+    }
+}
+
 impl Codec for Varint {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let first_byte = u8::decode(dec)?;
