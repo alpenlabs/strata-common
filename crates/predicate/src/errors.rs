@@ -16,6 +16,10 @@ pub enum PredicateError {
     #[error("invalid predicate type {0}")]
     InvalidPredicateType(u8),
 
+    /// Missing predicate type identifier.
+    #[error("missing predicate type")]
+    MissingPredicateType,
+
     // === Parsing Errors ===
     /// Predicate condition parsing failed.
     #[error("predicate parsing failed for type {id}: {reason}")]

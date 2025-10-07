@@ -68,7 +68,6 @@ impl PredicateKey {
     /// Creates a predicate key that never accepts any witness for any claim.
     ///
     /// This represents an empty/invalid predicate that will reject all verification attempts.
-    /// This is equivalent to creating a predicate key from empty bytes.
     pub fn never_accept() -> Self {
         Self::new(PredicateTypeId::NeverAccept, Vec::new())
     }
@@ -102,16 +101,12 @@ impl<'b> TryFrom<&'b [u8]> for PredicateKeyBuf<'b> {
 
     /// Creates a predicate key buffer from borrowed bytes with validation.
     ///
-    /// The format is: `[id: u8][condition: bytes…]`. An empty byte array represents the
-    /// "never accept" predicate. The first byte (when present) is validated against the
-    /// [`PredicateTypeId`] registry and the remaining bytes are exposed as the predicate
+    /// The format is: `[id: u8][condition: bytes…]`. The first byte is validated against
+    /// the [`PredicateTypeId`] registry and the remaining bytes are exposed as the predicate
     /// condition payload.
     fn try_from(bytes: &'b [u8]) -> Result<Self, Self::Error> {
         if bytes.is_empty() {
-            return Ok(Self {
-                id: PredicateTypeId::NeverAccept,
-                condition: &[],
-            });
+            return Err(PredicateError::MissingPredicateType);
         }
 
         let id = PredicateTypeId::try_from(bytes[0])?;
@@ -136,13 +131,7 @@ impl<'b> PredicateKeyBuf<'b> {
     /// Returns the raw predicate key bytes.
     ///
     /// The format is: [id: u8][condition: bytes...]
-    /// An empty byte array represents the "never accept" predicate.
     pub fn to_bytes(&self) -> Vec<u8> {
-        // Handle the special case of NeverAccept with empty condition bytes
-        if self.id == PredicateTypeId::NeverAccept && self.condition.is_empty() {
-            return Vec::new();
-        }
-
         let mut bytes = Vec::with_capacity(1 + self.condition.len());
         bytes.push(self.id.as_u8());
         bytes.extend_from_slice(self.condition);
@@ -178,19 +167,6 @@ impl<'b> PredicateKeyBuf<'b> {
 mod tests {
     use super::*;
     use crate::type_ids::PredicateTypeId;
-
-    #[test]
-    fn test_empty_predicate_key_buf() {
-        let empty_buf = PredicateKeyBuf::try_from(&[][..]).unwrap();
-
-        // Empty predicate key buffer should decode to NeverAccept with empty condition bytes
-        assert_eq!(empty_buf.id(), PredicateTypeId::NeverAccept);
-        assert_eq!(empty_buf.condition(), &[]);
-
-        // Should be able to convert to owned
-        let owned = empty_buf.to_owned();
-        assert_eq!(owned.as_buf_ref().to_bytes(), vec![]); // Fixed: empty bytes for NeverAccept
-    }
 
     #[test]
     fn test_non_empty_predicate_key_buf() {
@@ -261,8 +237,8 @@ mod tests {
             PredicateKeyBuf::try_from(&[PredicateTypeId::Bip340Schnorr.as_u8(), 0x01][..]).is_ok()
         );
 
-        // Empty bytes should succeed (NeverAccept)
-        assert!(PredicateKeyBuf::try_from(&[][..]).is_ok());
+        // Empty bytes should fail
+        assert!(PredicateKeyBuf::try_from(&[][..]).is_err());
 
         // Invalid predicate types should fail
         assert!(PredicateKeyBuf::try_from(&[99][..]).is_err());
@@ -288,11 +264,5 @@ mod tests {
         // Test round-trip conversion
         let back_to_owned = key_buf.to_owned();
         assert_eq!(predkey, back_to_owned);
-
-        // Test never_accept special case
-        let never_accept = PredicateKey::never_accept();
-        assert_eq!(never_accept.id(), PredicateTypeId::NeverAccept);
-        assert_eq!(never_accept.condition(), &[]);
-        assert_eq!(never_accept.as_buf_ref().to_bytes(), vec![]);
     }
 }

@@ -92,6 +92,7 @@ mod tests {
     };
     use crate::type_ids::PredicateTypeId;
     use crate::verifier::PredicateVerifier;
+    use crate::verifiers::schnorr::{BIP340_PUBKEY_SIZE, BIP340_SIGNATURE_SIZE};
 
     fn load_predicate_claim_witness() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
         // Generate random message
@@ -119,7 +120,7 @@ mod tests {
 
         // Create a modified message to test failure cases
         let mut mod_msg = msg;
-        mod_msg.swap(1, 2);
+        mod_msg[0] = !mod_msg[0];
 
         // Generate key pair
         let signing_key = SigningKey::random(&mut OsRng);
@@ -174,14 +175,23 @@ mod tests {
         let (predicate, claim, mut witness) = load_predicate_claim_witness();
         let verifier = SchnorrVerifier;
 
-        // Test with larger witness
+        // Test with larger witnesses
         let mut larger_witness = witness.clone();
         larger_witness.extend_from_slice(&[0u8; 10]);
         let res = verifier.verify(&predicate, &claim, &larger_witness);
         assert_witness_parsing_failed(res, PredicateTypeId::Bip340Schnorr);
 
-        // Test with shorter witness
+        let mut larger_witness = witness.clone();
+        larger_witness.extend_from_slice(&[0u8; 1]);
+        let res = verifier.verify(&predicate, &claim, &larger_witness);
+        assert_witness_parsing_failed(res, PredicateTypeId::Bip340Schnorr);
+
+        // Test with shorter witnesses
         let shorter_witness = &witness[..witness.len() - 5];
+        let res = verifier.verify(&predicate, &claim, shorter_witness);
+        assert_witness_parsing_failed(res, PredicateTypeId::Bip340Schnorr);
+
+        let shorter_witness = &witness[1..];
         let res = verifier.verify(&predicate, &claim, shorter_witness);
         assert_witness_parsing_failed(res, PredicateTypeId::Bip340Schnorr);
 
@@ -196,14 +206,23 @@ mod tests {
         let (predicate, mut claim, witness) = load_predicate_claim_witness();
         let verifier = SchnorrVerifier;
 
-        // Test with larger claim
+        // Test with larger claims
         let mut larger_claim = claim.clone();
         larger_claim.extend_from_slice(&[0u8; 10]);
         let res = verifier.verify(&predicate, &larger_claim, &witness);
         assert_verification_failed(res, PredicateTypeId::Bip340Schnorr);
 
-        // Test with shorter claim
+        let mut larger_claim = claim.clone();
+        larger_claim.extend_from_slice(&[0u8; 1]);
+        let res = verifier.verify(&predicate, &larger_claim, &witness);
+        assert_verification_failed(res, PredicateTypeId::Bip340Schnorr);
+
+        // Test with shorter claims
         let shorter_claim = &claim[..claim.len() - 2];
+        let res = verifier.verify(&predicate, shorter_claim, &witness);
+        assert_verification_failed(res, PredicateTypeId::Bip340Schnorr);
+
+        let shorter_claim = &claim[1..];
         let res = verifier.verify(&predicate, shorter_claim, &witness);
         assert_verification_failed(res, PredicateTypeId::Bip340Schnorr);
 
@@ -211,5 +230,21 @@ mod tests {
         claim[0] = claim[0].wrapping_add(1);
         let res = verifier.verify(&predicate, &claim, &witness);
         assert_verification_failed(res, PredicateTypeId::Bip340Schnorr);
+    }
+
+    #[test]
+    fn test_sizes() {
+        // Directly check that the key size magic number is correct
+        let signing_key = SigningKey::random(&mut OsRng);
+        assert_eq!(
+            signing_key.verifying_key().to_bytes().len(),
+            BIP340_PUBKEY_SIZE
+        );
+
+        // Directly check that the signature size magic number is correct
+        assert_eq!(
+            signing_key.sign(&[0u8; 32]).to_bytes().len(),
+            BIP340_SIGNATURE_SIZE
+        );
     }
 }
