@@ -1,6 +1,7 @@
 use bitcoin::{
     ScriptBuf,
     blockdata::script,
+    constants::MAX_SCRIPT_ELEMENT_SIZE,
     opcodes::{
         OP_FALSE,
         all::{OP_CHECKSIGVERIFY, OP_ENDIF, OP_IF},
@@ -10,96 +11,18 @@ use bitcoin::{
 
 use crate::errors::EnvelopeBuildError;
 
-/// Maximum push size allowed in Bitcoin scripts (in bytes).
-///
-/// Bitcoin's consensus rules limit individual push operations to 520 bytes.
-/// Larger payloads must be split into multiple push operations.
-const MAX_PUSH_SIZE: usize = 520;
-
 /// Builds a Bitcoin script containing an envelope with the given payload.
 ///
 /// Creates a script with the structure: `OP_FALSE OP_IF <payload_chunks> OP_ENDIF`.
-/// The payload is automatically split into chunks of up to 520 bytes to comply
+/// The payload is automatically split into chunks of up to [`MAX_SCRIPT_ELEMENT_SIZE`] bytes to comply
 /// with Bitcoin's consensus rules.
 ///
-/// # Arguments
-///
-/// * `payload` - The raw bytes to encapsulate in the envelope
-///
 /// # Errors
 ///
-/// Returns [`EnvelopeBuildError::PushBytesConversion`] if a payload chunk cannot
-/// be converted to a `PushBytesBuf`.
-///
-/// # Examples
-///
-/// ```
-/// use strata_l1_envelope_fmt::builder::build_envelope_script;
-///
-/// let payload = vec![1, 2, 3, 4, 5];
-/// let script = build_envelope_script(&payload).unwrap();
-/// ```
+/// Returns [`EnvelopeBuildError`] if a payload chunk cannot be converted to a `PushBytesBuf`.
 pub fn build_envelope_script(payload: &[u8]) -> Result<ScriptBuf, EnvelopeBuildError> {
-    let mut builder = script::Builder::new()
-        .push_opcode(OP_FALSE)
-        .push_opcode(OP_IF);
-
-    // Split payload into chunks of MAX_PUSH_SIZE and push each chunk
-    for chunk in payload.chunks(MAX_PUSH_SIZE) {
-        let push_bytes = PushBytesBuf::try_from(chunk.to_vec()).map_err(|e| {
-            EnvelopeBuildError::PushBytesConversion(format!(
-                "failed to convert {} byte chunk: {e}",
-                chunk.len()
-            ))
-        })?;
-        builder = builder.push_slice(push_bytes);
-    }
-
-    builder = builder.push_opcode(OP_ENDIF);
-    Ok(builder.into_script())
-}
-
-/// Builds multiple envelopes in a single script.
-///
-/// Creates a script containing multiple sequential envelopes, each with the structure
-/// `OP_FALSE OP_IF <payload_chunks> OP_ENDIF`.
-///
-/// # Arguments
-///
-/// * `payloads` - Slice of payloads to encapsulate as separate envelopes
-///
-/// # Errors
-///
-/// Returns [`EnvelopeBuildError::PushBytesConversion`] if any payload chunk cannot
-/// be converted to a `PushBytesBuf`.
-///
-/// # Examples
-///
-/// ```
-/// use strata_l1_envelope_fmt::builder::build_multi_envelope_script;
-///
-/// let payloads = vec![vec![1, 2, 3], vec![4, 5, 6]];
-/// let script = build_multi_envelope_script(&payloads).unwrap();
-/// ```
-pub fn build_multi_envelope_script(payloads: &[Vec<u8>]) -> Result<ScriptBuf, EnvelopeBuildError> {
-    let mut builder = script::Builder::new();
-
-    for payload in payloads {
-        builder = builder.push_opcode(OP_FALSE).push_opcode(OP_IF);
-
-        for chunk in payload.chunks(MAX_PUSH_SIZE) {
-            let push_bytes = PushBytesBuf::try_from(chunk.to_vec()).map_err(|e| {
-                EnvelopeBuildError::PushBytesConversion(format!(
-                    "failed to convert {} byte chunk: {e}",
-                    chunk.len()
-                ))
-            })?;
-            builder = builder.push_slice(push_bytes);
-        }
-
-        builder = builder.push_opcode(OP_ENDIF);
-    }
-
+    let builder = script::Builder::new();
+    let builder = push_envelope(builder, payload)?;
     Ok(builder.into_script())
 }
 
@@ -117,32 +40,16 @@ pub fn build_multi_envelope_script(payloads: &[Vec<u8>]) -> Result<ScriptBuf, En
 /// The container makes the script spendable and the signature transitively signs
 /// the contained envelopes.
 ///
-/// # Arguments
-///
-/// * `pubkey` - The public key that controls the spend
-/// * `payloads` - Slice of payloads to encapsulate as envelopes
-///
 /// # Errors
 ///
-/// Returns [`EnvelopeBuildError::PushBytesConversion`] if any payload chunk cannot
-/// be converted to a `PushBytesBuf`.
-///
-/// # Examples
-///
-/// ```
-/// use strata_l1_envelope_fmt::builder::build_envelope_container;
-///
-/// let pubkey = vec![0x02; 33]; // Compressed pubkey
-/// let payloads = vec![vec![1, 2, 3]];
-/// let script = build_envelope_container(&pubkey, &payloads).unwrap();
-/// ```
+/// Returns [`EnvelopeBuildError`] if the pubkey or any payload chunk cannot be
+/// converted to a `PushBytesBuf`.
 pub fn build_envelope_container(
     pubkey: &[u8],
     payloads: &[Vec<u8>],
 ) -> Result<ScriptBuf, EnvelopeBuildError> {
-    let pubkey_bytes = PushBytesBuf::try_from(pubkey.to_vec()).map_err(|e| {
-        EnvelopeBuildError::PushBytesConversion(format!("failed to convert pubkey: {e}"))
-    })?;
+    let pubkey_bytes = PushBytesBuf::try_from(pubkey.to_vec())
+        .map_err(|_| EnvelopeBuildError::PubkeyConversion)?;
 
     let mut builder = script::Builder::new()
         .push_slice(pubkey_bytes)
@@ -150,20 +57,95 @@ pub fn build_envelope_container(
 
     // Add all envelopes
     for payload in payloads {
-        builder = builder.push_opcode(OP_FALSE).push_opcode(OP_IF);
-
-        for chunk in payload.chunks(MAX_PUSH_SIZE) {
-            let push_bytes = PushBytesBuf::try_from(chunk.to_vec()).map_err(|e| {
-                EnvelopeBuildError::PushBytesConversion(format!(
-                    "failed to convert {} byte chunk: {e}",
-                    chunk.len()
-                ))
-            })?;
-            builder = builder.push_slice(push_bytes);
-        }
-
-        builder = builder.push_opcode(OP_ENDIF);
+        builder = push_envelope(builder, payload)?;
     }
 
     Ok(builder.into_script())
+}
+
+/// Helper function to add envelope opcodes and payload chunks to a builder.
+///
+/// Takes a mutable builder and a payload, and extends the builder with:
+/// `OP_FALSE OP_IF <payload_chunks> OP_ENDIF`
+fn push_envelope(
+    mut builder: script::Builder,
+    payload: &[u8],
+) -> Result<script::Builder, EnvelopeBuildError> {
+    builder = builder.push_opcode(OP_FALSE).push_opcode(OP_IF);
+
+    for chunk in payload.chunks(MAX_SCRIPT_ELEMENT_SIZE) {
+        let push_bytes = PushBytesBuf::try_from(chunk.to_vec()).map_err(|_| {
+            EnvelopeBuildError::PayloadChunkConversion {
+                chunk_size: chunk.len(),
+            }
+        })?;
+        builder = builder.push_slice(push_bytes);
+    }
+
+    builder = builder.push_opcode(OP_ENDIF);
+    Ok(builder)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin::blockdata::script::Instruction::PushBytes;
+
+    /// Test that validates payload chunking behavior for various sizes.
+    ///
+    /// This test ensures that payloads are correctly split into chunks of 520 bytes
+    /// or less, and that the resulting script contains the expected number and size
+    /// of data pushes.
+    ///
+    /// Note: Each expected vector starts with 0 because OP_FALSE (at the beginning
+    /// of each envelope) is interpreted as pushing an empty byte array when iterating
+    /// through script instructions.
+    #[test]
+    fn test_payload_chunking() {
+        let test_cases = vec![
+            (0, vec![0]),                        // Empty payload: only OP_FALSE
+            (1, vec![0, 1]),                     // 1 byte: OP_FALSE + 1 byte chunk
+            (520, vec![0, 520]),                 // Exactly 520: OP_FALSE + 520 byte chunk
+            (521, vec![0, 520, 1]),              // 521: OP_FALSE + 520 bytes + 1 byte
+            (1040, vec![0, 520, 520]),           // Exactly 2 chunks: OP_FALSE + 520 + 520
+            (1041, vec![0, 520, 520, 1]),        // 2 chunks + 1: OP_FALSE + 520 + 520 + 1
+            (1560, vec![0, 520, 520, 520]),      // Exactly 3 chunks
+            (2000, vec![0, 520, 520, 520, 440]), // Large payload with partial last chunk
+        ];
+
+        for (payload_size, expected_pushes) in test_cases {
+            // Create a payload with sequential bytes for easy verification
+            let payload: Vec<u8> = (0..payload_size).map(|i| (i % 256) as u8).collect();
+
+            let script = build_envelope_script(&payload)
+                .unwrap_or_else(|_| panic!("Failed to build envelope for {} bytes", payload_size));
+
+            // Extract data push sizes from the script
+            let instructions: Vec<_> = script.instructions().collect();
+            let data_pushes: Vec<_> = instructions
+                .iter()
+                .filter_map(|inst| {
+                    if let Ok(PushBytes(data)) = inst {
+                        Some(data.len())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            assert_eq!(
+                data_pushes, expected_pushes,
+                "Payload size {}: expected pushes {:?}, got {:?}",
+                payload_size, expected_pushes, data_pushes
+            );
+
+            // Verify the total data pushed (excluding OP_FALSE's empty push) equals the original payload size
+            let total_data_size: usize = data_pushes.iter().skip(1).sum();
+            assert_eq!(
+                total_data_size, payload_size,
+                "Total data size mismatch for payload size {}",
+                payload_size
+            );
+        }
+    }
 }

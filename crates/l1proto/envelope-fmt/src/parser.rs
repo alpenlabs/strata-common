@@ -19,26 +19,10 @@ fn next_op(instructions: &mut Instructions<'_>) -> Option<Opcode> {
 /// Extracts the raw payload bytes from a script containing an envelope structure
 /// with the format: `OP_FALSE OP_IF <payload_chunks> OP_ENDIF`.
 ///
-/// # Arguments
-///
-/// * `script` - A reference to the script buffer to parse
-///
 /// # Errors
 ///
-/// * [`EnvelopeParseError::InvalidEnvelope`] - If the script doesn't contain a valid `OP_FALSE OP_IF` sequence
-/// * [`EnvelopeParseError::InvalidPayload`] - If the payload data is malformed
-///
-/// # Examples
-///
-/// ```
-/// use strata_l1_envelope_fmt::parser::parse_envelope_payload;
-/// use strata_l1_envelope_fmt::builder::build_envelope_script;
-///
-/// let payload = vec![1, 2, 3, 4, 5];
-/// let script = build_envelope_script(&payload).unwrap();
-/// let extracted = parse_envelope_payload(&script).unwrap();
-/// assert_eq!(payload, extracted);
-/// ```
+/// Returns [`EnvelopeParseError`] if the script doesn't contain a valid envelope structure
+/// or if the payload data is malformed.
 pub fn parse_envelope_payload(script: &ScriptBuf) -> Result<Vec<u8>, EnvelopeParseError> {
     let mut instructions = script.instructions();
     enter_envelope(&mut instructions)?;
@@ -49,26 +33,10 @@ pub fn parse_envelope_payload(script: &ScriptBuf) -> Result<Vec<u8>, EnvelopePar
 ///
 /// Extracts payloads from a script containing multiple sequential envelopes.
 ///
-/// # Arguments
-///
-/// * `script` - A reference to the script buffer to parse
-///
 /// # Errors
 ///
-/// * [`EnvelopeParseError::InvalidEnvelope`] - If any envelope structure is invalid
-/// * [`EnvelopeParseError::InvalidPayload`] - If any payload data is malformed
-///
-/// # Examples
-///
-/// ```
-/// use strata_l1_envelope_fmt::parser::parse_multi_envelope_payloads;
-/// use strata_l1_envelope_fmt::builder::build_multi_envelope_script;
-///
-/// let payloads = vec![vec![1, 2, 3], vec![4, 5, 6]];
-/// let script = build_multi_envelope_script(&payloads).unwrap();
-/// let extracted = parse_multi_envelope_payloads(&script).unwrap();
-/// assert_eq!(payloads, extracted);
-/// ```
+/// Returns [`EnvelopeParseError`] if no valid envelopes are found, if any envelope
+/// structure is invalid, or if any payload data is malformed.
 pub fn parse_multi_envelope_payloads(
     script: &ScriptBuf,
 ) -> Result<Vec<Vec<u8>>, EnvelopeParseError> {
@@ -81,7 +49,7 @@ pub fn parse_multi_envelope_payloads(
     }
 
     if payloads.is_empty() {
-        return Err(EnvelopeParseError::InvalidEnvelope);
+        return Err(EnvelopeParseError::NoEnvelopesFound);
     }
 
     Ok(payloads)
@@ -98,32 +66,12 @@ pub fn parse_multi_envelope_payloads(
 /// <envelope_n>
 /// ```
 ///
-/// # Arguments
-///
-/// * `script` - A reference to the script buffer to parse
-///
-/// # Returns
-///
-/// A tuple containing the pubkey and a vector of all envelope payloads.
+/// Returns a tuple containing the pubkey and a vector of all envelope payloads.
 ///
 /// # Errors
 ///
-/// * [`EnvelopeParseError::InvalidEnvelope`] - If the container structure is invalid
-/// * [`EnvelopeParseError::InvalidPayload`] - If any payload data is malformed
-///
-/// # Examples
-///
-/// ```
-/// use strata_l1_envelope_fmt::parser::parse_envelope_container;
-/// use strata_l1_envelope_fmt::builder::build_envelope_container;
-///
-/// let pubkey = vec![0x02; 33];
-/// let payloads = vec![vec![1, 2, 3]];
-/// let script = build_envelope_container(&pubkey, &payloads).unwrap();
-/// let (extracted_pubkey, extracted_payloads) = parse_envelope_container(&script).unwrap();
-/// assert_eq!(pubkey, extracted_pubkey);
-/// assert_eq!(payloads, extracted_payloads);
-/// ```
+/// Returns [`EnvelopeParseError`] if the container structure is invalid, if no valid
+/// envelopes are found, or if any payload data is malformed.
 pub fn parse_envelope_container(
     script: &ScriptBuf,
 ) -> Result<(Vec<u8>, Vec<Vec<u8>>), EnvelopeParseError> {
@@ -132,12 +80,12 @@ pub fn parse_envelope_container(
     // Extract pubkey
     let pubkey = match instructions.next() {
         Some(Ok(Instruction::PushBytes(bytes))) => bytes.as_bytes().to_vec(),
-        _ => return Err(EnvelopeParseError::InvalidEnvelope),
+        _ => return Err(EnvelopeParseError::MissingPubkey),
     };
 
     // Verify CHECKSIGVERIFY
     if next_op(&mut instructions) != Some(OP_CHECKSIGVERIFY) {
-        return Err(EnvelopeParseError::InvalidEnvelope);
+        return Err(EnvelopeParseError::MissingChecksigverify);
     }
 
     // Extract all envelopes
@@ -148,7 +96,7 @@ pub fn parse_envelope_container(
     }
 
     if payloads.is_empty() {
-        return Err(EnvelopeParseError::InvalidEnvelope);
+        return Err(EnvelopeParseError::NoEnvelopesFound);
     }
 
     Ok((pubkey, payloads))
@@ -159,7 +107,7 @@ fn enter_envelope(instructions: &mut Instructions<'_>) -> Result<(), EnvelopePar
     // Search for OP_FALSE (encoded as empty PushBytes)
     loop {
         match instructions.next() {
-            None => return Err(EnvelopeParseError::InvalidEnvelope),
+            None => return Err(EnvelopeParseError::MissingOpFalse),
             Some(Ok(Instruction::PushBytes(bytes))) if bytes.as_bytes().is_empty() => break,
             _ => continue,
         }
@@ -167,7 +115,7 @@ fn enter_envelope(instructions: &mut Instructions<'_>) -> Result<(), EnvelopePar
 
     // Verify OP_FALSE is followed by OP_IF
     if next_op(instructions) != Some(OP_IF) {
-        return Err(EnvelopeParseError::InvalidEnvelope);
+        return Err(EnvelopeParseError::MissingOpIf);
     }
     Ok(())
 }
@@ -193,9 +141,7 @@ fn extract_until_op_endif(
 
 #[cfg(test)]
 mod tests {
-    use crate::builder::{
-        build_envelope_container, build_envelope_script, build_multi_envelope_script,
-    };
+    use crate::builder::{build_envelope_container, build_envelope_script};
 
     use super::*;
 
@@ -213,15 +159,6 @@ mod tests {
 
         let result = parse_envelope_payload(&script).unwrap();
         assert_eq!(result, large_envelope);
-    }
-
-    #[test]
-    fn test_parse_multi_envelope() {
-        let payloads = vec![vec![1, 2, 3], vec![4, 5, 6], vec![7; 1000]];
-        let script = build_multi_envelope_script(&payloads).unwrap();
-        let result = parse_multi_envelope_payloads(&script).unwrap();
-
-        assert_eq!(result, payloads);
     }
 
     #[test]
