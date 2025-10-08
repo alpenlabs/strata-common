@@ -39,6 +39,22 @@ pub struct TagDataRef<'tx> {
     aux_data: &'tx [u8],
 }
 
+/// Owned version of tag data extracted from a tx's tag, without the magic bytes.
+///
+/// This should be used when creating transactions and passing tag data around,
+/// not during extraction/parsing where [`TagDataRef`] is more efficient.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagData {
+    /// The subprotocol ID that recognizes this tx.
+    subproto_id: SubprotocolId,
+
+    /// The operation type of the tx within the subprotocol spec.
+    tx_type: TxType,
+
+    /// Any auxiliary data passed in the rest of the OP_RETURN data.
+    aux_data: Vec<u8>,
+}
+
 impl<'tx> TagDataRef<'tx> {
     /// Constructs a new instance from data fields, checking that they are
     /// compliant.
@@ -85,6 +101,59 @@ impl<'tx> TagDataRef<'tx> {
     /// Gets the aux data slice.
     pub fn aux_data(&self) -> &[u8] {
         self.aux_data
+    }
+
+    /// Converts this borrowed tag data into an owned version.
+    pub fn to_owned(&self) -> TagData {
+        TagData {
+            subproto_id: self.subproto_id,
+            tx_type: self.tx_type,
+            aux_data: self.aux_data.to_vec(),
+        }
+    }
+}
+
+impl TagData {
+    /// Constructs a new instance from data fields, checking that they are
+    /// compliant.
+    pub fn new(
+        subproto_id: SubprotocolId,
+        tx_type: TxType,
+        aux_data: Vec<u8>,
+    ) -> TxFmtResult<Self> {
+        if aux_data.len() > MAX_AUX_LEN {
+            return Err(TxFmtError::AuxTooLong);
+        }
+
+        Ok(Self {
+            subproto_id,
+            tx_type,
+            aux_data,
+        })
+    }
+
+    /// Gets the subprotocol ID.
+    pub fn subproto_id(&self) -> SubprotocolId {
+        self.subproto_id
+    }
+
+    /// Gets the tx type field.
+    pub fn tx_type(&self) -> u8 {
+        self.tx_type
+    }
+
+    /// Gets the aux data slice.
+    pub fn aux_data(&self) -> &[u8] {
+        &self.aux_data
+    }
+
+    /// Borrows this owned tag data as a reference.
+    pub fn as_ref(&self) -> TagDataRef<'_> {
+        TagDataRef {
+            subproto_id: self.subproto_id,
+            tx_type: self.tx_type,
+            aux_data: &self.aux_data,
+        }
     }
 }
 
