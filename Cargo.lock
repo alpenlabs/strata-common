@@ -1085,6 +1085,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-l1-envelope-fmt"
+version = "0.1.0"
+
+[[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
 dependencies = [
