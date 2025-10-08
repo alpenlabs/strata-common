@@ -2,22 +2,31 @@
 //!
 //! This crate provides functionality for creating and parsing Bitcoin script envelopes
 //! that encapsulate arbitrary data within `OP_FALSE OP_IF ... OP_ENDIF` blocks.
-//! These envelopes are commonly used for embedding protocol-specific data in Bitcoin
-//! transactions while maintaining script validity.
 //!
-//! # Structure
+//! # Envelope Structure
 //!
-//! An envelope has the following structure:
+//! A basic envelope has the following structure:
 //! ```text
 //! OP_FALSE OP_IF <data_chunks> OP_ENDIF
 //! ```
 //!
-//! The payload data is split into chunks of up to 520 bytes (Bitcoin's maximum push size)
-//! and pushed sequentially within the envelope.
+//! Payloads larger than 520 bytes are automatically chunked to comply with Bitcoin's
+//! consensus rules.
+//!
+//! # Envelope Container
+//!
+//! An envelope container wraps one or more envelopes with a pubkey and CHECKSIGVERIFY:
+//! ```text
+//! <pubkey>
+//! CHECKSIGVERIFY
+//! <envelope_0>
+//! ...
+//! <envelope_n>
+//! ```
 //!
 //! # Examples
 //!
-//! Creating an envelope:
+//! Creating a single envelope:
 //! ```
 //! use strata_l1_envelope_fmt::builder::build_envelope_script;
 //!
@@ -25,15 +34,13 @@
 //! let script = build_envelope_script(&payload).unwrap();
 //! ```
 //!
-//! Parsing an envelope:
+//! Creating an envelope container:
 //! ```
-//! use strata_l1_envelope_fmt::parser::parse_envelope_payload;
-//! use strata_l1_envelope_fmt::builder::build_envelope_script;
+//! use strata_l1_envelope_fmt::builder::build_envelope_container;
 //!
-//! let payload = vec![1, 2, 3, 4, 5];
-//! let script = build_envelope_script(&payload).unwrap();
-//! let extracted = parse_envelope_payload(&script).unwrap();
-//! assert_eq!(payload, extracted);
+//! let pubkey = vec![0x02; 33];
+//! let payloads = vec![vec![1, 2, 3], vec![4, 5, 6]];
+//! let script = build_envelope_container(&pubkey, &payloads).unwrap();
 //! ```
 
 /// Bitcoin script envelope builder utilities.

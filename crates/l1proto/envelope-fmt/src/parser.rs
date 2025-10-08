@@ -1,29 +1,14 @@
 use bitcoin::{
     Opcode, ScriptBuf,
-    opcodes::all::{OP_ENDIF, OP_IF},
+    opcodes::all::{OP_CHECKSIGVERIFY, OP_ENDIF, OP_IF},
     script::{Instruction, Instructions},
 };
 
 use crate::errors::EnvelopeParseError;
 
 /// Extracts the next instruction from the iterator and attempts to parse it as an opcode.
-///
-/// This helper function consumes the next instruction from the script instruction iterator
-/// and returns the opcode if the instruction is a valid operation. Returns `None` if the
-/// next instruction is not an opcode (e.g., it's a data push) or if there are no more
-/// instructions.
-///
-/// # Arguments
-///
-/// * `instructions` - Mutable reference to a Bitcoin script instruction iterator
-///
-/// # Returns
-///
-/// * `Some(Opcode)` - If the next instruction is a valid opcode
-/// * `None` - If the next instruction is not an opcode or the iterator is exhausted
-pub fn next_op(instructions: &mut Instructions<'_>) -> Option<Opcode> {
-    let next_instruction = instructions.next();
-    match next_instruction {
+fn next_op(instructions: &mut Instructions<'_>) -> Option<Opcode> {
+    match instructions.next() {
         Some(Ok(Instruction::Op(opcode))) => Some(opcode),
         _ => None,
     }
@@ -31,25 +16,17 @@ pub fn next_op(instructions: &mut Instructions<'_>) -> Option<Opcode> {
 
 /// Parses and extracts the payload from a Bitcoin script envelope.
 ///
-/// This function extracts the raw payload bytes from a script containing an envelope
-/// structure. The envelope must follow the format: `OP_FALSE OP_IF <payload_chunks> OP_ENDIF`.
-///
-/// The function will search for the envelope start marker (`OP_FALSE OP_IF`) and extract
-/// all data push instructions until it encounters the closing `OP_ENDIF` opcode.
+/// Extracts the raw payload bytes from a script containing an envelope structure
+/// with the format: `OP_FALSE OP_IF <payload_chunks> OP_ENDIF`.
 ///
 /// # Arguments
 ///
 /// * `script` - A reference to the script buffer to parse
 ///
-/// # Returns
-///
-/// * `Ok(Vec<u8>)` - The extracted payload bytes on success
-/// * `Err(EnvelopeParseError)` - If the envelope structure is invalid or payload cannot be extracted
-///
 /// # Errors
 ///
 /// * [`EnvelopeParseError::InvalidEnvelope`] - If the script doesn't contain a valid `OP_FALSE OP_IF` sequence
-/// * [`EnvelopeParseError::InvalidPayload`] - If the payload data is malformed or contains invalid instructions
+/// * [`EnvelopeParseError::InvalidPayload`] - If the payload data is malformed
 ///
 /// # Examples
 ///
@@ -64,110 +41,150 @@ pub fn next_op(instructions: &mut Instructions<'_>) -> Option<Opcode> {
 /// ```
 pub fn parse_envelope_payload(script: &ScriptBuf) -> Result<Vec<u8>, EnvelopeParseError> {
     let mut instructions = script.instructions();
-
-    // Locate and validate the envelope start sequence (OP_FALSE OP_IF)
     enter_envelope(&mut instructions)?;
-
-    // Extract all payload data until OP_ENDIF
-    let payload = extract_until_op_endif(&mut instructions)?;
-    Ok(payload)
+    extract_until_op_endif(&mut instructions)
 }
 
-/// Locates and validates the envelope start sequence in a script instruction stream.
+/// Parses and extracts all payloads from a script with multiple envelopes.
 ///
-/// This function searches for the envelope start marker, which consists of `OP_FALSE`
-/// followed by `OP_IF`. In Bitcoin scripts, `OP_FALSE` is represented as an empty
-/// push bytes instruction.
-///
-/// The function will iterate through all instructions until it finds an empty push
-/// (representing `OP_FALSE`), then verifies that the next instruction is `OP_IF`.
+/// Extracts payloads from a script containing multiple sequential envelopes.
 ///
 /// # Arguments
 ///
-/// * `instructions` - Mutable reference to the script instruction iterator
-///
-/// # Returns
-///
-/// * `Ok(())` - If a valid envelope start sequence is found
-/// * `Err(EnvelopeParseError::InvalidEnvelope)` - If no valid sequence is found
+/// * `script` - A reference to the script buffer to parse
 ///
 /// # Errors
 ///
-/// Returns [`EnvelopeParseError::InvalidEnvelope`] if:
-/// - The iterator is exhausted before finding `OP_FALSE`
-/// - The instruction following `OP_FALSE` is not `OP_IF`
-pub fn enter_envelope(instructions: &mut Instructions<'_>) -> Result<(), EnvelopeParseError> {
-    // Search for OP_FALSE (represented as an empty PushBytes instruction)
+/// * [`EnvelopeParseError::InvalidEnvelope`] - If any envelope structure is invalid
+/// * [`EnvelopeParseError::InvalidPayload`] - If any payload data is malformed
+///
+/// # Examples
+///
+/// ```
+/// use strata_l1_envelope_fmt::parser::parse_multi_envelope_payloads;
+/// use strata_l1_envelope_fmt::builder::build_multi_envelope_script;
+///
+/// let payloads = vec![vec![1, 2, 3], vec![4, 5, 6]];
+/// let script = build_multi_envelope_script(&payloads).unwrap();
+/// let extracted = parse_multi_envelope_payloads(&script).unwrap();
+/// assert_eq!(payloads, extracted);
+/// ```
+pub fn parse_multi_envelope_payloads(
+    script: &ScriptBuf,
+) -> Result<Vec<Vec<u8>>, EnvelopeParseError> {
+    let mut instructions = script.instructions();
+    let mut payloads = Vec::new();
+
+    while enter_envelope(&mut instructions).is_ok() {
+        let payload = extract_until_op_endif(&mut instructions)?;
+        payloads.push(payload);
+    }
+
+    if payloads.is_empty() {
+        return Err(EnvelopeParseError::InvalidEnvelope);
+    }
+
+    Ok(payloads)
+}
+
+/// Parses an envelope container and extracts the pubkey and all payloads.
+///
+/// Parses a script with the structure:
+/// ```text
+/// <pubkey>
+/// CHECKSIGVERIFY
+/// <envelope_0>
+/// ...
+/// <envelope_n>
+/// ```
+///
+/// # Arguments
+///
+/// * `script` - A reference to the script buffer to parse
+///
+/// # Returns
+///
+/// A tuple containing the pubkey and a vector of all envelope payloads.
+///
+/// # Errors
+///
+/// * [`EnvelopeParseError::InvalidEnvelope`] - If the container structure is invalid
+/// * [`EnvelopeParseError::InvalidPayload`] - If any payload data is malformed
+///
+/// # Examples
+///
+/// ```
+/// use strata_l1_envelope_fmt::parser::parse_envelope_container;
+/// use strata_l1_envelope_fmt::builder::build_envelope_container;
+///
+/// let pubkey = vec![0x02; 33];
+/// let payloads = vec![vec![1, 2, 3]];
+/// let script = build_envelope_container(&pubkey, &payloads).unwrap();
+/// let (extracted_pubkey, extracted_payloads) = parse_envelope_container(&script).unwrap();
+/// assert_eq!(pubkey, extracted_pubkey);
+/// assert_eq!(payloads, extracted_payloads);
+/// ```
+pub fn parse_envelope_container(
+    script: &ScriptBuf,
+) -> Result<(Vec<u8>, Vec<Vec<u8>>), EnvelopeParseError> {
+    let mut instructions = script.instructions();
+
+    // Extract pubkey
+    let pubkey = match instructions.next() {
+        Some(Ok(Instruction::PushBytes(bytes))) => bytes.as_bytes().to_vec(),
+        _ => return Err(EnvelopeParseError::InvalidEnvelope),
+    };
+
+    // Verify CHECKSIGVERIFY
+    if next_op(&mut instructions) != Some(OP_CHECKSIGVERIFY) {
+        return Err(EnvelopeParseError::InvalidEnvelope);
+    }
+
+    // Extract all envelopes
+    let mut payloads = Vec::new();
+    while enter_envelope(&mut instructions).is_ok() {
+        let payload = extract_until_op_endif(&mut instructions)?;
+        payloads.push(payload);
+    }
+
+    if payloads.is_empty() {
+        return Err(EnvelopeParseError::InvalidEnvelope);
+    }
+
+    Ok((pubkey, payloads))
+}
+
+/// Locates and validates the envelope start sequence (`OP_FALSE OP_IF`).
+fn enter_envelope(instructions: &mut Instructions<'_>) -> Result<(), EnvelopeParseError> {
+    // Search for OP_FALSE (encoded as empty PushBytes)
     loop {
-        let next_instruction = instructions.next();
-        match next_instruction {
-            None => {
-                // Reached end of script without finding OP_FALSE
-                return Err(EnvelopeParseError::InvalidEnvelope);
-            }
-            // OP_FALSE is encoded as an empty PushBytes instruction
-            Some(Ok(Instruction::PushBytes(bytes))) => {
-                if bytes.as_bytes().is_empty() {
-                    break;
-                }
-                // Non-empty push bytes, continue searching
-            }
-            _ => {
-                // Other instructions, continue searching
-            }
+        match instructions.next() {
+            None => return Err(EnvelopeParseError::InvalidEnvelope),
+            Some(Ok(Instruction::PushBytes(bytes))) if bytes.as_bytes().is_empty() => break,
+            _ => continue,
         }
     }
 
-    // Verify that OP_FALSE is followed by OP_IF
-    let following_opcode = next_op(instructions);
-    if following_opcode != Some(OP_IF) {
+    // Verify OP_FALSE is followed by OP_IF
+    if next_op(instructions) != Some(OP_IF) {
         return Err(EnvelopeParseError::InvalidEnvelope);
     }
     Ok(())
 }
 
-/// Extracts payload data from script instructions until `OP_ENDIF` is encountered.
-///
-/// This function iterates through the remaining script instructions, collecting all
-/// data from push byte instructions and concatenating them into a single payload.
-/// The extraction stops when an `OP_ENDIF` opcode is found, which marks the end
-/// of the envelope.
-///
-/// # Arguments
-///
-/// * `instructions` - Mutable reference to the script instruction iterator, positioned
-///   after the envelope start sequence
-///
-/// # Returns
-///
-/// * `Ok(Vec<u8>)` - The concatenated payload data from all push instructions
-/// * `Err(EnvelopeParseError::InvalidPayload)` - If invalid instructions are encountered
-///
-/// # Errors
-///
-/// Returns [`EnvelopeParseError::InvalidPayload`] if:
-/// - A non-data instruction (other than `OP_ENDIF`) is encountered
-/// - An instruction cannot be properly decoded
-/// - The instruction stream contains unexpected opcodes within the envelope
-pub fn extract_until_op_endif(
+/// Extracts payload data from push instructions until `OP_ENDIF`.
+fn extract_until_op_endif(
     instructions: &mut Instructions<'_>,
 ) -> Result<Vec<u8>, EnvelopeParseError> {
     let mut payload_data = Vec::new();
 
     for instruction_result in instructions {
         match instruction_result {
-            // Found the envelope closing marker, stop extraction
-            Ok(Instruction::Op(OP_ENDIF)) => {
-                break;
-            }
-            // Accumulate data from push instructions
+            Ok(Instruction::Op(OP_ENDIF)) => break,
             Ok(Instruction::PushBytes(bytes)) => {
                 payload_data.extend_from_slice(bytes.as_bytes());
             }
-            // Any other instruction type is invalid within the envelope payload
-            _ => {
-                return Err(EnvelopeParseError::InvalidPayload);
-            }
+            _ => return Err(EnvelopeParseError::InvalidPayload),
         }
     }
 
@@ -176,8 +193,9 @@ pub fn extract_until_op_endif(
 
 #[cfg(test)]
 mod tests {
-
-    use crate::builder::build_envelope_script;
+    use crate::builder::{
+        build_envelope_container, build_envelope_script, build_multi_envelope_script,
+    };
 
     use super::*;
 
@@ -195,5 +213,36 @@ mod tests {
 
         let result = parse_envelope_payload(&script).unwrap();
         assert_eq!(result, large_envelope);
+    }
+
+    #[test]
+    fn test_parse_multi_envelope() {
+        let payloads = vec![vec![1, 2, 3], vec![4, 5, 6], vec![7; 1000]];
+        let script = build_multi_envelope_script(&payloads).unwrap();
+        let result = parse_multi_envelope_payloads(&script).unwrap();
+
+        assert_eq!(result, payloads);
+    }
+
+    #[test]
+    fn test_parse_envelope_container() {
+        let pubkey = vec![0x02; 33];
+        let payloads = vec![vec![1, 2, 3], vec![4, 5, 6]];
+        let script = build_envelope_container(&pubkey, &payloads).unwrap();
+        let (extracted_pubkey, extracted_payloads) = parse_envelope_container(&script).unwrap();
+
+        assert_eq!(extracted_pubkey, pubkey);
+        assert_eq!(extracted_payloads, payloads);
+    }
+
+    #[test]
+    fn test_parse_single_envelope_in_container() {
+        let pubkey = vec![0x03; 33];
+        let payloads = vec![vec![9, 8, 7, 6, 5]];
+        let script = build_envelope_container(&pubkey, &payloads).unwrap();
+        let (extracted_pubkey, extracted_payloads) = parse_envelope_container(&script).unwrap();
+
+        assert_eq!(extracted_pubkey, pubkey);
+        assert_eq!(extracted_payloads, payloads);
     }
 }
