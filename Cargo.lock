@@ -1087,6 +1087,10 @@ dependencies = [
 [[package]]
 name = "strata-l1-envelope-fmt"
 version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "thiserror 2.0.16",
+]
 
 [[package]]
 name = "strata-l1-txfmt"
