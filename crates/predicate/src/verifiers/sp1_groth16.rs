@@ -147,7 +147,7 @@ mod tests {
         let res = verifier.verify(&larger_predicate, &claim, &witness);
         assert_predicate_parsing_failed(res, PredicateTypeId::Sp1Groth16);
 
-        // Test with shorter predicate
+        // Test with shorter predicates
         let shorter_predicate = &predicate[..predicate.len() - 5];
         let res = verifier.verify(shorter_predicate, &claim, &witness);
         assert_predicate_parsing_failed(res, PredicateTypeId::Sp1Groth16);
@@ -169,14 +169,23 @@ mod tests {
         let (predicate, claim, mut witness) = load_predicate_claim_witness();
         let verifier = Sp1Groth16Verifier;
 
-        // Test with larger witness
+        // Test with larger witnesses
         let mut larger_witness = witness.clone();
         larger_witness.extend_from_slice(&[0u8; 10]);
         let res = verifier.verify(&predicate, &claim, &larger_witness);
         assert_witness_parsing_failed(res, PredicateTypeId::Sp1Groth16);
 
-        // Test with shorter witness
+        let mut larger_witness = witness.clone();
+        larger_witness.extend_from_slice(&[0u8; 1]);
+        let res = verifier.verify(&predicate, &claim, &larger_witness);
+        assert_witness_parsing_failed(res, PredicateTypeId::Sp1Groth16);
+
+        // Test with shorter witnesses
         let shorter_witness = &witness[..witness.len() - 5];
+        let res = verifier.verify(&predicate, &claim, shorter_witness);
+        assert_witness_parsing_failed(res, PredicateTypeId::Sp1Groth16);
+
+        let shorter_witness = &witness[1..];
         let res = verifier.verify(&predicate, &claim, shorter_witness);
         assert_witness_parsing_failed(res, PredicateTypeId::Sp1Groth16);
 
@@ -191,14 +200,23 @@ mod tests {
         let (predicate, mut claim, witness) = load_predicate_claim_witness();
         let verifier = Sp1Groth16Verifier;
 
-        // Test with larger claim
+        // Test with larger claims
         let mut larger_claim = claim.clone();
         larger_claim.extend_from_slice(&[0u8; 10]);
         let res = verifier.verify(&predicate, &larger_claim, &witness);
         assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
 
-        // Test with shorter claim
+        let mut larger_claim = claim.clone();
+        larger_claim.extend_from_slice(&[0u8; 1]);
+        let res = verifier.verify(&predicate, &larger_claim, &witness);
+        assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
+
+        // Test with shorter claims
         let shorter_claim = &claim[..claim.len() - 2];
+        let res = verifier.verify(&predicate, shorter_claim, &witness);
+        assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
+
+        let shorter_claim = &claim[1..];
         let res = verifier.verify(&predicate, shorter_claim, &witness);
         assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
 

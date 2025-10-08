@@ -86,3 +86,22 @@ impl fmt::Display for PredicateTypeId {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::PredicateTypeId;
+
+    #[test]
+    fn test_roundtrip() {
+        // Check that all expected type IDs are canonical
+        let valid_bytes = [0, 1, 10, 20];
+        for byte in valid_bytes {
+            let parsed = PredicateTypeId::try_from(byte).unwrap();
+            assert_eq!(parsed.as_u8(), byte);
+        }
+
+        // Check an arbitrary invalid type ID
+        let invalid_byte = 30;
+        assert!(PredicateTypeId::try_from(invalid_byte).is_err());
+    }
+}
