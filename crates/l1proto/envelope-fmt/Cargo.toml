@@ -1,0 +1,11 @@
+[package]
+name = "strata-l1-envelope-fmt"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+thiserror.workspace = true
