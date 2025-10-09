@@ -2,7 +2,7 @@ use bitcoin::{
     Opcode, ScriptBuf,
     opcodes::{
         OP_0, OP_FALSE,
-        all::{OP_CHECKSIGVERIFY, OP_ENDIF, OP_IF},
+        all::{OP_CHECKSIG, OP_ENDIF, OP_IF},
     },
     script::{Instruction, Instructions},
 };
@@ -87,7 +87,7 @@ pub fn parse_envelope_container(
     };
 
     // Verify CHECKSIGVERIFY
-    if next_op(&mut instructions) != Some(OP_CHECKSIGVERIFY) {
+    if next_op(&mut instructions) != Some(OP_CHECKSIG) {
         return Err(EnvelopeParseError::MissingChecksigverify);
     }
 
