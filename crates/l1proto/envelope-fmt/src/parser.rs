@@ -1,6 +1,9 @@
 use bitcoin::{
     Opcode, ScriptBuf,
-    opcodes::all::{OP_CHECKSIGVERIFY, OP_ENDIF, OP_IF},
+    opcodes::{
+        OP_0, OP_FALSE,
+        all::{OP_CHECKSIGVERIFY, OP_ENDIF, OP_IF},
+    },
     script::{Instruction, Instructions},
 };
 
@@ -104,10 +107,19 @@ pub fn parse_envelope_container(
 
 /// Locates and validates the envelope start sequence (`OP_FALSE OP_IF`).
 fn enter_envelope(instructions: &mut Instructions<'_>) -> Result<(), EnvelopeParseError> {
-    // Search for OP_FALSE (encoded as empty PushBytes)
+    // Search for OP_FALSE, which can appear in multiple equivalent forms:
+    // - Instruction::Op(OP_FALSE) - the OP_FALSE opcode constant
+    // - Instruction::Op(OP_0) - OP_0 is an alias for OP_FALSE
+    // - Instruction::PushBytes(empty) - OP_FALSE is encoded as OP_PUSHBYTES_0
+    //
+    // Note: OP_FALSE pushes an empty byte array to the stack. When a script is parsed,
+    // it typically appears as Instruction::PushBytes with empty bytes, but we check all
+    // forms for maximum compatibility.
     loop {
         match instructions.next() {
             None => return Err(EnvelopeParseError::MissingOpFalse),
+            Some(Ok(Instruction::Op(op))) if op == OP_FALSE => break,
+            Some(Ok(Instruction::Op(op))) if op == OP_0 => break,
             Some(Ok(Instruction::PushBytes(bytes))) if bytes.as_bytes().is_empty() => break,
             _ => continue,
         }
@@ -125,15 +137,23 @@ fn extract_until_op_endif(
     instructions: &mut Instructions<'_>,
 ) -> Result<Vec<u8>, EnvelopeParseError> {
     let mut payload_data = Vec::new();
+    let mut found_endif = false;
 
     for instruction_result in instructions {
         match instruction_result {
-            Ok(Instruction::Op(OP_ENDIF)) => break,
+            Ok(Instruction::Op(op)) if op == OP_ENDIF => {
+                found_endif = true;
+                break;
+            }
             Ok(Instruction::PushBytes(bytes)) => {
                 payload_data.extend_from_slice(bytes.as_bytes());
             }
-            _ => return Err(EnvelopeParseError::InvalidPayload),
+            _ => return Err(EnvelopeParseError::UnexpectedOpcodeInPayload),
         }
+    }
+
+    if !found_endif {
+        return Err(EnvelopeParseError::MissingOpEndif);
     }
 
     Ok(payload_data)
@@ -181,5 +201,113 @@ mod tests {
 
         assert_eq!(extracted_pubkey, pubkey);
         assert_eq!(extracted_payloads, payloads);
+    }
+
+    #[test]
+    fn test_parse_envelope_missing_op_endif() {
+        use bitcoin::blockdata::script;
+        use bitcoin::opcodes::{OP_FALSE, all::OP_IF};
+
+        // Build a malformed script: OP_FALSE OP_IF <data> (no OP_ENDIF)
+        let malformed_script = script::Builder::new()
+            .push_opcode(OP_FALSE)
+            .push_opcode(OP_IF)
+            .push_slice([1, 2, 3])
+            .into_script();
+
+        let result = parse_envelope_payload(&malformed_script);
+        assert!(matches!(result, Err(EnvelopeParseError::MissingOpEndif)));
+    }
+
+    #[test]
+    fn test_parse_envelope_missing_op_false() {
+        use bitcoin::blockdata::script;
+        use bitcoin::opcodes::all::{OP_ENDIF, OP_IF};
+
+        // Build a malformed script: OP_IF <data> OP_ENDIF (no OP_FALSE)
+        let malformed_script = script::Builder::new()
+            .push_opcode(OP_IF)
+            .push_slice([1, 2, 3])
+            .push_opcode(OP_ENDIF)
+            .into_script();
+
+        let result = parse_envelope_payload(&malformed_script);
+        assert!(matches!(result, Err(EnvelopeParseError::MissingOpFalse)));
+    }
+
+    #[test]
+    fn test_parse_envelope_missing_op_if() {
+        use bitcoin::blockdata::script;
+        use bitcoin::opcodes::{OP_FALSE, all::OP_ENDIF};
+
+        // Build a malformed script: OP_FALSE <data> OP_ENDIF (no OP_IF)
+        let malformed_script = script::Builder::new()
+            .push_opcode(OP_FALSE)
+            .push_slice([1, 2, 3])
+            .push_opcode(OP_ENDIF)
+            .into_script();
+
+        let result = parse_envelope_payload(&malformed_script);
+        assert!(matches!(result, Err(EnvelopeParseError::MissingOpIf)));
+    }
+
+    #[test]
+    fn test_parse_envelope_invalid_payload_instruction() {
+        use bitcoin::blockdata::script;
+        use bitcoin::opcodes::{
+            OP_FALSE,
+            all::{OP_ADD, OP_ENDIF, OP_IF},
+        };
+
+        // Build a malformed script with non-push instruction in payload
+        let malformed_script = script::Builder::new()
+            .push_opcode(OP_FALSE)
+            .push_opcode(OP_IF)
+            .push_slice([1, 2, 3])
+            .push_opcode(OP_ADD) // Invalid: non-push opcode in payload
+            .push_opcode(OP_ENDIF)
+            .into_script();
+
+        let result = parse_envelope_payload(&malformed_script);
+        assert!(matches!(
+            result,
+            Err(EnvelopeParseError::UnexpectedOpcodeInPayload)
+        ));
+    }
+
+    #[test]
+    fn test_parse_envelope_accepts_all_op_false_forms() {
+        use bitcoin::blockdata::script;
+        use bitcoin::opcodes::{
+            OP_FALSE,
+            all::{OP_ENDIF, OP_IF},
+        };
+
+        let payload_data = [1u8, 2, 3, 4, 5];
+
+        // Test 1: OP_FALSE from builder (encoded as OP_PUSHBYTES_0)
+        let script1 = script::Builder::new()
+            .push_opcode(OP_FALSE)
+            .push_opcode(OP_IF)
+            .push_slice(payload_data)
+            .push_opcode(OP_ENDIF)
+            .into_script();
+
+        let result1 = parse_envelope_payload(&script1).unwrap();
+        assert_eq!(result1, payload_data);
+
+        // Test 2: Manually constructed with empty push bytes (same as OP_FALSE)
+        let script2 = script::Builder::new()
+            .push_slice([]) // Empty push = OP_FALSE
+            .push_opcode(OP_IF)
+            .push_slice(payload_data)
+            .push_opcode(OP_ENDIF)
+            .into_script();
+
+        let result2 = parse_envelope_payload(&script2).unwrap();
+        assert_eq!(result2, payload_data);
+
+        // All forms should produce the same result
+        assert_eq!(result1, result2);
     }
 }

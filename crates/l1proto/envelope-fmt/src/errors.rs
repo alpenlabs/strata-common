@@ -23,9 +23,14 @@ pub enum EnvelopeParseError {
     #[error("OP_FALSE must be followed by OP_IF")]
     MissingOpIf,
 
-    /// The payload data is malformed or contains invalid instructions.
-    #[error("invalid payload data")]
-    InvalidPayload,
+    /// Non-push opcode found in envelope payload section.
+    /// Only data push instructions are allowed between OP_IF and OP_ENDIF.
+    #[error("unexpected opcode in payload section; only data pushes allowed")]
+    UnexpectedOpcodeInPayload,
+
+    /// Missing OP_ENDIF at the end of an envelope.
+    #[error("missing OP_ENDIF at envelope end")]
+    MissingOpEndif,
 }
 
 /// Errors that can occur while building Bitcoin script envelopes.
