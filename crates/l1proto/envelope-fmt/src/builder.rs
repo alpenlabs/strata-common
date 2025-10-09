@@ -4,7 +4,7 @@ use bitcoin::{
     constants::MAX_SCRIPT_ELEMENT_SIZE,
     opcodes::{
         OP_FALSE,
-        all::{OP_CHECKSIGVERIFY, OP_ENDIF, OP_IF},
+        all::{OP_CHECKSIG, OP_ENDIF, OP_IF},
     },
     script::PushBytesBuf,
 };
@@ -79,7 +79,7 @@ impl EnvelopeScriptBuilder {
 
         let builder = script::Builder::new()
             .push_slice(pubkey_bytes)
-            .push_opcode(OP_CHECKSIGVERIFY);
+            .push_opcode(OP_CHECKSIG);
 
         Ok(Self {
             builder,
