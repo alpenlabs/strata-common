@@ -11,6 +11,143 @@ use bitcoin::{
 
 use crate::errors::EnvelopeBuildError;
 
+/// Minimum recommended total envelope payload size in bytes.
+/// Below this size, it's more efficient to use the SPS-50 aux field.
+pub const MIN_ENVELOPE_PAYLOAD_SIZE: usize = 126;
+
+/// Maximum allowed total envelope payload size in bytes.
+/// Must be under 395 KB to stay comfortably below Bitcoin's 400 KB transaction standardness limit.
+pub const MAX_ENVELOPE_PAYLOAD_SIZE: usize = 395_000;
+
+/// Builder for constructing envelope container scripts with multiple payloads.
+///
+/// This builder helps create scripts containing envelope data that can be placed
+/// in a transaction input's script_sig. The envelope container includes:
+/// - A pubkey and CHECKSIGVERIFY for spendability
+/// - One or more envelope payloads
+///
+/// # Structure
+///
+/// ```text
+/// <pubkey>
+/// CHECKSIGVERIFY
+/// OP_FALSE OP_IF <payload_0> OP_ENDIF
+/// OP_FALSE OP_IF <payload_1> OP_ENDIF
+/// ...
+/// ```
+///
+/// # Size constraints
+///
+/// - Minimum total payload size: 126 bytes (use SPS-50 aux field for smaller data)
+/// - Maximum total payload size: 395,000 bytes (Bitcoin standardness limit)
+///
+/// # Example
+///
+/// ```
+/// use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+///
+/// let pubkey = vec![0x02; 33];
+/// let payload1 = vec![1; 150];
+/// let payload2 = vec![2; 150];
+///
+/// let script = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+///     .unwrap()
+///     .add_envelope(&payload1).unwrap()
+///     .add_envelope(&payload2).unwrap()
+///     .build()
+///     .unwrap();
+/// ```
+#[derive(Debug)]
+pub struct EnvelopeScriptBuilder {
+    builder: script::Builder,
+    total_payload_size: usize,
+}
+
+impl EnvelopeScriptBuilder {
+    /// Creates a new envelope script builder with the given pubkey.
+    ///
+    /// # Arguments
+    ///
+    /// * `pubkey` - Pubkey bytes (typically 33 bytes for compressed) for the envelope container
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EnvelopeBuildError::PubkeyConversion`] if the pubkey cannot be converted to a `PushBytesBuf`.
+    pub fn with_pubkey(pubkey: &[u8]) -> Result<Self, EnvelopeBuildError> {
+        let pubkey_bytes = PushBytesBuf::try_from(pubkey.to_vec())
+            .map_err(|_| EnvelopeBuildError::PubkeyConversion)?;
+
+        let builder = script::Builder::new()
+            .push_slice(pubkey_bytes)
+            .push_opcode(OP_CHECKSIGVERIFY);
+
+        Ok(Self {
+            builder,
+            total_payload_size: 0,
+        })
+    }
+
+    /// Adds an envelope payload to be included in the script.
+    ///
+    /// Multiple envelopes can be added and will be combined into a single script
+    /// when `build()` is called.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EnvelopeBuildError::PayloadTooLarge`] if adding this envelope would exceed the maximum total payload size.
+    pub fn add_envelope(mut self, payload: &[u8]) -> Result<Self, EnvelopeBuildError> {
+        self.total_payload_size += payload.len();
+
+        if self.total_payload_size > MAX_ENVELOPE_PAYLOAD_SIZE {
+            return Err(EnvelopeBuildError::PayloadTooLarge {
+                total_size: self.total_payload_size,
+                max: MAX_ENVELOPE_PAYLOAD_SIZE,
+            });
+        }
+
+        self.builder = push_envelope(self.builder, payload)?;
+        Ok(self)
+    }
+
+    /// Adds multiple envelope payloads at once.
+    ///
+    /// This is a convenience method for adding multiple envelopes in a single call.
+    /// Accepts any iterator of byte slices.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EnvelopeBuildError::PayloadTooLarge`] if adding these envelopes would exceed the maximum total payload size.
+    pub fn add_envelopes<I>(mut self, payloads: I) -> Result<Self, EnvelopeBuildError>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<[u8]>,
+    {
+        for payload in payloads {
+            self = self.add_envelope(payload.as_ref())?;
+        }
+        Ok(self)
+    }
+
+    /// Builds the envelope container script.
+    ///
+    /// Creates a script with the pubkey, CHECKSIGVERIFY, and all envelope payloads.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EnvelopeBuildError::PayloadTooSmall`] if total payload size < 126 bytes.
+    pub fn build(self) -> Result<ScriptBuf, EnvelopeBuildError> {
+        // Validate envelope payload sizes
+        if self.total_payload_size < MIN_ENVELOPE_PAYLOAD_SIZE {
+            return Err(EnvelopeBuildError::PayloadTooSmall {
+                total_size: self.total_payload_size,
+                min: MIN_ENVELOPE_PAYLOAD_SIZE,
+            });
+        }
+
+        Ok(self.builder.into_script())
+    }
+}
+
 /// Builds a Bitcoin script containing an envelope with the given payload.
 ///
 /// Creates a script with the structure: `OP_FALSE OP_IF <payload_chunks> OP_ENDIF`.
@@ -23,43 +160,6 @@ use crate::errors::EnvelopeBuildError;
 pub fn build_envelope_script(payload: &[u8]) -> Result<ScriptBuf, EnvelopeBuildError> {
     let builder = script::Builder::new();
     let builder = push_envelope(builder, payload)?;
-    Ok(builder.into_script())
-}
-
-/// Builds an envelope container with a pubkey and CHECKSIGVERIFY.
-///
-/// Creates a script with the structure:
-/// ```text
-/// <pubkey>
-/// CHECKSIGVERIFY
-/// <envelope_0>
-/// ...
-/// <envelope_n>
-/// ```
-///
-/// The container makes the script spendable and the signature transitively signs
-/// the contained envelopes.
-///
-/// # Errors
-///
-/// Returns [`EnvelopeBuildError`] if the pubkey or any payload chunk cannot be
-/// converted to a `PushBytesBuf`.
-pub fn build_envelope_container(
-    pubkey: &[u8],
-    payloads: &[Vec<u8>],
-) -> Result<ScriptBuf, EnvelopeBuildError> {
-    let pubkey_bytes = PushBytesBuf::try_from(pubkey.to_vec())
-        .map_err(|_| EnvelopeBuildError::PubkeyConversion)?;
-
-    let mut builder = script::Builder::new()
-        .push_slice(pubkey_bytes)
-        .push_opcode(OP_CHECKSIGVERIFY);
-
-    // Add all envelopes
-    for payload in payloads {
-        builder = push_envelope(builder, payload)?;
-    }
-
     Ok(builder.into_script())
 }
 
@@ -210,5 +310,243 @@ mod tests {
                 "Total data size mismatch for payload size {payload_size}"
             );
         }
+    }
+
+    #[test]
+    fn test_envelope_script_builder_minimal() {
+        let pubkey = vec![0x02; 33];
+        let payload = vec![1; 200];
+
+        let result = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+            .unwrap()
+            .add_envelope(&payload)
+            .unwrap()
+            .build();
+
+        assert!(result.is_ok());
+        let script = result.unwrap();
+        assert!(!script.is_empty());
+    }
+
+    #[test]
+    fn test_envelope_script_builder_multiple_envelopes() {
+        let pubkey = [0x02; 33];
+
+        let result = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+            .unwrap()
+            .add_envelope(&[1; 50])
+            .unwrap()
+            .add_envelope(&[2; 50])
+            .unwrap()
+            .add_envelope(&[3; 50])
+            .unwrap()
+            .build();
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_envelope_script_builder_payload_too_small() {
+        let pubkey = vec![0x02; 33];
+
+        let test_cases = vec![
+            (0, "no envelopes"),
+            (1, "1 byte"),
+            (50, "50 bytes"),
+            (100, "100 bytes"),
+            (125, "125 bytes (just below minimum)"),
+        ];
+
+        for (payload_size, description) in test_cases {
+            let payload = vec![1; payload_size];
+
+            let result = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+                .unwrap()
+                .add_envelope(&payload)
+                .unwrap()
+                .build();
+
+            assert!(
+                matches!(
+                    result,
+                    Err(EnvelopeBuildError::PayloadTooSmall {
+                        total_size,
+                        min: 126
+                    }) if total_size == payload_size
+                ),
+                "Failed for case: {description} (size={payload_size})"
+            );
+        }
+    }
+
+    #[test]
+    fn test_envelope_script_builder_payload_minimum_valid() {
+        let pubkey = vec![0x02; 33];
+        let valid_payload = vec![1; 126];
+
+        let result = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+            .unwrap()
+            .add_envelope(&valid_payload)
+            .unwrap()
+            .build();
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_envelope_script_builder_payload_maximum_valid() {
+        let pubkey = vec![0x02; 33];
+        let max_payload = vec![1; 395_000];
+
+        let result = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+            .unwrap()
+            .add_envelope(&max_payload)
+            .unwrap()
+            .build();
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_envelope_script_builder_payload_too_large() {
+        let pubkey = vec![0x02; 33];
+
+        let test_cases = vec![
+            (395_001, "1 byte over maximum"),
+            (400_000, "400 KB"),
+            (500_000, "500 KB"),
+        ];
+
+        for (payload_size, description) in test_cases {
+            let payload = vec![1; payload_size];
+
+            let result = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+                .unwrap()
+                .add_envelope(&payload);
+
+            assert!(
+                matches!(
+                    result,
+                    Err(EnvelopeBuildError::PayloadTooLarge {
+                        total_size,
+                        max: 395_000
+                    }) if total_size == payload_size
+                ),
+                "Failed for case: {description} (size={payload_size})"
+            );
+        }
+    }
+
+    #[test]
+    fn test_envelope_script_builder_multiple_payloads_size_validation() {
+        let pubkey = vec![0x02; 33];
+
+        // Test cases for PayloadTooSmall: (payload_sizes, description, expected_total)
+        let too_small_cases = vec![
+            (vec![30, 30, 30], "too small (90 total)", 90),
+            (vec![40, 40, 40], "too small (120 total)", 120),
+        ];
+
+        for (payload_sizes, description, expected_total) in too_small_cases {
+            let mut builder = EnvelopeScriptBuilder::with_pubkey(&pubkey).unwrap();
+
+            for size in payload_sizes {
+                builder = builder.add_envelope(&vec![1; size]).unwrap();
+            }
+
+            let result = builder.build();
+
+            assert!(
+                matches!(
+                    result,
+                    Err(EnvelopeBuildError::PayloadTooSmall {
+                        total_size,
+                        min: 126
+                    }) if total_size == expected_total
+                ),
+                "Failed for case: {description}"
+            );
+        }
+
+        // Test cases for valid sizes: (payload_sizes, description)
+        let valid_cases = vec![
+            (vec![50, 50, 26], "exactly minimum (126 total)"),
+            (vec![60, 60, 60], "valid (180 total)"),
+        ];
+
+        for (payload_sizes, description) in valid_cases {
+            let mut builder = EnvelopeScriptBuilder::with_pubkey(&pubkey).unwrap();
+
+            for size in payload_sizes {
+                builder = builder.add_envelope(&vec![1; size]).unwrap();
+            }
+
+            let result = builder.build();
+            assert!(result.is_ok(), "Failed for case: {description}");
+        }
+    }
+
+    #[test]
+    fn test_envelope_script_builder_multiple_payloads_exceeds_maximum() {
+        let pubkey = vec![0x02; 33];
+
+        // Test case: adding multiple envelopes that together exceed the maximum
+        let payload1 = vec![1; 200_000];
+        let payload2 = vec![2; 195_001]; // Total will be 395,001
+
+        let result = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+            .unwrap()
+            .add_envelope(&payload1)
+            .unwrap()
+            .add_envelope(&payload2);
+
+        // Second envelope pushes total to 395,001 which exceeds max of 395,000
+        assert!(
+            matches!(
+                result,
+                Err(EnvelopeBuildError::PayloadTooLarge {
+                    total_size: 395_001,
+                    max: 395_000
+                })
+            ),
+            "Should fail when multiple envelopes exceed maximum total size"
+        );
+    }
+
+    #[test]
+    fn test_add_envelopes_batch() {
+        let pubkey = vec![0x02; 33];
+        let payloads: Vec<Vec<u8>> = vec![vec![1; 50], vec![2; 50], vec![3; 50]];
+
+        let result = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+            .unwrap()
+            .add_envelopes(payloads)
+            .unwrap()
+            .build();
+
+        assert!(result.is_ok());
+        let script = result.unwrap();
+        assert!(!script.is_empty());
+    }
+
+    #[test]
+    fn test_add_envelopes_exceeds_maximum() {
+        let pubkey = vec![0x02; 33];
+        let payloads: Vec<Vec<u8>> = vec![vec![1; 200_000], vec![2; 195_001]];
+
+        let result = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+            .unwrap()
+            .add_envelopes(payloads);
+
+        assert!(
+            matches!(
+                result,
+                Err(EnvelopeBuildError::PayloadTooLarge {
+                    total_size: 395_001,
+                    max: 395_000
+                })
+            ),
+            "Should fail when batch envelopes exceed maximum total size"
+        );
     }
 }

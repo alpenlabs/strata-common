@@ -161,7 +161,7 @@ fn extract_until_op_endif(
 
 #[cfg(test)]
 mod tests {
-    use crate::builder::{build_envelope_container, build_envelope_script};
+    use crate::builder::{EnvelopeScriptBuilder, MIN_ENVELOPE_PAYLOAD_SIZE, build_envelope_script};
 
     use super::*;
 
@@ -184,8 +184,18 @@ mod tests {
     #[test]
     fn test_parse_envelope_container() {
         let pubkey = vec![0x02; 33];
-        let payloads = vec![vec![1, 2, 3], vec![4, 5, 6]];
-        let script = build_envelope_container(&pubkey, &payloads).unwrap();
+        let payload1 = vec![1; MIN_ENVELOPE_PAYLOAD_SIZE / 2];
+        let payload2 = vec![2; MIN_ENVELOPE_PAYLOAD_SIZE / 2];
+        let payloads = vec![payload1.clone(), payload2.clone()];
+
+        let script = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+            .unwrap()
+            .add_envelope(&payload1)
+            .unwrap()
+            .add_envelope(&payload2)
+            .unwrap()
+            .build()
+            .unwrap();
         let (extracted_pubkey, extracted_payloads) = parse_envelope_container(&script).unwrap();
 
         assert_eq!(extracted_pubkey, pubkey);
@@ -195,8 +205,15 @@ mod tests {
     #[test]
     fn test_parse_single_envelope_in_container() {
         let pubkey = vec![0x03; 33];
-        let payloads = vec![vec![9, 8, 7, 6, 5]];
-        let script = build_envelope_container(&pubkey, &payloads).unwrap();
+        let payload = vec![9; MIN_ENVELOPE_PAYLOAD_SIZE];
+        let payloads = vec![payload.clone()];
+
+        let script = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+            .unwrap()
+            .add_envelope(&payload)
+            .unwrap()
+            .build()
+            .unwrap();
         let (extracted_pubkey, extracted_payloads) = parse_envelope_container(&script).unwrap();
 
         assert_eq!(extracted_pubkey, pubkey);

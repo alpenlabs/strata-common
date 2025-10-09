@@ -24,6 +24,9 @@
 //! <envelope_n>
 //! ```
 //!
+//! The envelope container is typically placed in a transaction input's script_sig,
+//! allowing arbitrary data to be included in Bitcoin transactions.
+//!
 //! # Examples
 //!
 //! Creating a single envelope:
@@ -34,13 +37,20 @@
 //! let script = build_envelope_script(&payload).unwrap();
 //! ```
 //!
-//! Creating an envelope container:
+//! Using the builder for envelope container scripts with size validation:
 //! ```
-//! use strata_l1_envelope_fmt::builder::build_envelope_container;
+//! use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
 //!
 //! let pubkey = vec![0x02; 33];
-//! let payloads = vec![vec![1, 2, 3], vec![4, 5, 6]];
-//! let script = build_envelope_container(&pubkey, &payloads).unwrap();
+//! let payload1 = vec![1; 150];
+//! let payload2 = vec![2; 150];
+//!
+//! let script = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+//!     .unwrap()
+//!     .add_envelope(&payload1).unwrap()
+//!     .add_envelope(&payload2).unwrap()
+//!     .build()
+//!     .unwrap();
 //! ```
 
 /// Bitcoin script envelope builder utilities.
