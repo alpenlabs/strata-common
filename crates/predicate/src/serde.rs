@@ -64,7 +64,7 @@ impl<'de> Deserialize<'de> for PredicateKey {
             Vec::new()
         } else {
             hex::decode(parts[1])
-                .map_err(|e| serde::de::Error::custom(format!("Invalid hex encoding: {}", e)))?
+                .map_err(|e| serde::de::Error::custom(format!("Invalid hex encoding: {e}")))?
         };
 
         Ok(PredicateKey::new(id, condition))
@@ -74,7 +74,6 @@ impl<'de> Deserialize<'de> for PredicateKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json;
 
     #[test]
     fn test_serde_json_serialization() {
