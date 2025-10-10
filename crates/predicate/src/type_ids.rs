@@ -8,6 +8,7 @@
 //! can be added without breaking existing serialized predicate keys.
 
 use core::fmt;
+use std::str::FromStr;
 
 use crate::errors::PredicateError;
 
@@ -83,6 +84,20 @@ impl fmt::Display for PredicateTypeId {
             PredicateTypeId::AlwaysAccept => write!(f, "AlwaysAccept"),
             PredicateTypeId::Bip340Schnorr => write!(f, "Bip340Schnorr"),
             PredicateTypeId::Sp1Groth16 => write!(f, "Sp1Groth16"),
+        }
+    }
+}
+
+impl FromStr for PredicateTypeId {
+    type Err = PredicateError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "NeverAccept" => Ok(PredicateTypeId::NeverAccept),
+            "AlwaysAccept" => Ok(PredicateTypeId::AlwaysAccept),
+            "Bip340Schnorr" => Ok(PredicateTypeId::Bip340Schnorr),
+            "Sp1Groth16" => Ok(PredicateTypeId::Sp1Groth16),
+            _ => Err(PredicateError::InvalidPredicateType(0)), // FIXME:
         }
     }
 }

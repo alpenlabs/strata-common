@@ -8,7 +8,9 @@ workspace = true
 
 [dependencies]
 borsh.workspace = true
+hex = { workspace = true, optional = true }
 k256 = { version = "0.13.4", features = ["schnorr"] }
+serde = { workspace = true, optional = true }
 signature = "2.2"
 thiserror.workspace = true
 zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", branch = "feat/expose-types" }
@@ -16,5 +18,10 @@ zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido",
 [dev-dependencies]
 hex.workspace = true
 rand.workspace = true
+serde_json.workspace = true
 sp1-verifier = "5.2.1"
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", branch = "feat/expose-types" }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "dep:hex"]

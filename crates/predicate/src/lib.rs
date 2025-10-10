@@ -72,6 +72,10 @@
 //! - **SP1 Groth16 Verifier** ([`PredicateTypeId::Sp1Groth16`] = 20):
 //!   Zero-knowledge proof verification for SP1-generated Groth16 proofs.
 //!
+//! ## Feature Flags
+//!
+//! - `serde`: Enables Serialize/Deserialize implementations for [`PredicateKey`]
+//!
 //! ## Public API
 //!
 //! The crate exposes:
@@ -88,6 +92,9 @@ mod test_utils;
 pub mod type_ids;
 mod verifier;
 mod verifiers;
+
+#[cfg(feature = "serde")]
+mod serde;
 
 // Re-export main API
 pub use key::{PredicateKey, PredicateKeyBuf};

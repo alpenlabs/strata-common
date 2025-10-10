@@ -226,7 +226,7 @@ mod tests {
         // Test that always_accept() creates correct predicate
         let predkey = PredicateKey::always_accept();
         assert_eq!(predkey.id(), PredicateTypeId::AlwaysAccept);
-        assert_eq!(predkey.condition(), &[]);
+        assert!(predkey.condition().is_empty());
     }
 
     #[test]
