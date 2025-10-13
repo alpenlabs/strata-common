@@ -51,4 +51,4 @@ pub enum PredicateError {
 }
 
 /// Result type alias for predicate operations.
-pub(crate) type PredicateResult<T> = std::result::Result<T, PredicateError>;
+pub type PredicateResult<T> = std::result::Result<T, PredicateError>;

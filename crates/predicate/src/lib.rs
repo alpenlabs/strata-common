@@ -103,7 +103,7 @@ pub use key::{PredicateKey, PredicateKeyBuf};
 pub use type_ids::PredicateTypeId;
 
 // Internal imports for the verify_claim_witness function
-use errors::PredicateResult;
+pub use errors::{PredicateError, PredicateResult};
 
 /// Verifies that a witness satisfies a predicate key for a given claim.
 ///
