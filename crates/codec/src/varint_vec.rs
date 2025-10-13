@@ -11,8 +11,11 @@ use crate::varint::{VARINT_MAX, Varint};
 /// exposes most of the same functions as `Vec` does, but with the bounds
 /// checking needed to ensure we stay under this size limit.
 ///
-/// There is an optional lower bound that can be set with the `BOUND` const
-/// generic param.  This uses `u32::MAX`.
+/// There is an optional lower length bound that can be set with the `BOUND`
+/// const generic param.  This uses `u32::MAX` as a default, which lets it be
+/// the technical limit enforced by the varint format.  Other length bounds over
+/// the varint limit are possible, but they don't do anything differently than
+/// `u32::MAX`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VarVec<T, const BOUND: u32 = { u32::MAX }> {
     inner: Vec<T>,
