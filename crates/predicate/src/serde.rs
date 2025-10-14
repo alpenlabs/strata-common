@@ -1,9 +1,9 @@
 //! Serde serialization and deserialization for predicate keys.
 //!
-//! This module implements `Serialize` and `Deserialize` for [`PredicateKey`] using a
-//! human-readable string format.
+//! This module implements `Serialize` and `Deserialize` for [`PredicateKey`] using different
+//! strategies based on whether the format is human-readable.
 //!
-//! ## Format
+//! ## Human-Readable Format (JSON, TOML, etc.)
 //!
 //! Predicate keys are serialized as strings with the format:
 //!
@@ -25,10 +25,14 @@
 //! "Sp1Groth16:deadbeef"              // 4-byte condition
 //! ```
 //!
-//! This format is particularly useful for JSON serialization and human-readable
-//! configuration files.
+//! ## Binary Format (bincode, etc.)
+//!
+//! For non-human-readable formats, the data is serialized as raw bytes in a tuple format:
+//! `(predicate_type_id_u8, condition_bytes)`
 
+use serde::de::{SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
 
 use crate::{PredicateKey, PredicateTypeId};
 
@@ -37,13 +41,23 @@ impl Serialize for PredicateKey {
     where
         S: Serializer,
     {
-        let formatted = if self.condition().is_empty() {
-            format!("{}", self.id())
+        if serializer.is_human_readable() {
+            // Human-readable format: use string representation
+            let formatted = if self.condition().is_empty() {
+                format!("{}", self.id())
+            } else {
+                let hex_condition = hex::encode(self.condition());
+                format!("{}:{}", self.id(), hex_condition)
+            };
+            serializer.serialize_str(&formatted)
         } else {
-            let hex_condition = hex::encode(self.condition());
-            format!("{}:{}", self.id(), hex_condition)
-        };
-        serializer.serialize_str(&formatted)
+            // Binary format: serialize as tuple of (id_u8, condition_bytes)
+            use serde::ser::SerializeTuple;
+            let mut tuple = serializer.serialize_tuple(2)?;
+            tuple.serialize_element(&(self.id() as u8))?;
+            tuple.serialize_element(self.condition())?;
+            tuple.end()
+        }
     }
 }
 
@@ -52,22 +66,55 @@ impl<'de> Deserialize<'de> for PredicateKey {
     where
         D: Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        let parts: Vec<&str> = s.splitn(2, ':').collect();
+        if deserializer.is_human_readable() {
+            // Human-readable format: expect string representation
+            let s = String::deserialize(deserializer)?;
+            let parts: Vec<&str> = s.splitn(2, ':').collect();
 
-        let id = parts[0]
-            .parse::<PredicateTypeId>()
-            .map_err(serde::de::Error::custom)?;
+            let id = parts[0]
+                .parse::<PredicateTypeId>()
+                .map_err(serde::de::Error::custom)?;
 
-        let condition = if parts.len() == 1 {
-            // No colon, empty condition
-            Vec::new()
+            let condition = if parts.len() == 1 {
+                // No colon, empty condition
+                Vec::new()
+            } else {
+                hex::decode(parts[1])
+                    .map_err(|e| serde::de::Error::custom(format!("Invalid hex encoding: {e}")))?
+            };
+
+            Ok(PredicateKey::new(id, condition))
         } else {
-            hex::decode(parts[1])
-                .map_err(|e| serde::de::Error::custom(format!("Invalid hex encoding: {e}")))?
-        };
+            struct PredicateKeyVisitor;
 
-        Ok(PredicateKey::new(id, condition))
+            impl<'de> Visitor<'de> for PredicateKeyVisitor {
+                type Value = PredicateKey;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    formatter.write_str("a tuple of (u8, Vec<u8>)")
+                }
+
+                fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+                where
+                    A: SeqAccess<'de>,
+                {
+                    let id_u8: u8 = seq
+                        .next_element()?
+                        .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                    let condition: Vec<u8> = seq
+                        .next_element()?
+                        .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+
+                    let id = PredicateTypeId::try_from(id_u8).map_err(|e| {
+                        serde::de::Error::custom(format!("Invalid predicate type ID: {e}"))
+                    })?;
+
+                    Ok(PredicateKey::new(id, condition))
+                }
+            }
+
+            deserializer.deserialize_tuple(2, PredicateKeyVisitor)
+        }
     }
 }
 
@@ -105,5 +152,29 @@ mod tests {
 
         let deserialized3: PredicateKey = serde_json::from_str(&json3).unwrap();
         assert_eq!(predkey3, deserialized3);
+    }
+
+    #[test]
+    fn test_bincode_serialization() {
+        // Test with empty condition
+        let predkey1 = PredicateKey::always_accept();
+        let encoded1 = bincode::serialize(&predkey1).unwrap();
+        let decoded1: PredicateKey = bincode::deserialize(&encoded1).unwrap();
+        assert_eq!(predkey1, decoded1);
+
+        // Test with non-empty condition
+        let predkey2 = PredicateKey::new(
+            PredicateTypeId::Bip340Schnorr,
+            vec![0x01, 0x02, 0x03, 0x04, 0x05],
+        );
+        let encoded2 = bincode::serialize(&predkey2).unwrap();
+        let decoded2: PredicateKey = bincode::deserialize(&encoded2).unwrap();
+        assert_eq!(predkey2, decoded2);
+
+        // Test with another predicate type
+        let predkey3 = PredicateKey::new(PredicateTypeId::Sp1Groth16, vec![0xde, 0xad, 0xbe, 0xef]);
+        let encoded3 = bincode::serialize(&predkey3).unwrap();
+        let decoded3: PredicateKey = bincode::deserialize(&encoded3).unwrap();
+        assert_eq!(predkey3, decoded3);
     }
 }
