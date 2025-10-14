@@ -96,6 +96,9 @@ mod verifiers;
 #[cfg(feature = "serde")]
 mod serde;
 
+#[cfg(feature = "borsh")]
+mod borsh;
+
 // Re-export main API
 pub use key::{PredicateKey, PredicateKeyBuf};
 

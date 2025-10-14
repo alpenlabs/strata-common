@@ -7,15 +7,13 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-borsh.workspace = true
+borsh = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 k256 = { version = "0.13.4", features = ["schnorr"] }
 serde = { workspace = true, optional = true }
 signature = "2.2"
 thiserror.workspace = true
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", branch = "feat/feature-gate-serde-borsh", features = [
-    "borsh",
-] }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", branch = "feat/feature-gate-serde-borsh" }
 
 [dev-dependencies]
 hex.workspace = true
@@ -25,5 +23,6 @@ sp1-verifier = "5.2.1"
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", branch = "feat/feature-gate-serde-borsh" }
 
 [features]
-default = ["serde"]
+default = ["serde", "borsh"]
 serde = ["dep:serde", "dep:hex"]
+borsh = ["dep:borsh"]
