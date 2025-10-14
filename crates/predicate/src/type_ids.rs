@@ -97,7 +97,9 @@ impl FromStr for PredicateTypeId {
             "AlwaysAccept" => Ok(PredicateTypeId::AlwaysAccept),
             "Bip340Schnorr" => Ok(PredicateTypeId::Bip340Schnorr),
             "Sp1Groth16" => Ok(PredicateTypeId::Sp1Groth16),
-            _ => Err(PredicateError::InvalidPredicateType(0)), // FIXME:
+            unknown => Err(PredicateError::UnknownPredicateTypeName(
+                unknown.to_string(),
+            )),
         }
     }
 }

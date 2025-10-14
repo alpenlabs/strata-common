@@ -4,6 +4,7 @@
 //! including parsing errors for predicates and witnesses, verification failures,
 //! and configuration errors. All errors are structured with specific context
 //! about which predicate type caused the error and detailed reasons for debugging.
+
 use thiserror::Error;
 
 use crate::type_ids::PredicateTypeId;
@@ -19,6 +20,10 @@ pub enum PredicateError {
     /// Missing predicate type identifier.
     #[error("missing predicate type")]
     MissingPredicateType,
+
+    /// Unknown predicate type name in string parsing.
+    #[error("unknown predicate type name: {0}")]
+    UnknownPredicateTypeName(String),
 
     // === Parsing Errors ===
     /// Predicate condition parsing failed.
