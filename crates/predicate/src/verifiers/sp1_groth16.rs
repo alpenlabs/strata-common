@@ -59,8 +59,7 @@ impl PredicateVerifier for Sp1Groth16Verifier {
             _ => Err(PredicateError::WitnessParsingFailed {
                 id: PredicateTypeId::Sp1Groth16,
                 reason: format!(
-                    "invalid sp1 groth16 verifying key size. expected {} for compressed and {} for uncompressed",
-                    SP1_GROTH16_VK_COMPRESSED_SIZE, SP1_GROTH16_VK_UNCOMPRESSED_SIZE
+                    "invalid sp1 groth16 verifying key size. expected {SP1_GROTH16_VK_COMPRESSED_SIZE} for compressed and {SP1_GROTH16_VK_UNCOMPRESSED_SIZE} for uncompressed",
                 ),
             }),
         }
@@ -81,8 +80,7 @@ impl PredicateVerifier for Sp1Groth16Verifier {
             _ => Err(PredicateError::WitnessParsingFailed {
                 id: PredicateTypeId::Sp1Groth16,
                 reason: format!(
-                    "invalid groth16 proof witness size. expected {} for compressed and {} for uncompressed",
-                    GROTH16_PROOF_COMPRESSED_SIZE, GROTH16_PROOF_UNCOMPRESSED_SIZE,
+                    "invalid groth16 proof witness size. expected {GROTH16_PROOF_COMPRESSED_SIZE} for compressed and {GROTH16_PROOF_UNCOMPRESSED_SIZE} for uncompressed",
                 ),
             }),
         }

@@ -265,5 +265,4 @@ mod tests {
         let back_to_owned = key_buf.to_owned();
         assert_eq!(predkey, back_to_owned);
     }
-
 }
