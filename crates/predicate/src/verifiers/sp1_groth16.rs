@@ -4,7 +4,8 @@
 //! using types and verification functions from the `zkaleido-sp1-groth16-verifier` crate.
 
 use zkaleido_sp1_groth16_verifier::{
-    Groth16Proof, Groth16VerifyingKey,
+    GROTH16_PROOF_COMPRESSED_SIZE, GROTH16_PROOF_UNCOMPRESSED_SIZE, Groth16Proof,
+    Groth16VerifyingKey, SP1_GROTH16_VK_COMPRESSED_SIZE, SP1_GROTH16_VK_UNCOMPRESSED_SIZE,
     hashes::{blake3_to_fr, sha256_to_fr},
     verify_sp1_groth16_algebraic,
 };
@@ -41,21 +42,50 @@ impl PredicateVerifier for Sp1Groth16Verifier {
     type Witness = Groth16Proof;
 
     fn parse_condition(&self, condition: &[u8]) -> PredicateResult<Self::Condition> {
-        // Parse condition bytes as SP1Groth16Verifier (contains program ID + verifying key)
-        borsh::from_slice(condition).map_err(|e| PredicateError::PredicateParsingFailed {
-            id: PredicateTypeId::Sp1Groth16,
-            reason: format!("failed to parse SP1 Groth16 verifying key from condition data: {e}",),
-        })
+        match condition.len() {
+            SP1_GROTH16_VK_COMPRESSED_SIZE => Groth16VerifyingKey::from_gnark_bytes(condition)
+                .map_err(|e| PredicateError::PredicateParsingFailed {
+                    id: PredicateTypeId::Sp1Groth16,
+                    reason: e.to_string(),
+                }),
+            SP1_GROTH16_VK_UNCOMPRESSED_SIZE => {
+                Groth16VerifyingKey::from_uncompressed_bytes(condition).map_err(|e| {
+                    PredicateError::PredicateParsingFailed {
+                        id: PredicateTypeId::Sp1Groth16,
+                        reason: e.to_string(),
+                    }
+                })
+            }
+            _ => Err(PredicateError::WitnessParsingFailed {
+                id: PredicateTypeId::Sp1Groth16,
+                reason: format!(
+                    "invalid sp1 groth16 verifying key size. expected {} for compressed and {} for uncompressed",
+                    SP1_GROTH16_VK_COMPRESSED_SIZE, SP1_GROTH16_VK_UNCOMPRESSED_SIZE
+                ),
+            }),
+        }
     }
 
     fn parse_witness(&self, witness: &[u8]) -> PredicateResult<Self::Witness> {
-        // Parse witness bytes as Groth16Proof using zkaleido's loader
-        Groth16Proof::load_from_gnark_bytes(witness).map_err(|e| {
-            PredicateError::WitnessParsingFailed {
+        match witness.len() {
+            GROTH16_PROOF_COMPRESSED_SIZE => Groth16Proof::from_gnark_compressed_bytes(witness)
+                .map_err(|e| PredicateError::WitnessParsingFailed {
+                    id: PredicateTypeId::Sp1Groth16,
+                    reason: e.to_string(),
+                }),
+            GROTH16_PROOF_UNCOMPRESSED_SIZE => Groth16Proof::from_uncompressed_bytes(witness)
+                .map_err(|e| PredicateError::WitnessParsingFailed {
+                    id: PredicateTypeId::Sp1Groth16,
+                    reason: e.to_string(),
+                }),
+            _ => Err(PredicateError::WitnessParsingFailed {
                 id: PredicateTypeId::Sp1Groth16,
-                reason: format!("failed to parse Groth16 proof from witness data: {e}"),
-            }
-        })
+                reason: format!(
+                    "invalid groth16 proof witness size. expected {} for compressed and {} for uncompressed",
+                    GROTH16_PROOF_COMPRESSED_SIZE, GROTH16_PROOF_UNCOMPRESSED_SIZE,
+                ),
+            }),
+        }
     }
 
     fn verify_inner(
