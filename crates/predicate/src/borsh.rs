@@ -26,25 +26,6 @@ mod tests {
     use proptest::prelude::*;
     use zkaleido_sp1_groth16_verifier::SP1_GROTH16_VK_UNCOMPRESSED_SIZE;
 
-    #[test]
-    fn test_borsh_serialization_roundtrip() {
-        // Test with empty condition
-        let predkey1 = PredicateKey::always_accept();
-        let serialized1 = borsh::to_vec(&predkey1).unwrap();
-        let deserialized1 = borsh::from_slice::<PredicateKey>(&serialized1).unwrap();
-        assert_eq!(predkey1, deserialized1);
-
-        // Test with non-empty condition
-        let predkey2 = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test_condition".to_vec());
-        let serialized2 = borsh::to_vec(&predkey2).unwrap();
-        let deserialized2 = borsh::from_slice::<PredicateKey>(&serialized2).unwrap();
-        assert_eq!(predkey2, deserialized2);
-
-        // Test that invalid data fails deserialization
-        let invalid_bytes = vec![99u8, 0x01, 0x02];
-        assert!(borsh::from_slice::<PredicateKey>(&invalid_bytes).is_err());
-    }
-
     // Strategy to generate arbitrary PredicateTypeId
     fn predicate_type_id_strategy() -> impl Strategy<Value = PredicateTypeId> {
         prop_oneof![
@@ -77,5 +58,50 @@ mod tests {
                 prop_assert_eq!(predkey, deserialized);
             }
 
+            #[test]
+            fn proptest_borsh_format_consistency(
+                id in predicate_type_id_strategy(),
+                condition in prop::collection::vec(any::<u8>(), 0..256)
+            ) {
+                let predkey = PredicateKey::new(id, condition.clone());
+                let serialized = borsh::to_vec(&predkey).unwrap();
+
+                // The borsh format serializes to_bytes() output as Vec<u8>
+                // Vec<u8> is serialized as: 4 bytes length (LE) + bytes
+                // to_bytes() returns: 1 byte (type_id) + condition bytes
+                let expected_len = 4 + 1 + condition.len();
+                prop_assert_eq!(serialized.len(), expected_len);
+
+                // Verify we can deserialize it
+                let deserialized = borsh::from_slice::<PredicateKey>(&serialized).unwrap();
+                prop_assert_eq!(predkey.id(), deserialized.id());
+                prop_assert_eq!(predkey.condition(), deserialized.condition());
+            }
+
+            #[test]
+            fn proptest_borsh_invalid_type_id(
+                invalid_type_id in any::<u8>().prop_filter("invalid type id", |&id| {
+                    PredicateTypeId::try_from(id).is_err()
+                }),
+                condition_len in 0..256usize
+            ) {
+                // Create borsh-serialized data with invalid type ID
+                // Format: [vec_len (4 bytes LE)][type_id (1 byte)][condition bytes]
+                let mut serialized = Vec::new();
+
+                // Total length is 1 (type_id) + condition_len
+                let total_len = 1 + condition_len;
+                serialized.extend_from_slice(&(total_len as u32).to_le_bytes());
+
+                // Add the invalid type_id
+                serialized.push(invalid_type_id);
+
+                // Add condition bytes
+                serialized.extend(vec![0u8; condition_len]);
+
+                // Deserialization should fail
+                let result = borsh::from_slice::<PredicateKey>(&serialized);
+                prop_assert!(result.is_err());
+            }
     }
 }
