@@ -24,7 +24,7 @@ mod tests {
     use crate::PredicateTypeId;
 
     use proptest::prelude::*;
-    use zkaleido_sp1_groth16_verifier::SP1_GROTH16_VK_UNCOMPRESSED_SIZE;
+    use zkaleido_sp1_groth16_verifier::SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED;
 
     // Strategy to generate arbitrary PredicateTypeId
     fn predicate_type_id_strategy() -> impl Strategy<Value = PredicateTypeId> {
@@ -40,7 +40,7 @@ mod tests {
     fn predicate_key_strategy() -> impl Strategy<Value = PredicateKey> {
         (
             predicate_type_id_strategy(),
-            prop::collection::vec(any::<u8>(), 0..SP1_GROTH16_VK_UNCOMPRESSED_SIZE),
+            prop::collection::vec(any::<u8>(), 0..SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED),
         )
             .prop_map(|(id, condition)| PredicateKey::new(id, condition))
     }

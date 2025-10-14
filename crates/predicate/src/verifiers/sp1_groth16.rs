@@ -5,7 +5,8 @@
 
 use zkaleido_sp1_groth16_verifier::{
     GROTH16_PROOF_COMPRESSED_SIZE, GROTH16_PROOF_UNCOMPRESSED_SIZE, Groth16Proof,
-    Groth16VerifyingKey, SP1_GROTH16_VK_COMPRESSED_SIZE, SP1_GROTH16_VK_UNCOMPRESSED_SIZE,
+    Groth16VerifyingKey, SP1_GROTH16_VK_COMPRESSED_SIZE_MERGED,
+    SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED,
     hashes::{blake3_to_fr, sha256_to_fr},
     verify_sp1_groth16_algebraic,
 };
@@ -43,23 +44,27 @@ impl PredicateVerifier for Sp1Groth16Verifier {
 
     fn parse_condition(&self, condition: &[u8]) -> PredicateResult<Self::Condition> {
         match condition.len() {
-            SP1_GROTH16_VK_COMPRESSED_SIZE => Groth16VerifyingKey::from_gnark_bytes(condition)
-                .map_err(|e| PredicateError::PredicateParsingFailed {
-                    id: PredicateTypeId::Sp1Groth16,
-                    reason: e.to_string(),
-                }),
-            SP1_GROTH16_VK_UNCOMPRESSED_SIZE => {
-                Groth16VerifyingKey::from_uncompressed_bytes(condition).map_err(|e| {
-                    PredicateError::PredicateParsingFailed {
+            SP1_GROTH16_VK_COMPRESSED_SIZE_MERGED => {
+                Groth16VerifyingKey::from_gnark_bytes(condition).map_err(|e| {
+                    PredicateError::ConditionParsingFailed {
                         id: PredicateTypeId::Sp1Groth16,
                         reason: e.to_string(),
                     }
                 })
             }
-            _ => Err(PredicateError::WitnessParsingFailed {
+            SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED => {
+                Groth16VerifyingKey::from_uncompressed_bytes(condition).map_err(|e| {
+                    PredicateError::ConditionParsingFailed {
+                        id: PredicateTypeId::Sp1Groth16,
+                        reason: e.to_string(),
+                    }
+                })
+            }
+            _ => Err(PredicateError::ConditionParsingFailed {
                 id: PredicateTypeId::Sp1Groth16,
                 reason: format!(
-                    "invalid sp1 groth16 verifying key size. expected {SP1_GROTH16_VK_COMPRESSED_SIZE} for compressed and {SP1_GROTH16_VK_UNCOMPRESSED_SIZE} for uncompressed",
+                    "invalid sp1 groth16 verifying key size {}. expected {SP1_GROTH16_VK_COMPRESSED_SIZE_MERGED} for compressed and {SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED} for uncompressed",
+                    condition.len(),
                 ),
             }),
         }
@@ -80,7 +85,8 @@ impl PredicateVerifier for Sp1Groth16Verifier {
             _ => Err(PredicateError::WitnessParsingFailed {
                 id: PredicateTypeId::Sp1Groth16,
                 reason: format!(
-                    "invalid groth16 proof witness size. expected {GROTH16_PROOF_COMPRESSED_SIZE} for compressed and {GROTH16_PROOF_UNCOMPRESSED_SIZE} for uncompressed",
+                    "invalid groth16 proof witness size {}. expected {GROTH16_PROOF_COMPRESSED_SIZE} for compressed and {GROTH16_PROOF_UNCOMPRESSED_SIZE} for uncompressed.",
+                    witness.len()
                 ),
             }),
         }
@@ -133,7 +139,7 @@ mod tests {
     use zkaleido::ProofReceiptWithMetadata;
     use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
 
-    fn load_predicate_claim_witness() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+    fn load_condition_claim_witness() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
         let program_id_hex = "00eb7fd5709e4b833db86054ba4acca001a3aa5f18b7e7d0d96d0f1d340b4e34";
         let program_id: [u8; 32] = hex::decode(program_id_hex).unwrap().try_into().unwrap();
 
@@ -144,113 +150,113 @@ mod tests {
             .receipt()
             .clone();
 
-        let predicate = borsh::to_vec(&verifier.vk).unwrap();
+        let condition = verifier.vk.to_gnark_bytes();
         let claim = receipt.public_values().as_bytes().to_vec();
         let witness = receipt.proof().as_bytes()[4..].to_vec();
 
-        (predicate, claim, witness)
+        (condition, claim, witness)
     }
 
     #[test]
     fn test_sp1_groth16_predicate_verification() {
-        let (predicate, claim, witness) = load_predicate_claim_witness();
+        let (predicate, claim, witness) = load_condition_claim_witness();
         let verifier = Sp1Groth16Verifier;
         let res = verifier.verify(&predicate, &claim, &witness);
         assert!(res.is_ok());
     }
 
     #[test]
-    fn test_sp1_groth16_invalid_predicate() {
-        let (predicate, claim, witness) = load_predicate_claim_witness();
+    fn test_sp1_groth16_invalid_condition() {
+        let (condition, claim, witness) = load_condition_claim_witness();
         let verifier = Sp1Groth16Verifier;
 
         // Test with larger predicates
-        let mut larger_predicate = predicate.clone();
-        larger_predicate.extend_from_slice(&[0u8; 10]);
-        let res = verifier.verify(&larger_predicate, &claim, &witness);
+        let mut larger_condition = condition.clone();
+        larger_condition.extend_from_slice(&[0u8; 10]);
+        let res = verifier.verify(&larger_condition, &claim, &witness);
         assert_predicate_parsing_failed(res, PredicateTypeId::Sp1Groth16);
 
-        let mut larger_predicate = predicate.clone();
-        larger_predicate.extend_from_slice(&[0u8; 1]);
-        let res = verifier.verify(&larger_predicate, &claim, &witness);
+        let mut larger_condition = condition.clone();
+        larger_condition.extend_from_slice(&[0u8; 1]);
+        let res = verifier.verify(&larger_condition, &claim, &witness);
         assert_predicate_parsing_failed(res, PredicateTypeId::Sp1Groth16);
 
         // Test with shorter predicates
-        let shorter_predicate = &predicate[..predicate.len() - 5];
+        let shorter_predicate = &condition[..condition.len() - 5];
         let res = verifier.verify(shorter_predicate, &claim, &witness);
         assert_predicate_parsing_failed(res, PredicateTypeId::Sp1Groth16);
 
-        let shorter_predicate = &predicate[1..];
+        let shorter_predicate = &condition[1..];
         let res = verifier.verify(shorter_predicate, &claim, &witness);
         assert_predicate_parsing_failed(res, PredicateTypeId::Sp1Groth16);
 
-        let mut larger_predicate = predicate.clone();
+        let mut larger_predicate = condition.clone();
         larger_predicate.extend_from_slice(&[0u8; 10]);
         let same_size_predicate = &larger_predicate[10..];
-        assert_eq!(same_size_predicate.len(), predicate.len());
+        assert_eq!(same_size_predicate.len(), condition.len());
         let res = verifier.verify(same_size_predicate, &claim, &witness);
         assert_predicate_parsing_failed(res, PredicateTypeId::Sp1Groth16);
     }
 
     #[test]
     fn test_sp1_groth16_invalid_witness() {
-        let (predicate, claim, mut witness) = load_predicate_claim_witness();
+        let (condition, claim, mut witness) = load_condition_claim_witness();
         let verifier = Sp1Groth16Verifier;
 
         // Test with larger witnesses
         let mut larger_witness = witness.clone();
         larger_witness.extend_from_slice(&[0u8; 10]);
-        let res = verifier.verify(&predicate, &claim, &larger_witness);
+        let res = verifier.verify(&condition, &claim, &larger_witness);
         assert_witness_parsing_failed(res, PredicateTypeId::Sp1Groth16);
 
         let mut larger_witness = witness.clone();
         larger_witness.extend_from_slice(&[0u8; 1]);
-        let res = verifier.verify(&predicate, &claim, &larger_witness);
+        let res = verifier.verify(&condition, &claim, &larger_witness);
         assert_witness_parsing_failed(res, PredicateTypeId::Sp1Groth16);
 
         // Test with shorter witnesses
         let shorter_witness = &witness[..witness.len() - 5];
-        let res = verifier.verify(&predicate, &claim, shorter_witness);
+        let res = verifier.verify(&condition, &claim, shorter_witness);
         assert_witness_parsing_failed(res, PredicateTypeId::Sp1Groth16);
 
         let shorter_witness = &witness[1..];
-        let res = verifier.verify(&predicate, &claim, shorter_witness);
+        let res = verifier.verify(&condition, &claim, shorter_witness);
         assert_witness_parsing_failed(res, PredicateTypeId::Sp1Groth16);
 
         // Test with modified bytes inside witness
         witness[0] = witness[0].wrapping_add(1);
-        let res = verifier.verify(&predicate, &claim, &witness);
+        let res = verifier.verify(&condition, &claim, &witness);
         assert_witness_parsing_failed(res, PredicateTypeId::Sp1Groth16);
     }
 
     #[test]
     fn test_sp1_groth16_invalid_claim() {
-        let (predicate, mut claim, witness) = load_predicate_claim_witness();
+        let (condition, mut claim, witness) = load_condition_claim_witness();
         let verifier = Sp1Groth16Verifier;
 
         // Test with larger claims
         let mut larger_claim = claim.clone();
         larger_claim.extend_from_slice(&[0u8; 10]);
-        let res = verifier.verify(&predicate, &larger_claim, &witness);
+        let res = verifier.verify(&condition, &larger_claim, &witness);
         assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
 
         let mut larger_claim = claim.clone();
         larger_claim.extend_from_slice(&[0u8; 1]);
-        let res = verifier.verify(&predicate, &larger_claim, &witness);
+        let res = verifier.verify(&condition, &larger_claim, &witness);
         assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
 
         // Test with shorter claims
         let shorter_claim = &claim[..claim.len() - 2];
-        let res = verifier.verify(&predicate, shorter_claim, &witness);
+        let res = verifier.verify(&condition, shorter_claim, &witness);
         assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
 
         let shorter_claim = &claim[1..];
-        let res = verifier.verify(&predicate, shorter_claim, &witness);
+        let res = verifier.verify(&condition, shorter_claim, &witness);
         assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
 
         // Test with modified bytes inside claim
         claim[0] = claim[0].wrapping_add(1);
-        let res = verifier.verify(&predicate, &claim, &witness);
+        let res = verifier.verify(&condition, &claim, &witness);
         assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
     }
 }

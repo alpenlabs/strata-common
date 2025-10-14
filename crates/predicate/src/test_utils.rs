@@ -13,7 +13,7 @@ pub(crate) fn assert_predicate_parsing_failed(
 ) {
     let err = result.unwrap_err();
     match err {
-        PredicateError::PredicateParsingFailed { id, .. } => {
+        PredicateError::ConditionParsingFailed { id, .. } => {
             assert_eq!(id, expected_type);
         }
         _ => panic!("Expected PredicateParsingFailed, got: {err:?}"),

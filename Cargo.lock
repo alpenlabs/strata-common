@@ -1428,7 +1428,7 @@ checksum = "ced3678a2879b30306d323f4542626697a464a97c0a07c9aebf7ebca65cd4dde"
 [[package]]
 name = "zkaleido"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?branch=feat%2Ffeature-gate-serde-borsh#54c706f2a7d84e6add695932b1930ddb543f4e70"
+source = "git+https://github.com/alpenlabs/zkaleido?branch=feat%2Ffeature-gate-serde-borsh#787fe7825031b6157f95abb52e10cfa58fb7db41"
 dependencies = [
  "arbitrary",
  "async-trait",
@@ -1441,7 +1441,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-groth16-verifier"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?branch=feat%2Ffeature-gate-serde-borsh#54c706f2a7d84e6add695932b1930ddb543f4e70"
+source = "git+https://github.com/alpenlabs/zkaleido?branch=feat%2Ffeature-gate-serde-borsh#787fe7825031b6157f95abb52e10cfa58fb7db41"
 dependencies = [
  "blake3",
  "borsh",

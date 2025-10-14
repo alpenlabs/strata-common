@@ -27,8 +27,8 @@ pub enum PredicateError {
 
     // === Parsing Errors ===
     /// Predicate condition parsing failed.
-    #[error("predicate parsing failed for type {id}: {reason}")]
-    PredicateParsingFailed {
+    #[error("condition parsing failed for type {id}: {reason}")]
+    ConditionParsingFailed {
         /// The predicate type that failed to parse.
         id: PredicateTypeId,
         /// The reason for parsing failure.
