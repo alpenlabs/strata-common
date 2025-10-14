@@ -122,6 +122,9 @@ impl<'de> Deserialize<'de> for PredicateKey {
 mod tests {
     use super::*;
 
+    use proptest::prelude::*;
+    use zkaleido_sp1_groth16_verifier::SP1_GROTH16_VK_UNCOMPRESSED_SIZE;
+
     #[test]
     fn test_serde_json_serialization() {
         // Test with empty condition (no colon)
@@ -176,5 +179,42 @@ mod tests {
         let encoded3 = bincode::serialize(&predkey3).unwrap();
         let decoded3: PredicateKey = bincode::deserialize(&encoded3).unwrap();
         assert_eq!(predkey3, decoded3);
+    }
+
+    // Strategy to generate arbitrary PredicateTypeId
+    fn predicate_type_id_strategy() -> impl Strategy<Value = PredicateTypeId> {
+        prop_oneof![
+            Just(PredicateTypeId::NeverAccept),
+            Just(PredicateTypeId::AlwaysAccept),
+            Just(PredicateTypeId::Bip340Schnorr),
+            Just(PredicateTypeId::Sp1Groth16),
+        ]
+    }
+
+    // Strategy to generate arbitrary PredicateKey
+    fn predicate_key_strategy() -> impl Strategy<Value = PredicateKey> {
+        (
+            predicate_type_id_strategy(),
+            prop::collection::vec(any::<u8>(), 0..SP1_GROTH16_VK_UNCOMPRESSED_SIZE),
+        )
+            .prop_map(|(id, condition)| PredicateKey::new(id, condition))
+    }
+
+    proptest! {
+            #[test]
+            fn proptest_serde_roundtrip(predkey in predicate_key_strategy()) {
+                // Serialize the predicate key
+                let serialized_json = serde_json::to_vec(&predkey).unwrap();
+                let serialized_bincode = bincode::serialize(&predkey).unwrap();
+
+                // Deserialize it back
+                let deserialized_json: PredicateKey = serde_json::from_slice(&serialized_json).unwrap();
+                let deserialized_bincode: PredicateKey = bincode::deserialize(&serialized_bincode).unwrap();
+
+                // They should be equal
+                prop_assert_eq!(&predkey, &deserialized_json);
+                prop_assert_eq!(&predkey, &deserialized_bincode);
+            }
+
     }
 }

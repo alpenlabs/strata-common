@@ -22,6 +22,10 @@ mod tests {
     use super::*;
 
     use crate::PredicateTypeId;
+
+    use proptest::prelude::*;
+    use zkaleido_sp1_groth16_verifier::SP1_GROTH16_VK_UNCOMPRESSED_SIZE;
+
     #[test]
     fn test_borsh_serialization_roundtrip() {
         // Test with empty condition
@@ -39,5 +43,39 @@ mod tests {
         // Test that invalid data fails deserialization
         let invalid_bytes = vec![99u8, 0x01, 0x02];
         assert!(borsh::from_slice::<PredicateKey>(&invalid_bytes).is_err());
+    }
+
+    // Strategy to generate arbitrary PredicateTypeId
+    fn predicate_type_id_strategy() -> impl Strategy<Value = PredicateTypeId> {
+        prop_oneof![
+            Just(PredicateTypeId::NeverAccept),
+            Just(PredicateTypeId::AlwaysAccept),
+            Just(PredicateTypeId::Bip340Schnorr),
+            Just(PredicateTypeId::Sp1Groth16),
+        ]
+    }
+
+    // Strategy to generate arbitrary PredicateKey
+    fn predicate_key_strategy() -> impl Strategy<Value = PredicateKey> {
+        (
+            predicate_type_id_strategy(),
+            prop::collection::vec(any::<u8>(), 0..SP1_GROTH16_VK_UNCOMPRESSED_SIZE),
+        )
+            .prop_map(|(id, condition)| PredicateKey::new(id, condition))
+    }
+
+    proptest! {
+            #[test]
+            fn proptest_borsh_roundtrip(predkey in predicate_key_strategy()) {
+                // Serialize the predicate key
+                let serialized = borsh::to_vec(&predkey).unwrap();
+
+                // Deserialize it back
+                let deserialized = borsh::from_slice::<PredicateKey>(&serialized).unwrap();
+
+                // They should be equal
+                prop_assert_eq!(predkey, deserialized);
+            }
+
     }
 }
