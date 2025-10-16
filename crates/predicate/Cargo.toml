@@ -14,7 +14,7 @@ k256 = { version = "0.13.4", features = ["schnorr"] }
 serde = { workspace = true, optional = true }
 signature = "2.2"
 thiserror.workspace = true
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", branch = "feat/feature-gate-serde-borsh" }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido" }
 
 [dev-dependencies]
 bincode = "1.3"
@@ -23,7 +23,7 @@ proptest = "1.8.0"
 rand.workspace = true
 serde_json.workspace = true
 sp1-verifier = "5.2.1"
-zkaleido = { git = "https://github.com/alpenlabs/zkaleido", branch = "feat/feature-gate-serde-borsh" }
+zkaleido = { git = "https://github.com/alpenlabs/zkaleido" }
 
 [features]
 default = ["serde", "borsh"]
