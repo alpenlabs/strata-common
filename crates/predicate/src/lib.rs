@@ -99,6 +99,9 @@ mod serde;
 #[cfg(feature = "borsh")]
 mod borsh;
 
+#[cfg(feature = "arbitrary")]
+mod arbitrary;
+
 // Re-export main API
 pub use key::{PredicateKey, PredicateKeyBuf};
 

@@ -1136,6 +1136,7 @@ dependencies = [
 name = "strata-predicate"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "bincode",
  "borsh",
  "hex",

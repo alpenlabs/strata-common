@@ -7,6 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+arbitrary = { workspace = true, optional = true, features = ["derive"] }
 borsh = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 k256 = { version = "0.13.4", features = ["schnorr"] }
@@ -28,3 +29,4 @@ zkaleido = { git = "https://github.com/alpenlabs/zkaleido", branch = "feat/featu
 default = ["serde", "borsh"]
 serde = ["dep:serde", "dep:hex"]
 borsh = ["dep:borsh"]
+arbitrary = ["dep:arbitrary"]
