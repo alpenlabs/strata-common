@@ -52,9 +52,8 @@ rust.missing_docs = "warn"
 rustdoc.all = "warn"
 
 [profile.release]
-opt-level = 3      # Optimized for size, use 3 for speed
-lto = true         # Enable Link Time Optimization
-codegen-units = 1  # Reduced to increase optimizations
-panic = "unwind"   # Graceful shutdown even on panic
-strip = "symbols"  # Strip symbols from binary
-
+opt-level = 3     # Optimized for size, use 3 for speed
+lto = true        # Enable Link Time Optimization
+codegen-units = 1 # Reduced to increase optimizations
+panic = "unwind"  # Graceful shutdown even on panic
+strip = "symbols" # Strip symbols from binary
