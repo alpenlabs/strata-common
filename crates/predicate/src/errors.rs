@@ -4,6 +4,7 @@
 //! including parsing errors for predicates and witnesses, verification failures,
 //! and configuration errors. All errors are structured with specific context
 //! about which predicate type caused the error and detailed reasons for debugging.
+
 use thiserror::Error;
 
 use crate::type_ids::PredicateTypeId;
@@ -20,10 +21,14 @@ pub enum PredicateError {
     #[error("missing predicate type")]
     MissingPredicateType,
 
+    /// Unknown predicate type name in string parsing.
+    #[error("unknown predicate type name: {0}")]
+    UnknownPredicateTypeName(String),
+
     // === Parsing Errors ===
     /// Predicate condition parsing failed.
-    #[error("predicate parsing failed for type {id}: {reason}")]
-    PredicateParsingFailed {
+    #[error("condition parsing failed for type {id}: {reason}")]
+    ConditionParsingFailed {
         /// The predicate type that failed to parse.
         id: PredicateTypeId,
         /// The reason for parsing failure.
@@ -51,4 +56,4 @@ pub enum PredicateError {
 }
 
 /// Result type alias for predicate operations.
-pub(crate) type PredicateResult<T> = std::result::Result<T, PredicateError>;
+pub type PredicateResult<T> = std::result::Result<T, PredicateError>;

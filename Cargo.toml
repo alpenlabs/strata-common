@@ -17,10 +17,13 @@ strata-l1-txfmt = { path = "crates/l1proto/txfmt" }
 strata-msg-fmt = { path = "crates/msg-fmt/" }
 strata-predicate = { path = "crates/predicate/" }
 
+arbitrary = { version = "1.4", features = ["derive"] }
 bitcoin = { version = "0.32.6" }
 borsh = { version = "1.5.0", features = ["derive"] }
 hex = "0.4.3"
 rand = "0.8"
+serde = "1.0"
+serde_json = "1.0.94"
 thiserror = "2"
 
 [workspace.lints]

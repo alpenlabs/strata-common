@@ -524,6 +524,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "itoa"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
+
+[[package]]
 name = "k256"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -916,6 +922,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ryu"
+version = "1.0.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
+
+[[package]]
 name = "sec1"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -976,6 +988,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "serde_json"
+version = "1.0.145"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "402a6f66d8c709116cf22f558eab210f5a50187f702eb4d7e5ef38d9a7f1c79c"
+dependencies = [
+ "itoa",
+ "memchr",
+ "ryu",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -1111,10 +1136,15 @@ dependencies = [
 name = "strata-predicate"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
+ "bincode",
  "borsh",
  "hex",
  "k256",
+ "proptest",
  "rand 0.8.5",
+ "serde",
+ "serde_json",
  "signature",
  "sp1-verifier",
  "thiserror 2.0.16",
@@ -1399,7 +1429,7 @@ checksum = "ced3678a2879b30306d323f4542626697a464a97c0a07c9aebf7ebca65cd4dde"
 [[package]]
 name = "zkaleido"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?branch=feat%2Fexpose-types#0c50f0e1a95fcb8aa8abe965ec3a85c4b922050b"
+source = "git+https://github.com/alpenlabs/zkaleido#3cd4f232d2807fa61b6545847f695a7119841adb"
 dependencies = [
  "arbitrary",
  "async-trait",
@@ -1412,7 +1442,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-groth16-verifier"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?branch=feat%2Fexpose-types#0c50f0e1a95fcb8aa8abe965ec3a85c4b922050b"
+source = "git+https://github.com/alpenlabs/zkaleido#3cd4f232d2807fa61b6545847f695a7119841adb"
 dependencies = [
  "blake3",
  "borsh",

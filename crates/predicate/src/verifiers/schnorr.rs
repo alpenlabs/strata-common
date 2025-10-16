@@ -28,7 +28,7 @@ impl PredicateVerifier for SchnorrVerifier {
     fn parse_condition(&self, condition: &[u8]) -> PredicateResult<Self::Condition> {
         // BIP-340 requires exactly 32 bytes for x-only public keys
         if condition.len() != BIP340_PUBKEY_SIZE {
-            return Err(PredicateError::PredicateParsingFailed {
+            return Err(PredicateError::ConditionParsingFailed {
                 id: PredicateTypeId::Bip340Schnorr,
                 reason: format!(
                     "expected {}-byte x-only public key, got {} bytes",
@@ -38,7 +38,7 @@ impl PredicateVerifier for SchnorrVerifier {
             });
         }
 
-        VerifyingKey::from_bytes(condition).map_err(|e| PredicateError::PredicateParsingFailed {
+        VerifyingKey::from_bytes(condition).map_err(|e| PredicateError::ConditionParsingFailed {
             id: PredicateTypeId::Bip340Schnorr,
             reason: format!("invalid x-only public key: {e}"),
         })
