@@ -4,9 +4,11 @@ members = [
   "crates/codec-tests",
   "crates/l1proto/envelope-fmt",
   "crates/l1proto/txfmt",
+  "crates/mmr",
   "crates/msg-fmt",
   "crates/predicate",
-  "crates/mmr",
+  "crates/service",
+  "crates/tasks",
 ]
 
 resolver = "3"
@@ -16,19 +18,26 @@ strata-codec = { path = "crates/codec" }
 strata-codec-tests = { path = "crates/codec-tests" }
 strata-l1-txfmt = { path = "crates/l1proto/txfmt" }
 strata-mmr = { path = "crates/mmr" }
-strata-msg-fmt = { path = "crates/msg-fmt/" }
-strata-predicate = { path = "crates/predicate/" }
+strata-msg-fmt = { path = "crates/msg-fmt" }
+strata-predicate = { path = "crates/predicate" }
+strata-service = { path = "crates/services" }
+strata-tasks = { path = "crates/tasks" }
 
+anyhow = "1"
 arbitrary = { version = "1.4", features = ["derive"] }
 bitcoin = { version = "0.32.6" }
-borsh = { version = "1.5.0", features = ["derive"] }
+borsh = { version = "1.5", features = ["derive"] }
 digest = "0.10"
+futures = "0.3"
+futures-util = "0.3"
 hex = "0.4.3"
 rand = "0.8"
 serde = "1.0"
 serde_json = "1.0.94"
 sha2 = "0.10"
 thiserror = "2"
+tokio = { version = "1.37", features = ["full"] }
+tracing = "0.1"
 
 [workspace.lints]
 rust.missing_debug_implementations = "warn"
@@ -43,8 +52,9 @@ rust.missing_docs = "warn"
 rustdoc.all = "warn"
 
 [profile.release]
-opt-level = 3     # Optimized for size, use 3 for speed
-lto = true        # Enable Link Time Optimization
-codegen-units = 1 # Reduced to increase optimizations
-panic = "abort"   # Abort on panic
-strip = "symbols" # Strip symbols from binary
+opt-level = 3      # Optimized for size, use 3 for speed
+lto = true         # Enable Link Time Optimization
+codegen-units = 1  # Reduced to increase optimizations
+panic = "unwind"   # Graceful shutdown even on panic
+strip = "symbols"  # Strip symbols from binary
+
