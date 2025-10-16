@@ -22,12 +22,16 @@ use crate::{
     shutdown::{Shutdown, ShutdownGuard, ShutdownSignal},
 };
 
+/// Reason for a task exiting.
 #[derive(Debug, thiserror::Error)]
 enum FailureReason {
+    /// Caught panic.
     #[error("panic: {0}")]
     Panic(String),
+
+    /// Graceful error.
     #[error("error: {0}")]
-    Err(#[source] anyhow::Error),
+    Error(#[source] anyhow::Error),
 }
 
 /// Error with the name of the task that panicked and an error downcasted to string, if possible.
@@ -38,6 +42,7 @@ pub struct TaskError {
 }
 
 impl TaskError {
+    /// Constructs from a panic which was just caught.
     fn from_panic(task_name: &str, error: Box<dyn Any>) -> Self {
         let error_message = match error.downcast::<String>() {
             Ok(value) => Some(*value),
@@ -53,10 +58,11 @@ impl TaskError {
         }
     }
 
+    /// Constructs from a graceful anyhow error.
     fn from_err(task_name: &str, err: anyhow::Error) -> Self {
         Self {
             task_name: task_name.to_string(),
-            reason: FailureReason::Err(err),
+            reason: FailureReason::Error(err),
         }
     }
 }
@@ -65,7 +71,7 @@ impl Display for TaskError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let task_name = &self.task_name;
         match &self.reason {
-            FailureReason::Err(error) => {
+            FailureReason::Error(error) => {
                 write!(f, "critical task '{task_name}' exited with err: {error}")
             }
             FailureReason::Panic(error) => {
@@ -82,17 +88,22 @@ impl Display for TaskError {
 pub struct TaskManager {
     /// Tokio's runtime [`Handle`].
     tokio_handle: Handle,
+
     /// Channel's sender tasked with sending `panic` signals from tasks.
     critical_task_end_tx: mpsc::UnboundedSender<TaskError>,
+
     /// Channel's receiver tasked with receiving `panic` signals from tasks.
     critical_task_end_rx: mpsc::UnboundedReceiver<TaskError>,
+
     /// Async-capable shutdown signal that can be sent to tasks.
     shutdown_signal: ShutdownSignal,
+
     /// Pending tasks atomic counter for graceful shutdown.
     pending_tasks_counter: Arc<PendingTasks>,
 }
 
 impl TaskManager {
+    /// Constructs a new instance using a particular tokio runtime.
     pub fn new(tokio_handle: Handle) -> Self {
         let (panicked_tasks_tx, panicked_tasks_rx) = mpsc::unbounded_channel();
 
@@ -105,7 +116,9 @@ impl TaskManager {
         }
     }
 
-    pub fn executor(&self) -> TaskExecutor {
+    /// Constructs an executor from this task manager using the same underlying
+    /// resources.
+    pub fn create_executor(&self) -> TaskExecutor {
         TaskExecutor::new(
             self.tokio_handle.clone(),
             self.critical_task_end_tx.clone(),
@@ -114,12 +127,13 @@ impl TaskManager {
         )
     }
 
+    /// Gets the async runtime handle.
     pub fn handle(&self) -> &Handle {
         &self.tokio_handle
     }
 
-    /// waits until any tasks panic, returns `Err(first_panic_error)`
-    /// returns `Ok(())` if shutdown message is received instead
+    /// Waits until any tasks panic, returns `Err(first_panic_error)`,
+    /// returnsing `Ok(())` if graceful shutdown message is received instead.
     fn wait_for_task_panic(&mut self, shutdown: Shutdown) -> Result<(), TaskError> {
         self.tokio_handle.block_on(async {
             tokio::select! {
@@ -138,22 +152,24 @@ impl TaskManager {
         })
     }
 
-    /// Get shutdown signal trigger
-    pub fn shutdown_signal(&self) -> ShutdownSignal {
+    /// Get shutdown signal trigger.
+    pub fn get_shutdown_signal(&self) -> ShutdownSignal {
         self.shutdown_signal.clone()
     }
 
-    /// Wait for all tasks to complete, returning true.
-    /// If timeout is provided, wait until timeout;
-    /// return false if tasks have not completed by this time.
+    /// Waits for all tasks to complete, returning true.
+    ///
+    /// If timeout is provided, wait until timeout, returning false if timeout
+    /// reached and system still running.
     fn wait_for_graceful_shutdown(&self, timeout: Option<Duration>) -> bool {
         self.tokio_handle
             .block_on(self.wait_for_graceful_shutdown_async(timeout))
     }
 
-    /// Wait for all tasks to complete, returning true.
-    /// If timeout is provided, wait until timeout;
-    /// return false if tasks have not completed by this time.
+    /// Waits for all tasks to complete, returning true.
+    ///
+    /// If timeout is provided, wait until timeout, returning false if timeout
+    /// reached and system still running.
     async fn wait_for_graceful_shutdown_async(&self, timeout: Option<Duration>) -> bool {
         let no_pending_tasks_future = self.pending_tasks_counter.clone().wait_for_zero();
 
@@ -178,7 +194,7 @@ impl TaskManager {
     /// Start background handler to send the shutdown signal when a ctrl-c (SIGINT) or SIGTERM is
     /// received
     pub fn start_signal_listeners(&self) {
-        let shutdown_signal = self.shutdown_signal();
+        let shutdown_signal = self.get_shutdown_signal();
 
         self.tokio_handle.spawn(async move {
             // TODO: double ctrl+c for force quit
@@ -208,6 +224,7 @@ impl TaskManager {
         });
     }
 
+    /// Waits for a shutdown, up to an optional deadline.
     pub fn monitor(mut self, shutdown_timeout: Option<Duration>) -> Result<(), TaskError> {
         // TODO: shut down if all pending tasks exit without errors
         let res = self.wait_for_task_panic(self.shutdown_signal.subscribe());
@@ -216,7 +233,7 @@ impl TaskManager {
         let shutdown_in_time = self.wait_for_graceful_shutdown(shutdown_timeout);
 
         if !shutdown_in_time {
-            info!("Shutdown timeout expired; Forced shutdown");
+            info!("shutdown timeout expired, will probably force shutdown");
         }
 
         // join all pending threads ?
@@ -225,20 +242,24 @@ impl TaskManager {
     }
 }
 
-/// A type that can spawn new tasks
+/// Handle to resources and bookkeeping for spawning tasks.
 #[derive(Debug, Clone)]
 pub struct TaskExecutor {
     /// Handle to the tokio runtime.
     tokio_handle: Handle,
+
     /// Sender half for sending panic signals from tasks
     panicked_tasks_tx: mpsc::UnboundedSender<TaskError>,
+
     /// send shutdown signals to tasks
     shutdown_signal: ShutdownSignal,
+
     /// number of pending tasks
     pending_tasks_counter: Arc<PendingTasks>,
 }
 
 impl TaskExecutor {
+    /// Constructs a new instance.
     fn new(
         tokio_handle: Handle,
         panicked_tasks_tx: mpsc::UnboundedSender<TaskError>,
@@ -253,13 +274,17 @@ impl TaskExecutor {
         }
     }
 
+    /// Gets a ref to the async runtime.
     pub fn handle(&self) -> &Handle {
         &self.tokio_handle
     }
 
-    /// Spawn task in new thread.
-    /// Should check `ShutdownGuard` passed to closure to trigger own shutdown.
-    /// Panic will trigger shutdown.
+    /// Spawn a sync task in a new thread.
+    ///
+    /// Should regularly check the `ShutdownGuard` passed to closure to trigger
+    /// graceful shutdown.
+    ///
+    /// Panic will trigger full system shutdown.
     pub fn spawn_critical<F>(&self, name: &'static str, func: F)
     where
         F: FnOnce(ShutdownGuard) -> anyhow::Result<()> + Send + 'static,
@@ -296,8 +321,9 @@ impl TaskExecutor {
         });
     }
 
-    /// Spawn future as task inside tokio runtime.
-    /// Panic will trigger shutdown.
+    /// Spawns future as task inside tokio runtime.
+    ///
+    /// Panic will trigger full system shutdown.
     pub fn spawn_critical_async(
         &self,
         name: &'static str,
@@ -345,8 +371,9 @@ impl TaskExecutor {
     }
 
     /// Spawn future in tokio runtime.
-    /// Should check `ShutdownGuard` passed to closure to trigger own shutdown manually.
-    /// Panic will trigger shutdown.
+    ///
+    /// Should regularly check the `ShutdownGuard` passed to closure to trigger
+    /// graceful shutdown.
     pub fn spawn_critical_async_with_shutdown<F>(
         &self,
         name: &'static str,
@@ -396,7 +423,7 @@ impl TaskExecutor {
 fn log_task_error(task_error: &TaskError) {
     let name = &task_error.task_name;
     match &task_error.reason {
-        FailureReason::Err(e) => {
+        FailureReason::Error(e) => {
             let bt = e.backtrace();
             error!(%name, err = %e, "critical task exited with error");
             error!("backtrace\n{bt}");
@@ -416,7 +443,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let handle = runtime.handle().clone();
         let manager = TaskManager::new(handle);
-        let executor = manager.executor();
+        let executor = manager.create_executor();
 
         // dont want to print stack trace for expected error while running test
         let original_hook = panic::take_hook();
@@ -446,7 +473,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let handle = runtime.handle().clone();
         let manager = TaskManager::new(handle);
-        let executor = manager.executor();
+        let executor = manager.create_executor();
 
         // dont want to print stack trace for expected error while running test
         let original_hook = panic::take_hook();
@@ -486,7 +513,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let handle = runtime.handle().clone();
         let manager = TaskManager::new(handle);
-        let executor = manager.executor();
+        let executor = manager.create_executor();
 
         executor.spawn_critical("task", |shutdown| loop {
             if shutdown.should_shutdown() {
@@ -533,7 +560,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let handle = runtime.handle().clone();
         let mut manager = TaskManager::new(handle);
-        let executor = manager.executor();
+        let executor = manager.create_executor();
 
         executor.spawn_critical("task", |shutdown| loop {
             if shutdown.should_shutdown() {
@@ -552,7 +579,7 @@ mod tests {
             shutdown_sig.send();
         });
 
-        let _ = manager.wait_for_task_panic(manager.shutdown_signal().subscribe());
+        let _ = manager.wait_for_task_panic(manager.get_shutdown_signal().subscribe());
         let shutdown_in_time = manager.wait_for_graceful_shutdown(Some(Duration::from_secs(5)));
 
         assert!(shutdown_in_time, "should exit successfully in time");
@@ -563,7 +590,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let handle = runtime.handle().clone();
         let mut manager = TaskManager::new(handle);
-        let executor = manager.executor();
+        let executor = manager.create_executor();
 
         executor.spawn_critical_async("async-task", async {
             // doing something useful
@@ -578,7 +605,7 @@ mod tests {
             shutdown_sig.send();
         });
 
-        let _ = manager.wait_for_task_panic(manager.shutdown_signal().subscribe());
+        let _ = manager.wait_for_task_panic(manager.get_shutdown_signal().subscribe());
         let shutdown_in_time = manager.wait_for_graceful_shutdown(Some(Duration::from_secs(5)));
 
         assert!(shutdown_in_time, "should exit successfully in time");
@@ -589,7 +616,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let handle = runtime.handle().clone();
         let mut manager = TaskManager::new(handle);
-        let executor = manager.executor();
+        let executor = manager.create_executor();
 
         executor.spawn_critical_async_with_shutdown("async-task-2", |shutdown| async move {
             loop {
@@ -610,7 +637,7 @@ mod tests {
             shutdown_sig.send();
         });
 
-        let _ = manager.wait_for_task_panic(manager.shutdown_signal().subscribe());
+        let _ = manager.wait_for_task_panic(manager.get_shutdown_signal().subscribe());
         let shutdown_in_time = manager.wait_for_graceful_shutdown(Some(Duration::from_secs(5)));
 
         assert!(shutdown_in_time, "should exit successfully in time");

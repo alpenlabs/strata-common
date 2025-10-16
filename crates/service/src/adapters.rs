@@ -21,6 +21,7 @@ pub struct IterInput<I> {
 }
 
 impl<I> IterInput<I> {
+    /// Constructs a new unclosed instance from an iterator.
     pub fn new(iter: I) -> Self {
         Self {
             iter,
@@ -59,6 +60,7 @@ pub struct SyncAsyncInput<I> {
 }
 
 impl<I> SyncAsyncInput<I> {
+    /// Constructs a new instance using a runtime handle.
     pub fn new(inner: I, handle: tokio::runtime::Handle) -> Self {
         Self { inner, handle }
     }
@@ -85,6 +87,9 @@ pub struct AsyncSyncInput<I> {
 }
 
 impl<I> AsyncSyncInput<I> {
+    /// Constructs a new instance.
+    ///
+    /// This will use the blocking threadpool of the async runtime it's used in.
     pub fn new(inner: I) -> Self {
         Self {
             inner: Arc::new(Mutex::new(inner)),
@@ -152,6 +157,7 @@ pub struct TokioMpscInput<T> {
 }
 
 impl<T> TokioMpscInput<T> {
+    /// Constructs a new uncloesed input from a channel.
     pub fn new(rx: mpsc::Receiver<T>) -> Self {
         Self { rx, closed: false }
     }
@@ -199,6 +205,7 @@ pub struct StreamInput<S> {
 }
 
 impl<S> StreamInput<S> {
+    /// Constructs a new unclosed instance from a stream.
     pub fn new(stream: S) -> Self {
         Self {
             stream,
@@ -232,18 +239,25 @@ where
     }
 }
 
-/// A simple queue of inputs, primarily for testing services in isolation.
+/// A simple preconfigured queue of input messages.  This would be useful
+/// primarily for testing services in isolation.
 ///
 /// Yields each item in the queue and then indicates that the queue is empty,
-/// unless and until more are somehow added.
+/// unless and until more are (*somehow*) added.
 #[derive(Clone, Debug)]
 pub struct VecInput<T> {
     items: VecDeque<T>,
 }
 
 impl<T> VecInput<T> {
+    /// Constructs a new instance from an existing [`VecDeque`].
     pub fn new(items: VecDeque<T>) -> Self {
         Self { items }
+    }
+
+    /// Constructs a new empty instance.
+    pub fn new_empty() -> Self {
+        Self::new(VecDeque::new())
     }
 
     /// Inserts a new item.
