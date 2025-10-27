@@ -1,4 +1,10 @@
-//! Merkle mountain range implementation crate.
+//! Merkle primitives and data structures.
+//!
+//! This crate provides:
+//! - A binary Merkle tree implementation (`tree` module) with proof generation
+//!   and verification.
+//! - A Merkle Mountain Range (MMR) accumulator with incremental updates and
+//!   proof maintenance.
 #![expect(
     clippy::declare_interior_mutable_const,
     reason = "Constants with interior mutability are needed for MMR implementation"
@@ -10,6 +16,10 @@
 
 pub mod error;
 pub mod hasher;
+pub mod tree;
+
+/// Compatibility alias for the primary hasher trait used across Merkle data structures.
+pub use hasher::MerkleHasher as StrataMerkle;
 
 use std::marker::PhantomData;
 
