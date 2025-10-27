@@ -439,10 +439,12 @@ impl<H: MerkleHash> MerkleProof<H> {
         &mut self.inner
     }
 
+    /// Returns the cohash path for this proof.
     pub fn cohashes(&self) -> &[H] {
         self.inner.cohashes()
     }
 
+    /// Returns the index this proof is for.
     pub fn index(&self) -> u64 {
         self.index
     }
@@ -466,14 +468,17 @@ where
 }
 
 impl<H: MerkleHash> RawMerkleProof<H> {
+    /// Creates a new raw proof from a cohash path.
     pub fn new(cohashes: Vec<H>) -> Self {
         Self { cohashes }
     }
 
+    /// Creates an empty raw proof (zero cohash path).
     pub fn new_zero() -> Self {
         Self::new(Vec::new())
     }
 
+    /// Returns the cohash path in this proof.
     pub fn cohashes(&self) -> &[H] {
         &self.cohashes
     }

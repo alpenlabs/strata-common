@@ -1,6 +1,7 @@
+//! Hashing primitives for MMR: hash types and hashing strategies.
 use std::cell::LazyCell;
 
-use digest::{generic_array::GenericArray, Digest};
+use digest::{Digest, generic_array::GenericArray};
 use sha2::Sha256;
 
 type Tag = [u8; 64];
@@ -17,8 +18,9 @@ fn make_tag(s: &[u8]) -> Tag {
     buf
 }
 
-/// Hash wrapper trait.
+/// Hash wrapper trait used by the MMR.
 pub trait MerkleHash: Copy + Clone {
+    /// Length of the hash in bytes.
     const HASH_LEN: usize;
 
     /// Returns a zero hash.
