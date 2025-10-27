@@ -18,6 +18,8 @@ pub mod hasher;
 pub mod mmr;
 pub mod proof;
 pub mod tree;
+#[cfg(feature = "borsh")]
+mod borsh_impl;
 
 // Mark digest as used to satisfy unused dependency lint in workspace.
 use digest as _;

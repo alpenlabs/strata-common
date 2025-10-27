@@ -6,8 +6,12 @@ edition = "2024"
 [lints]
 workspace = true
 
+[features]
+default = []
+borsh = ["dep:borsh"]
+
 [dependencies]
-borsh.workspace = true
+borsh = { workspace = true, optional = true }
 digest.workspace = true
 serde.workspace = true
 sha2.workspace = true

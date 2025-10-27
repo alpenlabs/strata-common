@@ -2,7 +2,6 @@
 
 use std::marker::PhantomData;
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::error::MerkleError;
@@ -10,11 +9,11 @@ use crate::hasher::{MerkleHash, MerkleHasher};
 use crate::proof::{MerkleProof, RawMerkleProof};
 
 /// Compact representation of the MMR that should be borsh serializable easily.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompactMmr<H: MerkleHash> {
-    entries: u64,
-    cap_log2: u8,
-    roots: Vec<H>,
+    pub(crate) entries: u64,
+    pub(crate) cap_log2: u8,
+    pub(crate) roots: Vec<H>,
 }
 
 impl<H> Serialize for CompactMmr<H>
@@ -61,6 +60,15 @@ pub struct MerkleMr64<MH: MerkleHasher + Clone> {
 }
 
 impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
+    /// Internal constructor from raw parts; crate-visible for helpers.
+    pub(crate) fn from_parts(num: u64, peaks: Vec<MH::Hash>) -> Self {
+        Self { num, peaks: peaks.into_boxed_slice(), _pd: PhantomData }
+    }
+
+    /// Returns the internal peaks slice.
+    pub(crate) fn peaks_slice(&self) -> &[MH::Hash] {
+        &self.peaks
+    }
     /// Constructs a new MMR with some scale.  This is the number of peaks we
     /// will keep in the MMR.  The real capacity is 2**n of this value
     /// specified.
