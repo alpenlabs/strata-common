@@ -20,6 +20,13 @@ pub mod proof;
 pub mod tree;
 #[cfg(feature = "borsh")]
 mod borsh_impl;
+#[cfg(feature = "serde")]
+mod serde_impl;
+
+// Test-only dependency used in serde roundtrip tests when the `serde` feature
+// is disabled, to satisfy unused dependency lint for dev-deps.
+#[cfg(all(test, not(feature = "serde")))]
+use serde_json as _;
 
 // Mark digest as used to satisfy unused dependency lint in workspace.
 use digest as _;

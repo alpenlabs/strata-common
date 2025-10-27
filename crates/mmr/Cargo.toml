@@ -6,13 +6,17 @@ edition = "2024"
 [lints]
 workspace = true
 
-[features]
-default = []
-borsh = ["dep:borsh"]
-
 [dependencies]
 borsh = { workspace = true, optional = true }
 digest.workspace = true
-serde.workspace = true
+serde = { workspace = true, optional = true, features = ["derive"] }
 sha2.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[features]
+default = []
+borsh = ["dep:borsh"]
+serde = ["dep:serde"]

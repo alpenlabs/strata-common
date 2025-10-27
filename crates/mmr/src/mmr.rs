@@ -2,47 +2,16 @@
 
 use std::marker::PhantomData;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
 use crate::error::MerkleError;
 use crate::hasher::{MerkleHash, MerkleHasher};
 use crate::proof::{MerkleProof, RawMerkleProof};
 
-/// Compact representation of the MMR that should be borsh serializable easily.
+/// Compact representation of the MMR
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompactMmr<H: MerkleHash> {
     pub(crate) entries: u64,
     pub(crate) cap_log2: u8,
     pub(crate) roots: Vec<H>,
-}
-
-impl<H> Serialize for CompactMmr<H>
-where
-    H: MerkleHash + Serialize,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        (&self.entries, &self.cap_log2, &self.roots).serialize(serializer)
-    }
-}
-
-impl<'de, H> Deserialize<'de> for CompactMmr<H>
-where
-    H: MerkleHash + Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let (entries, cap_log2, roots) = <(u64, u8, Vec<H>)>::deserialize(deserializer)?;
-        Ok(Self {
-            entries,
-            cap_log2,
-            roots,
-        })
-    }
 }
 
 /// Merkle mountain range that can hold up to 2**64 elements.
@@ -60,15 +29,6 @@ pub struct MerkleMr64<MH: MerkleHasher + Clone> {
 }
 
 impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
-    /// Internal constructor from raw parts; crate-visible for helpers.
-    pub(crate) fn from_parts(num: u64, peaks: Vec<MH::Hash>) -> Self {
-        Self { num, peaks: peaks.into_boxed_slice(), _pd: PhantomData }
-    }
-
-    /// Returns the internal peaks slice.
-    pub(crate) fn peaks_slice(&self) -> &[MH::Hash] {
-        &self.peaks
-    }
     /// Constructs a new MMR with some scale.  This is the number of peaks we
     /// will keep in the MMR.  The real capacity is 2**n of this value
     /// specified.
@@ -370,9 +330,9 @@ mod test {
     use sha2::{Digest, Sha256};
 
     use super::MerkleMr64;
-    use crate::proof::MerkleProof;
-    use crate::error::MerkleError;
     use crate::Sha256Hasher;
+    use crate::error::MerkleError;
+    use crate::proof::MerkleProof;
 
     type Hash32 = [u8; 32];
 
