@@ -4,7 +4,7 @@
 //! functionality: construct from leaves, generate inclusion proofs, and verify
 //! those proofs.
 
-use crate::hasher::{MerkleHash, MerkleHasher};
+use crate::hasher::MerkleHasher;
 use crate::proof::MerkleProof;
 
 /// Simple binary Merkle tree backed by in-memory levels.
@@ -71,22 +71,7 @@ impl<MH: MerkleHasher> BinaryMerkleTree<MH> {
 
     /// Verifies a `proof` for `leaf` against the provided `root`.
     pub fn verify_proof(root: &MH::Hash, proof: &MerkleProof<MH::Hash>, leaf: &MH::Hash) -> bool {
-        if proof.cohashes().is_empty() {
-            return <MH::Hash as MerkleHash>::eq_ct(root, leaf);
-        }
-
-        let mut cur = *leaf;
-        let mut flags = proof.index();
-        for co in proof.cohashes().iter() {
-            cur = if flags & 1 == 1 {
-                MH::hash_node(*co, cur)
-            } else {
-                MH::hash_node(cur, *co)
-            };
-            flags >>= 1;
-        }
-
-        <MH::Hash as MerkleHash>::eq_ct(&cur, root)
+        proof.verify_with_root::<MH>(root, leaf)
     }
 }
 

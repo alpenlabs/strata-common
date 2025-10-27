@@ -62,6 +62,40 @@ impl<H: MerkleHash> MerkleProof<H> {
     pub fn into_raw(self) -> RawMerkleProof<H> {
         self.inner
     }
+
+    /// Computes the root obtained by applying this proof to `leaf`.
+    ///
+    /// The caller specifies the merkle hasher implementation via `MH`.
+    pub fn compute_root<MH>(&self, leaf: &H) -> H
+    where
+        MH: crate::hasher::MerkleHasher<Hash = H>,
+    {
+        if self.cohashes().is_empty() {
+            return *leaf;
+        }
+
+        let mut cur = *leaf;
+        let mut flags = self.index;
+        for co in self.cohashes().iter() {
+            cur = if flags & 1 == 1 {
+                MH::hash_node(*co, cur)
+            } else {
+                MH::hash_node(cur, *co)
+            };
+            flags >>= 1;
+        }
+
+        cur
+    }
+
+    /// Verifies this proof for `leaf` against the expected `root`.
+    pub fn verify_with_root<MH>(&self, root: &H, leaf: &H) -> bool
+    where
+        MH: crate::hasher::MerkleHasher<Hash = H>,
+    {
+        let computed = self.compute_root::<MH>(leaf);
+        <H as MerkleHash>::eq_ct(&computed, root)
+    }
 }
 
 /// Raw proof for some entry in a MMR/tree.
@@ -102,4 +136,3 @@ impl<H: MerkleHash> RawMerkleProof<H> {
         MerkleProof::from_cohashes(self.cohashes, idx)
     }
 }
-

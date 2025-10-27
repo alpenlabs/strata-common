@@ -336,31 +336,8 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
 
     /// Verifies a single proof for a leaf against the current MMR state.
     pub fn verify(&self, proof: &MerkleProof<MH::Hash>, leaf: &MH::Hash) -> bool {
-        self.verify_raw(proof.cohashes(), proof.index(), leaf)
-    }
-
-    fn verify_raw(&self, cohashes: &[MH::Hash], leaf_index: u64, leaf_hash: &MH::Hash) -> bool {
-        let root = &self.peaks[cohashes.len()];
-
-        if cohashes.is_empty() {
-            return <MH::Hash as MerkleHash>::eq_ct(root, leaf_hash);
-        }
-
-        let mut cur_hash = *leaf_hash;
-        let mut side_flags = leaf_index;
-
-        for cohash in cohashes.iter() {
-            let node_hash = if side_flags & 1 == 1 {
-                MH::hash_node(*cohash, cur_hash)
-            } else {
-                MH::hash_node(cur_hash, *cohash)
-            };
-
-            side_flags >>= 1;
-            cur_hash = node_hash;
-        }
-
-        <MH::Hash as MerkleHash>::eq_ct(&cur_hash, root)
+        let root = &self.peaks[proof.cohashes().len()];
+        proof.verify_with_root::<MH>(root, leaf)
     }
 
     #[allow(dead_code, clippy::allow_attributes, reason = "used for testing")]
