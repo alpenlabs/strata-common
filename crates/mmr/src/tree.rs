@@ -5,30 +5,7 @@
 //! those proofs.
 
 use crate::hasher::{MerkleHash, MerkleHasher};
-
-/// Inclusion proof for a binary Merkle tree.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct TreeProof<H>
-where
-    H: MerkleHash,
-{
-    /// Sibling hashes from leaf to root.
-    cohashes: Vec<H>,
-    /// Index of the leaf this proof is for.
-    index: u64,
-}
-
-impl<H: MerkleHash> TreeProof<H> {
-    /// Returns the cohash path for this proof.
-    pub fn cohashes(&self) -> &[H] {
-        &self.cohashes
-    }
-
-    /// Returns the index this proof is for.
-    pub fn index(&self) -> u64 {
-        self.index
-    }
-}
+use crate::mmr::MerkleProof;
 
 /// Simple binary Merkle tree backed by in-memory levels.
 ///
@@ -74,7 +51,7 @@ impl<MH: MerkleHasher> BinaryMerkleTree<MH> {
     }
 
     /// Generates an inclusion proof for `index` if it exists.
-    pub fn gen_proof(&self, index: usize) -> Option<TreeProof<MH::Hash>> {
+    pub fn gen_proof(&self, index: usize) -> Option<MerkleProof<MH::Hash>> {
         if self.levels.is_empty() || index >= self.levels[0].len() {
             return None;
         }
@@ -89,21 +66,18 @@ impl<MH: MerkleHasher> BinaryMerkleTree<MH> {
             idx /= 2;
         }
 
-        Some(TreeProof {
-            cohashes: path,
-            index: index as u64,
-        })
+        Some(MerkleProof::from_cohashes(path, index as u64))
     }
 
     /// Verifies a `proof` for `leaf` against the provided `root`.
-    pub fn verify_proof(root: &MH::Hash, proof: &TreeProof<MH::Hash>, leaf: &MH::Hash) -> bool {
-        if proof.cohashes.is_empty() {
+    pub fn verify_proof(root: &MH::Hash, proof: &MerkleProof<MH::Hash>, leaf: &MH::Hash) -> bool {
+        if proof.cohashes().is_empty() {
             return <MH::Hash as MerkleHash>::eq_ct(root, leaf);
         }
 
         let mut cur = *leaf;
-        let mut flags = proof.index;
-        for co in proof.cohashes.iter() {
+        let mut flags = proof.index();
+        for co in proof.cohashes().iter() {
             cur = if flags & 1 == 1 {
                 MH::hash_node(*co, cur)
             } else {
@@ -118,8 +92,9 @@ impl<MH: MerkleHasher> BinaryMerkleTree<MH> {
 
 #[cfg(test)]
 mod tests {
-    use super::{BinaryMerkleTree, TreeProof};
-    use crate::hasher::{DigestMerkleHasher, MerkleHasher};
+    use super::BinaryMerkleTree;
+    use crate::hasher::DigestMerkleHasher;
+    use crate::mmr::MerkleProof;
     use sha2::Sha256;
 
     type H = [u8; 32];
@@ -144,7 +119,7 @@ mod tests {
         let root = tree.root().unwrap();
 
         for (i, leaf) in leaves.iter().enumerate() {
-            let proof: TreeProof<H> = tree.gen_proof(i).unwrap();
+            let proof: MerkleProof<H> = tree.gen_proof(i).unwrap();
             assert!(BinaryMerkleTree::<Sha256Hasher>::verify_proof(&root, &proof, leaf));
         }
     }
