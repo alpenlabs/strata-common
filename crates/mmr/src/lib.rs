@@ -16,6 +16,7 @@
 pub mod error;
 pub mod hasher;
 pub mod mmr;
+pub mod proof;
 pub mod tree;
 
 // Mark digest as used to satisfy unused dependency lint in workspace.
@@ -32,13 +33,15 @@ pub use hasher::MerkleHasher as StrataMerkle;
 
 // Common re-exports for ergonomic access at the crate root.
 pub use hasher::{MerkleHash, MerkleHasher};
-pub use mmr::{CompactMmr, MerkleMr64, MerkleProof, RawMerkleProof};
+pub use mmr::{CompactMmr, MerkleMr64};
+pub use proof::{MerkleProof, RawMerkleProof};
 pub use tree::BinaryMerkleTree;
 
 /// A convenient prelude bringing common types into scope.
 pub mod prelude {
     pub use crate::hasher::{DigestMerkleHasher, MerkleHash, MerkleHasher};
-    pub use crate::mmr::{CompactMmr, MerkleMr64, MerkleProof, RawMerkleProof};
+    pub use crate::mmr::{CompactMmr, MerkleMr64};
+    pub use crate::proof::{MerkleProof, RawMerkleProof};
     pub use crate::tree::BinaryMerkleTree;
     pub use crate::Sha256Hasher;
 }

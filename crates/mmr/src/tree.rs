@@ -5,7 +5,7 @@
 //! those proofs.
 
 use crate::hasher::{MerkleHash, MerkleHasher};
-use crate::mmr::MerkleProof;
+use crate::proof::MerkleProof;
 
 /// Simple binary Merkle tree backed by in-memory levels.
 ///
@@ -94,7 +94,7 @@ impl<MH: MerkleHasher> BinaryMerkleTree<MH> {
 mod tests {
     use super::BinaryMerkleTree;
     use crate::hasher::DigestMerkleHasher;
-    use crate::mmr::MerkleProof;
+    use crate::proof::MerkleProof;
     use sha2::Sha256;
 
     type H = [u8; 32];
