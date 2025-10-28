@@ -4,12 +4,12 @@
 use borsh::{BorshDeserialize, BorshSerialize, io};
 
 use crate::hasher::{MerkleHash, MerkleHasher};
-use crate::mmr::{CompactMmr, MerkleMr64};
+use crate::mmr::{CompactMmr64, MerkleMr64};
 use crate::proof::{MerkleProof, RawMerkleProof};
 
-// CompactMmr
+// CompactMmr64
 
-impl<H> BorshSerialize for CompactMmr<H>
+impl<H> BorshSerialize for CompactMmr64<H>
 where
     H: MerkleHash + BorshSerialize,
 {
@@ -20,7 +20,7 @@ where
     }
 }
 
-impl<H> BorshDeserialize for CompactMmr<H>
+impl<H> BorshDeserialize for CompactMmr64<H>
 where
     H: MerkleHash + BorshDeserialize,
 {
@@ -164,7 +164,7 @@ mod tests {
         let compact = mmr.to_compact();
 
         let bytes = to_vec(&compact).expect("serialize compact");
-        let de: CompactMmr<H> = from_slice(&bytes).expect("deserialize compact");
+        let de: CompactMmr64<H> = from_slice(&bytes).expect("deserialize compact");
         assert_eq!(compact, de);
 
         let rebuilt = MerkleMr64::<Hasher>::from_compact(&de);

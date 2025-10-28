@@ -6,9 +6,9 @@ use crate::error::MerkleError;
 use crate::hasher::{MerkleHash, MerkleHasher};
 use crate::proof::{MerkleProof, RawMerkleProof};
 
-/// Compact representation of the MMR
+/// Compact representation of the MMR that can hold upto 2**64 elements.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CompactMmr<H: MerkleHash> {
+pub struct CompactMmr64<H: MerkleHash> {
     pub(crate) entries: u64,
     pub(crate) cap_log2: u8,
     pub(crate) roots: Vec<H>,
@@ -68,9 +68,8 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         &self.peaks
     }
 
-
     /// Unpacks the MMR from a compact form.
-    pub fn from_compact(compact: &CompactMmr<MH::Hash>) -> Self {
+    pub fn from_compact(compact: &CompactMmr64<MH::Hash>) -> Self {
         // FIXME this is somewhat inefficient, we could consume the vec and just
         // slice out its elements, but this is fine for now
         let mut roots = vec![MH::zero_hash(); compact.cap_log2 as usize];
@@ -90,8 +89,8 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     }
 
     /// Converts the MMR to a compact form.
-    pub fn to_compact(&self) -> CompactMmr<MH::Hash> {
-        CompactMmr {
+    pub fn to_compact(&self) -> CompactMmr64<MH::Hash> {
+        CompactMmr64 {
             entries: self.num,
             cap_log2: self.peaks.len() as u8,
             roots: self

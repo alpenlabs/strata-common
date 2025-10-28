@@ -3,14 +3,14 @@
 
 use crate::hasher::MerkleHash;
 use crate::hasher::MerkleHasher;
-use crate::mmr::{CompactMmr, MerkleMr64};
+use crate::mmr::{CompactMmr64, MerkleMr64};
 use crate::proof::{MerkleProof, RawMerkleProof};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-// CompactMmr
+// CompactMmr64
 
-impl<H> Serialize for CompactMmr<H>
+impl<H> Serialize for CompactMmr64<H>
 where
     H: MerkleHash + Serialize,
 {
@@ -22,7 +22,7 @@ where
     }
 }
 
-impl<'de, H> Deserialize<'de> for CompactMmr<H>
+impl<'de, H> Deserialize<'de> for CompactMmr64<H>
 where
     H: MerkleHash + Deserialize<'de>,
 {
@@ -182,7 +182,7 @@ mod tests {
         let compact = mmr.to_compact();
 
         let s = to_string(&compact).expect("serialize compact");
-        let de: CompactMmr<H> = from_str(&s).expect("deserialize compact");
+        let de: CompactMmr64<H> = from_str(&s).expect("deserialize compact");
         assert_eq!(compact, de);
 
         let rebuilt = MerkleMr64::<Hasher>::from_compact(&de);

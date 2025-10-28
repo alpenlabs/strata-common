@@ -42,7 +42,7 @@ pub use hasher::MerkleHasher as StrataMerkle;
 
 // Common re-exports for ergonomic access at the crate root.
 pub use hasher::{MerkleHash, MerkleHasher};
-pub use mmr::{CompactMmr, MerkleMr64};
+pub use mmr::{CompactMmr64, MerkleMr64};
 pub use proof::{MerkleProof, RawMerkleProof};
 pub use tree::BinaryMerkleTree;
 
@@ -50,7 +50,7 @@ pub use tree::BinaryMerkleTree;
 pub mod prelude {
     pub use crate::Sha256Hasher;
     pub use crate::hasher::{DigestMerkleHasher, MerkleHash, MerkleHasher};
-    pub use crate::mmr::{CompactMmr, MerkleMr64};
+    pub use crate::mmr::{CompactMmr64, MerkleMr64};
     pub use crate::proof::{MerkleProof, RawMerkleProof};
     pub use crate::tree::BinaryMerkleTree;
 }
