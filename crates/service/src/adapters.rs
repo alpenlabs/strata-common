@@ -149,8 +149,8 @@ fn try_conv_panic(panic: &dyn Any) -> Option<String> {
 
 /// Adapter for using a mpsc receiver as a input.
 ///
-/// This is needed because [``mpsc::Receiver``] does not natively implement
-/// [``Stream``] and it avoids having to use the Tokio wrapper.
+/// This is needed because [`mpsc::Receiver`] does not natively implement
+/// [`Stream`] and it avoids having to use the Tokio wrapper.
 pub struct TokioMpscInput<T> {
     rx: mpsc::Receiver<T>,
     closed: bool,
@@ -183,7 +183,7 @@ impl<T: ServiceMsg> AsyncServiceInput for TokioMpscInput<T> {
 }
 
 /// This impl is technically redundant since we can use the type as an
-/// [``Iterator``], but someone might find it useful and it's easy enough to
+/// [`Iterator`], but someone might find it useful and it's easy enough to
 /// implement.
 impl<T: ServiceMsg> SyncServiceInput for TokioMpscInput<T> {
     fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
@@ -198,7 +198,7 @@ impl<T: ServiceMsg> SyncServiceInput for TokioMpscInput<T> {
     }
 }
 
-/// Adapter for using an arbitrary [``Stream``] impl as an input.
+/// Adapter for using an arbitrary [`Stream`] impl as an input.
 pub struct StreamInput<S> {
     stream: S,
     closed: bool,
