@@ -1,7 +1,7 @@
 //! Borsh serialization support for Merkle types.
 //! Enable via `--features borsh`.
 
-use borsh::{io, BorshDeserialize, BorshSerialize};
+use borsh::{BorshDeserialize, BorshSerialize, io};
 
 use crate::hasher::{MerkleHash, MerkleHasher};
 use crate::mmr::{CompactMmr, MerkleMr64};
@@ -118,7 +118,9 @@ mod tests {
 
     fn make_hashes(n: usize) -> Vec<H> {
         use sha2::Digest;
-        (0..n).map(|i| Sha256::digest(i.to_be_bytes()).into()).collect()
+        (0..n)
+            .map(|i| Sha256::digest(i.to_be_bytes()).into())
+            .collect()
     }
 
     #[test]

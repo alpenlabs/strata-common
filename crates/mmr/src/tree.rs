@@ -31,7 +31,11 @@ impl<MH: MerkleHasher> BinaryMerkleTree<MH> {
             let mut i = 0;
             while i < prev.len() {
                 let left = prev[i];
-                let right = if i + 1 < prev.len() { prev[i + 1] } else { prev[i] };
+                let right = if i + 1 < prev.len() {
+                    prev[i + 1]
+                } else {
+                    prev[i]
+                };
                 next.push(MH::hash_node(left, right));
                 i += 2;
             }
@@ -61,7 +65,11 @@ impl<MH: MerkleHasher> BinaryMerkleTree<MH> {
         for lvl in &self.levels[..self.levels.len().saturating_sub(1)] {
             let is_right = idx % 2 == 1;
             let sib_idx = if is_right { idx - 1 } else { idx + 1 };
-            let sibling = if sib_idx < lvl.len() { lvl[sib_idx] } else { lvl[idx] };
+            let sibling = if sib_idx < lvl.len() {
+                lvl[sib_idx]
+            } else {
+                lvl[idx]
+            };
             path.push(sibling);
             idx /= 2;
         }
@@ -87,7 +95,9 @@ mod tests {
 
     fn make_leaves(n: usize) -> Vec<H> {
         use sha2::Digest;
-        (0..n).map(|i| Sha256::digest(i.to_be_bytes()).into()).collect()
+        (0..n)
+            .map(|i| Sha256::digest(i.to_be_bytes()).into())
+            .collect()
     }
 
     #[test]
@@ -105,7 +115,9 @@ mod tests {
 
         for (i, leaf) in leaves.iter().enumerate() {
             let proof: MerkleProof<H> = tree.gen_proof(i).unwrap();
-            assert!(BinaryMerkleTree::<Sha256Hasher>::verify_proof(&root, &proof, leaf));
+            assert!(BinaryMerkleTree::<Sha256Hasher>::verify_proof(
+                &root, &proof, leaf
+            ));
         }
     }
 }

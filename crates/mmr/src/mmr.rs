@@ -48,26 +48,26 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         }
     }
 
-    /// Gets the number of entries inserted into the MMR.
-    pub fn num_entries(&self) -> u64 {
-        self.num
-    }
-
-    /// Returns an iterator over the set merkle peaks, exposing their height.
+    /// Constructs an MMR from raw parts.
     ///
-    /// This is mainly useful for testing/troubleshooting.
-    pub fn peaks_iter(&self) -> impl Iterator<Item = (u8, &MH::Hash)> {
-        self.peaks
-            .iter()
-            .enumerate()
-            .filter(|(_, h)| !<MH::Hash as MerkleHash>::is_zero(h))
-            .map(|(i, h)| (i as u8, h))
+    /// This is primarily used by serialization code paths to rebuild an MMR
+    /// from a stored `num` and the vector of `peaks`.
+    pub fn from_parts(num: u64, peaks: Vec<MH::Hash>) -> Self {
+        Self {
+            num,
+            peaks: peaks.into_boxed_slice(),
+            _pd: PhantomData,
+        }
     }
 
-    /// Gets if there have been no entries inserted into the MMR.
-    pub fn is_empty(&self) -> bool {
-        self.num_entries() == 0
+    /// Returns the internal peaks as a slice.
+    ///
+    /// Useful for testing and (de)serialization helpers to compare state
+    /// without exposing mutation.
+    pub fn peaks_slice(&self) -> &[MH::Hash] {
+        &self.peaks
     }
+
 
     /// Unpacks the MMR from a compact form.
     pub fn from_compact(compact: &CompactMmr<MH::Hash>) -> Self {

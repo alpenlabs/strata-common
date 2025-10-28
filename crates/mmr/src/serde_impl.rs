@@ -6,7 +6,7 @@ use crate::hasher::MerkleHasher;
 use crate::mmr::{CompactMmr, MerkleMr64};
 use crate::proof::{MerkleProof, RawMerkleProof};
 
-use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 // CompactMmr
 
@@ -117,7 +117,8 @@ where
     where
         D: Deserializer<'de>,
     {
-        let (inner, index): (RawMerkleProof<H>, u64) = <(RawMerkleProof<H>, u64)>::deserialize(deserializer)?;
+        let (inner, index): (RawMerkleProof<H>, u64) =
+            <(RawMerkleProof<H>, u64)>::deserialize(deserializer)?;
         Ok(Self { inner, index })
     }
 }
@@ -135,7 +136,9 @@ mod tests {
 
     fn make_hashes(n: usize) -> Vec<H> {
         use sha2::Digest;
-        (0..n).map(|i| Sha256::digest(i.to_be_bytes()).into()).collect()
+        (0..n)
+            .map(|i| Sha256::digest(i.to_be_bytes()).into())
+            .collect()
     }
 
     #[test]
@@ -187,4 +190,3 @@ mod tests {
         assert_eq!(mmr.peaks_slice(), rebuilt.peaks_slice());
     }
 }
-
