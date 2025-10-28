@@ -48,12 +48,3 @@ pub use hasher::{MerkleHash, MerkleHasher};
 pub use mmr::{CompactMmr64, MerkleMr64};
 pub use proof::{MerkleProof, RawMerkleProof};
 pub use tree::BinaryMerkleTree;
-
-/// A convenient prelude bringing common types into scope.
-pub mod prelude {
-    pub use crate::{Sha256Hasher, Sha256NoPrefixHasher};
-    pub use crate::hasher::{DigestMerkleHasher, DigestMerkleHasherNoPrefix, MerkleHash, MerkleHasher};
-    pub use crate::mmr::{CompactMmr64, MerkleMr64};
-    pub use crate::proof::{MerkleProof, RawMerkleProof};
-    pub use crate::tree::BinaryMerkleTree;
-}
