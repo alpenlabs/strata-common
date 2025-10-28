@@ -56,6 +56,9 @@ pub trait ServiceStatus: Any + Clone + Debug + Sync + Send + Serialize + 'static
     // nothing yet
 }
 
+/// Blanket auto-impl for any type that impls these traits.
+impl<T: Any + Clone + Debug + Sync + Send + Serialize + 'static> ServiceStatus for T {}
+
 /// Trait for async service impls to define their per-input logic.
 pub trait AsyncService: Service {
     /// Called in the worker task after launching.
