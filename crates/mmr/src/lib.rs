@@ -31,11 +31,14 @@ use serde_json as _;
 // Mark digest as used to satisfy unused dependency lint in workspace.
 use digest as _;
 
-use hasher::DigestMerkleHasher;
+use hasher::{DigestMerkleHasher, DigestMerkleHasherNoPrefix};
 use sha2::Sha256;
 
 /// Merkle hash impl for SHA-256 `Digest` impl.
 pub type Sha256Hasher = DigestMerkleHasher<Sha256, 32>;
+
+/// Merkle hash impl for SHA-256 without prefixes.
+pub type Sha256NoPrefixHasher = DigestMerkleHasherNoPrefix<Sha256, 32>;
 
 /// Compatibility alias for the primary hasher trait used across Merkle data structures.
 pub use hasher::MerkleHasher as StrataMerkle;
@@ -48,8 +51,8 @@ pub use tree::BinaryMerkleTree;
 
 /// A convenient prelude bringing common types into scope.
 pub mod prelude {
-    pub use crate::Sha256Hasher;
-    pub use crate::hasher::{DigestMerkleHasher, MerkleHash, MerkleHasher};
+    pub use crate::{Sha256Hasher, Sha256NoPrefixHasher};
+    pub use crate::hasher::{DigestMerkleHasher, DigestMerkleHasherNoPrefix, MerkleHash, MerkleHasher};
     pub use crate::mmr::{CompactMmr64, MerkleMr64};
     pub use crate::proof::{MerkleProof, RawMerkleProof};
     pub use crate::tree::BinaryMerkleTree;

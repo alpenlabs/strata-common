@@ -117,3 +117,36 @@ impl<D: Digest, const N: usize> MerkleHasher for DigestMerkleHasher<D, N> {
             .expect("mmr: digest output not 32 bytes")
     }
 }
+
+/// Merkle hasher for arbitrary digest impl that does not prefix
+/// node/leaf inputs. Useful for interoperating with trees that
+/// define their hash as `H(leaf)` and `H(left || right)` directly.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct DigestMerkleHasherNoPrefix<D: Digest, const N: usize>(std::marker::PhantomData<D>);
+
+impl<D: Digest, const N: usize> MerkleHasher for DigestMerkleHasherNoPrefix<D, N> {
+    type Hash = [u8; N];
+
+    fn hash_leaf(buf: &[u8]) -> Self::Hash {
+        let mut context = D::new();
+        context.update(buf);
+
+        let result: GenericArray<u8, D::OutputSize> = context.finalize();
+        result
+            .as_slice()
+            .try_into()
+            .expect("mmr: digest output not 32 bytes")
+    }
+
+    fn hash_node(left: Self::Hash, right: Self::Hash) -> Self::Hash {
+        let mut context = D::new();
+        context.update(left);
+        context.update(right);
+
+        let result: GenericArray<u8, D::OutputSize> = context.finalize();
+        result
+            .as_slice()
+            .try_into()
+            .expect("mmr: digest output not 32 bytes")
+    }
+}
