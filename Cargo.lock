@@ -1328,7 +1328,6 @@ dependencies = [
  "borsh",
  "digest",
  "serde",
- "serde_json",
  "sha2",
  "strata-codec",
  "thiserror 2.0.17",

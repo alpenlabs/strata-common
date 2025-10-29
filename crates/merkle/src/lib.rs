@@ -13,22 +13,13 @@
     reason = "Borrowing interior mutable constants is required for MMR operations"
 )]
 
-#[cfg(feature = "borsh")]
-mod borsh_impl;
 #[cfg(feature = "codec")]
 mod codec_impl;
 pub mod error;
 pub mod hasher;
 pub mod mmr;
 pub mod proof;
-#[cfg(feature = "serde")]
-mod serde_impl;
 pub mod tree;
-
-// Test-only dependency used in serde roundtrip tests when the `serde` feature
-// is disabled, to satisfy unused dependency lint for dev-deps.
-#[cfg(all(test, not(feature = "serde")))]
-use serde_json as _;
 
 // Mark digest as used to satisfy unused dependency lint in workspace.
 use digest as _;

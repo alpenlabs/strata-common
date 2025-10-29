@@ -14,9 +14,6 @@ sha2.workspace = true
 strata-codec = { workspace = true, optional = true }
 thiserror.workspace = true
 
-[dev-dependencies]
-serde_json.workspace = true
-
 [features]
 default = []
 borsh = ["dep:borsh"]

@@ -8,6 +8,11 @@ use crate::proof::{MerkleProof, RawMerkleProof};
 
 /// Compact representation of the MMR that can hold upto 2**64 elements.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
 pub struct CompactMmr64<H: MerkleHash> {
     pub(crate) entries: u64,
     pub(crate) cap_log2: u8,
@@ -16,19 +21,38 @@ pub struct CompactMmr64<H: MerkleHash> {
 
 /// Merkle mountain range that can hold up to 2**64 elements.
 #[derive(Clone, Debug)]
-pub struct MerkleMr64<MH: MerkleHasher + Clone> {
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(bound(
+        serialize = "H: serde::Serialize",
+        deserialize = "H: serde::Deserialize<'de>"
+    ))
+)]
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
+pub struct MerkleMr64<MH: MerkleHasher + Clone, H: MerkleHash = <MH as MerkleHasher>::Hash>
+where
+    MH: MerkleHasher<Hash = H>,
+{
     /// Total number of elements inserted into MMR.
     pub(crate) num: u64,
 
     /// Buffer of all possible peaks in MMR.  Only some of these will be valid
     /// at a time.
-    pub(crate) peaks: Box<[MH::Hash]>,
+    pub(crate) peaks: Vec<H>,
 
     /// phantom data for hasher
     _pd: PhantomData<MH>,
 }
 
-impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
+impl<MH, H> MerkleMr64<MH, H>
+where
+    MH: MerkleHasher<Hash = H> + Clone,
+    H: MerkleHash,
+{
     /// Constructs a new MMR with some scale.  This is the number of peaks we
     /// will keep in the MMR.  The real capacity is 2**n of this value
     /// specified.
@@ -43,7 +67,7 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
 
         Self {
             num: 0,
-            peaks: vec![MH::zero_hash(); cap_log2].into_boxed_slice(),
+            peaks: vec![MH::zero_hash(); cap_log2],
             _pd: PhantomData,
         }
     }
@@ -52,10 +76,10 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     ///
     /// This is primarily used by serialization code paths to rebuild an MMR
     /// from a stored `num` and the vector of `peaks`.
-    pub fn from_parts(num: u64, peaks: Vec<MH::Hash>) -> Self {
+    pub fn from_parts(num: u64, peaks: Vec<H>) -> Self {
         Self {
             num,
-            peaks: peaks.into_boxed_slice(),
+            peaks,
             _pd: PhantomData,
         }
     }
@@ -64,12 +88,12 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     ///
     /// Useful for testing and (de)serialization helpers to compare state
     /// without exposing mutation.
-    pub fn peaks_slice(&self) -> &[MH::Hash] {
+    pub fn peaks_slice(&self) -> &[H] {
         &self.peaks
     }
 
     /// Unpacks the MMR from a compact form.
-    pub fn from_compact(compact: &CompactMmr64<MH::Hash>) -> Self {
+    pub fn from_compact(compact: &CompactMmr64<H>) -> Self {
         // FIXME this is somewhat inefficient, we could consume the vec and just
         // slice out its elements, but this is fine for now
         let mut roots = vec![MH::zero_hash(); compact.cap_log2 as usize];
@@ -83,20 +107,20 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
 
         Self {
             num: compact.entries,
-            peaks: roots.into(),
+            peaks: roots,
             _pd: PhantomData,
         }
     }
 
     /// Converts the MMR to a compact form.
-    pub fn to_compact(&self) -> CompactMmr64<MH::Hash> {
+    pub fn to_compact(&self) -> CompactMmr64<H> {
         CompactMmr64 {
             entries: self.num,
             cap_log2: self.peaks.len() as u8,
             roots: self
                 .peaks
                 .iter()
-                .filter(|h| !<MH::Hash as MerkleHash>::is_zero(*h))
+                .filter(|h| !<H as MerkleHash>::is_zero(*h))
                 .copied()
                 .collect(),
         }
@@ -121,7 +145,7 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     }
 
     /// Adds a new leaf to the MMR.
-    pub fn add_leaf(&mut self, leaf: MH::Hash) -> Result<(), MerkleError> {
+    pub fn add_leaf(&mut self, leaf: H) -> Result<(), MerkleError> {
         self.check_capacity()?;
 
         if self.num == 0 {
@@ -172,9 +196,9 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     // TODO make a version of this that doesn't alloc?
     pub fn add_leaf_updating_proof(
         &mut self,
-        next: MH::Hash,
-        proof: &MerkleProof<MH::Hash>,
-    ) -> Result<MerkleProof<MH::Hash>, MerkleError> {
+        next: H,
+        proof: &MerkleProof<H>,
+    ) -> Result<MerkleProof<H>, MerkleError> {
         self.check_capacity()?;
 
         // FIXME this is a weird function to call if this is true, since how
@@ -218,12 +242,12 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
 
     fn update_single_proof(
         &mut self,
-        proof: &mut RawMerkleProof<MH::Hash>,
+        proof: &mut RawMerkleProof<H>,
         proof_index: u64,
         leaf_parent_tree: u64,
         current_height: usize,
-        prev_node: MH::Hash,
-        current_node: MH::Hash,
+        prev_node: H,
+        current_node: H,
     ) {
         let proof_parent_tree = proof_index >> (current_height + 1);
         if leaf_parent_tree == proof_parent_tree {
@@ -245,9 +269,9 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     /// of proofs in-place, and returning a proof to the new leaf.
     pub fn add_leaf_updating_proof_list(
         &mut self,
-        next: MH::Hash,
-        proof_list: &mut [MerkleProof<MH::Hash>],
-    ) -> Result<MerkleProof<MH::Hash>, MerkleError> {
+        next: H,
+        proof_list: &mut [MerkleProof<H>],
+    ) -> Result<MerkleProof<H>, MerkleError> {
         self.check_capacity()?;
 
         if self.num == 0 {
@@ -255,7 +279,7 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
             return Ok(MerkleProof::new_zero());
         }
 
-        let mut new_proof = MerkleProof::<MH::Hash>::new_empty(self.num);
+        let mut new_proof = MerkleProof::<H>::new_empty(self.num);
         let new_proof_index = new_proof.index();
         assert_eq!(new_proof_index, self.num);
 
@@ -302,7 +326,7 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     }
 
     /// Verifies a single proof for a leaf against the current MMR state.
-    pub fn verify(&self, proof: &MerkleProof<MH::Hash>, leaf: &MH::Hash) -> bool {
+    pub fn verify(&self, proof: &MerkleProof<H>, leaf: &H) -> bool {
         let root = &self.peaks[proof.cohashes().len()];
         proof.verify_with_root::<MH>(root, leaf)
     }
@@ -310,9 +334,9 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     #[allow(dead_code, clippy::allow_attributes, reason = "used for testing")]
     pub(crate) fn gen_proof(
         &self,
-        proof_list: &[MerkleProof<MH::Hash>],
+        proof_list: &[MerkleProof<H>],
         index: u64,
-    ) -> Result<Option<MerkleProof<MH::Hash>>, MerkleError> {
+    ) -> Result<Option<MerkleProof<H>>, MerkleError> {
         if index > self.num {
             return Err(MerkleError::IndexOutOfBounds);
         }

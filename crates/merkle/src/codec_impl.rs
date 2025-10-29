@@ -35,22 +35,22 @@ where
 
 // MerkleMr64
 
-impl<MH> Codec for MerkleMr64<MH>
+impl<MH, H> Codec for MerkleMr64<MH, H>
 where
-    MH: MerkleHasher + Clone,
-    MH::Hash: Codec,
+    MH: MerkleHasher<Hash = H> + Clone,
+    H: MerkleHash + Codec,
 {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let num = u64::decode(dec)?;
-        let peaks_vec: VarVec<MH::Hash> = VarVec::decode(dec)?;
+        let peaks_vec: VarVec<H> = VarVec::decode(dec)?;
         Ok(MerkleMr64::from_parts(num, peaks_vec.into_inner()))
     }
 
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.num.encode(enc)?;
         let peaks = self.peaks.to_vec();
-        let peaks_vec: VarVec<MH::Hash> =
-            VarVec::<MH::Hash>::from_vec(peaks).ok_or(CodecError::OverflowContainer)?;
+        let peaks_vec: VarVec<H> =
+            VarVec::<H>::from_vec(peaks).ok_or(CodecError::OverflowContainer)?;
         peaks_vec.encode(enc)
     }
 }

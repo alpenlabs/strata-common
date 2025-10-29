@@ -7,6 +7,8 @@ use crate::hasher::MerkleHash;
 /// If the MMR or tree that produced this proof is updated, then this proof has
 /// to be updated as well.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "borsh", derive(borsh::BorshSerialize, borsh::BorshDeserialize))]
 pub struct MerkleProof<H>
 where
     H: MerkleHash,
@@ -103,6 +105,8 @@ impl<H: MerkleHash> MerkleProof<H> {
 /// This doesn't include the index of the entry being proven, which makes this
 /// useful in contexts where we establish that value separately.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "borsh", derive(borsh::BorshSerialize, borsh::BorshDeserialize))]
 pub struct RawMerkleProof<H>
 where
     H: MerkleHash,
