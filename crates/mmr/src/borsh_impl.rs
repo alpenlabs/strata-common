@@ -14,9 +14,23 @@ where
     H: MerkleHash + BorshSerialize,
 {
     fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        // Write entries and cap first
         self.entries.serialize(writer)?;
         self.cap_log2.serialize(writer)?;
-        self.roots.serialize(writer)
+
+        // Do not encode a length for roots; rely on popcnt(entries)
+        let expected = self.entries.count_ones() as usize;
+        if self.roots.len() != expected {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "compact mmr: roots length mismatch with entries popcnt",
+            ));
+        }
+
+        for root in &self.roots {
+            root.serialize(writer)?;
+        }
+        Ok(())
     }
 }
 
@@ -27,7 +41,14 @@ where
     fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let entries = u64::deserialize_reader(reader)?;
         let cap_log2 = u8::deserialize_reader(reader)?;
-        let roots = <Vec<H>>::deserialize_reader(reader)?;
+
+        // Read exactly popcnt(entries) roots without a preceding length
+        let count = entries.count_ones() as usize;
+        let mut roots = Vec::with_capacity(count);
+        for _ in 0..count {
+            let r = H::deserialize_reader(reader)?;
+            roots.push(r);
+        }
         Ok(Self {
             entries,
             cap_log2,
