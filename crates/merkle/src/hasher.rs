@@ -1,7 +1,7 @@
 //! Hashing primitives for MMR: hash types and hashing strategies.
 use std::cell::LazyCell;
 
-use digest::{Digest, generic_array::GenericArray};
+use digest::Digest;
 use sha2::Sha256;
 
 type Tag = [u8; 64];
@@ -99,7 +99,7 @@ impl<D: Digest, const N: usize> MerkleHasher for DigestMerkleHasher<D, N> {
 
         let result = context.finalize();
         result
-            .as_slice()
+            .as_ref()
             .try_into()
             .expect("mmr: digest output not 32 bytes")
     }
@@ -110,9 +110,9 @@ impl<D: Digest, const N: usize> MerkleHasher for DigestMerkleHasher<D, N> {
         context.update(left);
         context.update(right);
 
-        let result: GenericArray<u8, D::OutputSize> = context.finalize();
+        let result = context.finalize();
         result
-            .as_slice()
+            .as_ref()
             .try_into()
             .expect("mmr: digest output not 32 bytes")
     }
@@ -131,9 +131,9 @@ impl<D: Digest, const N: usize> MerkleHasher for DigestMerkleHasherNoPrefix<D, N
         let mut context = D::new();
         context.update(buf);
 
-        let result: GenericArray<u8, D::OutputSize> = context.finalize();
+        let result = context.finalize();
         result
-            .as_slice()
+            .as_ref()
             .try_into()
             .expect("mmr: digest output not 32 bytes")
     }
@@ -143,9 +143,9 @@ impl<D: Digest, const N: usize> MerkleHasher for DigestMerkleHasherNoPrefix<D, N
         context.update(left);
         context.update(right);
 
-        let result: GenericArray<u8, D::OutputSize> = context.finalize();
+        let result = context.finalize();
         result
-            .as_slice()
+            .as_ref()
             .try_into()
             .expect("mmr: digest output not 32 bytes")
     }
