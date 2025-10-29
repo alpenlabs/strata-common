@@ -7,11 +7,13 @@ use crate::error::MerkleError;
 use crate::hasher::{MerkleHash, MerkleHasher};
 use crate::proof::MerkleProof;
 
-/// Simple binary Merkle tree backed by in-memory levels.
+/// Simple binary Merkle tree backed by a flattened node array.
 #[derive(Clone, Debug)]
 pub struct BinaryMerkleTree<H: MerkleHash> {
-    /// Level 0 is leaves; last level has a single root.
-    levels: Vec<Vec<H>>,
+    /// All nodes flattened into a single vector of length `2*n - 1`.
+    /// Layout: leaves first (`n` items), then each upper level in order,
+    /// finishing with the root at the last position.
+    nodes: Vec<H>,
 }
 
 impl<H: MerkleHash> BinaryMerkleTree<H> {
@@ -23,26 +25,32 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
     where
         MH: MerkleHasher<Hash = H>,
     {
-        let mut levels = Vec::new();
-        if !leaves.len().is_power_of_two() {
+        if !leaves.len().is_power_of_two() || leaves.is_empty() {
             return Err(MerkleError::NotPowerOfTwo);
         }
+        let n = leaves.len();
+        let total = 2 * n - 1;
+        let mut nodes = Vec::with_capacity(total);
+        // push leaves
+        nodes.extend_from_slice(leaves);
 
-        levels.push(leaves.to_vec());
-        while levels.last().map_or(0, |l| l.len()) > 1 {
-            let prev = levels.last().unwrap();
-            let mut next = Vec::with_capacity(prev.len().div_ceil(2));
+        // Build upper levels, appending parents sequentially.
+        let mut level_start = 0; // start index of current level
+        let mut level_size = n; // size of current level
+        while level_size > 1 {
             let mut i = 0;
-            while i < prev.len() {
-                let left = prev[i];
-                let right = prev[i + 1];
-                next.push(MH::hash_node(left, right));
+            while i < level_size {
+                let left = nodes[level_start + i];
+                let right = nodes[level_start + i + 1];
+                nodes.push(MH::hash_node(left, right));
                 i += 2;
             }
-            levels.push(next);
+            // next level starts where we just appended
+            level_start += level_size;
+            level_size >>= 1;
         }
 
-        Ok(Self { levels })
+        Ok(Self { nodes })
     }
 
     /// Returns the tree root.
@@ -51,26 +59,35 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
     /// including zero, so a root is always present.
     pub fn root(&self) -> H {
         // SAFETY: constructor guarantees at least one level with at least one node.
-        self.levels
+        *self
+            .nodes
             .last()
-            .and_then(|lvl| lvl.first().copied())
             .expect("BinaryMerkleTree: root must exist")
     }
 
     /// Generates an inclusion proof for `index` if it exists.
     pub fn gen_proof(&self, index: usize) -> Option<MerkleProof<H>> {
-        if self.levels.is_empty() || index >= self.levels[0].len() {
+        // Derive leaf count from flattened length: len = 2*n - 1
+        let leaves = (self.nodes.len() + 1) / 2;
+        if index >= leaves {
             return None;
         }
 
-        let mut idx = index;
-        let mut path = Vec::new();
-        for lvl in &self.levels[..self.levels.len().saturating_sub(1)] {
-            let is_right = idx % 2 == 1;
-            let sib_idx = if is_right { idx - 1 } else { idx + 1 };
-            let sibling = lvl[sib_idx];
+        let mut level_start = 0usize;
+        let mut level_size = leaves;
+        let mut local_idx = index;
+        let mut path = Vec::with_capacity(leaves.ilog2() as usize);
+
+        while level_size > 1 {
+            // sibling local index: flip lowest bit
+            let sib_local = local_idx ^ 1;
+            let sibling = self.nodes[level_start + sib_local];
             path.push(sibling);
-            idx /= 2;
+
+            // move up one level
+            local_idx >>= 1;
+            level_start += level_size;
+            level_size >>= 1;
         }
 
         Some(MerkleProof::from_cohashes(path, index as u64))
