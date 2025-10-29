@@ -68,7 +68,7 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
     /// Generates an inclusion proof for `index` if it exists.
     pub fn gen_proof(&self, index: usize) -> Option<MerkleProof<H>> {
         // Derive leaf count from flattened length: len = 2*n - 1
-        let leaves = (self.nodes.len() + 1) / 2;
+        let leaves = self.nodes.len().div_ceil(2);
         if index >= leaves {
             return None;
         }
@@ -144,7 +144,7 @@ mod tests {
 
         for (i, leaf) in leaves.iter().enumerate() {
             let proof: MerkleProof<H> = tree.gen_proof(i).unwrap();
-            assert!(tree.verify_proof::<Sha256Hasher>(&proof, &leaf));
+            assert!(tree.verify_proof::<Sha256Hasher>(&proof, leaf));
         }
     }
 

@@ -15,6 +15,8 @@
 
 #[cfg(feature = "borsh")]
 mod borsh_impl;
+#[cfg(feature = "codec")]
+mod codec_impl;
 pub mod error;
 pub mod hasher;
 pub mod mmr;
