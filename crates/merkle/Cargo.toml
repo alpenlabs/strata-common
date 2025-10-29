@@ -15,7 +15,7 @@ strata-codec = { workspace = true, optional = true }
 thiserror.workspace = true
 
 [features]
-default = []
+default = ["borsh", "codec", "serde"]
 borsh = ["dep:borsh"]
 codec = ["dep:strata-codec"]
 serde = ["dep:serde"]

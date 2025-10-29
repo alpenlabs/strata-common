@@ -1,5 +1,5 @@
 //! strata-codec serialization support for Merkle types.
-//! Enable via `--features code`.
+//! Enable via `--features codec`.
 
 use crate::hasher::{MerkleHash, MerkleHasher};
 use crate::mmr::{CompactMmr64, MerkleMr64};
@@ -16,20 +16,31 @@ where
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let entries = u64::decode(dec)?;
         let cap_log2 = u8::decode(dec)?;
-        let roots_vec: VarVec<H> = VarVec::decode(dec)?;
+        // Number of roots equals popcount of entries (one per peak)
+        let roots_len = entries.count_ones() as usize;
+        let mut roots = Vec::with_capacity(roots_len);
+        for _ in 0..roots_len {
+            roots.push(H::decode(dec)?);
+        }
         Ok(Self {
             entries,
             cap_log2,
-            roots: roots_vec.into_inner(),
+            roots,
         })
     }
 
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.entries.encode(enc)?;
         self.cap_log2.encode(enc)?;
-        let roots_vec: VarVec<H> =
-            VarVec::<H>::from_vec(self.roots.clone()).ok_or(CodecError::OverflowContainer)?;
-        roots_vec.encode(enc)
+        // Validate roots length matches expected popcount to avoid misalignment
+        let expected = self.entries.count_ones() as usize;
+        if self.roots.len() != expected {
+            return Err(CodecError::MalformedField("CompactMmr64.roots"));
+        }
+        for h in &self.roots {
+            h.encode(enc)?;
+        }
+        Ok(())
     }
 }
 
