@@ -1,24 +1,27 @@
-//! Generic binary Merkle tree implementation built on `MerkleHasher`.
+//! Generic binary Merkle tree implementation.
 //!
 //! This complements the MMR by providing standard “binary Merkle tree”
 //! functionality: construct from leaves, generate inclusion proofs, and verify
 //! those proofs.
 
-use crate::hasher::MerkleHasher;
+use crate::hasher::{MerkleHash, MerkleHasher};
 use crate::proof::MerkleProof;
 
 /// Simple binary Merkle tree backed by in-memory levels.
 ///
 /// Construction duplicates the last node when a level has odd length.
 #[derive(Clone, Debug)]
-pub struct BinaryMerkleTree<MH: MerkleHasher> {
+pub struct BinaryMerkleTree<H: MerkleHash> {
     /// Level 0 is leaves; last level has a single root.
-    levels: Vec<Vec<MH::Hash>>,
+    levels: Vec<Vec<H>>,
 }
 
-impl<MH: MerkleHasher> BinaryMerkleTree<MH> {
+impl<H: MerkleHash> BinaryMerkleTree<H> {
     /// Builds a tree from leaf hashes. Returns an empty tree if `leaves` is empty.
-    pub fn from_leaves(leaves: &[MH::Hash]) -> Self {
+    pub fn from_leaves<MH>(leaves: &[H]) -> Self
+    where
+        MH: MerkleHasher<Hash = H>,
+    {
         let mut levels = Vec::new();
         if leaves.is_empty() {
             return Self { levels };
@@ -46,7 +49,7 @@ impl<MH: MerkleHasher> BinaryMerkleTree<MH> {
     }
 
     /// Returns the tree root if present.
-    pub fn root(&self) -> Option<MH::Hash> {
+    pub fn root(&self) -> Option<H> {
         if self.levels.is_empty() {
             None
         } else {
@@ -55,7 +58,7 @@ impl<MH: MerkleHasher> BinaryMerkleTree<MH> {
     }
 
     /// Generates an inclusion proof for `index` if it exists.
-    pub fn gen_proof(&self, index: usize) -> Option<MerkleProof<MH::Hash>> {
+    pub fn gen_proof(&self, index: usize) -> Option<MerkleProof<H>> {
         if self.levels.is_empty() || index >= self.levels[0].len() {
             return None;
         }
@@ -78,8 +81,15 @@ impl<MH: MerkleHasher> BinaryMerkleTree<MH> {
     }
 
     /// Verifies a `proof` for `leaf` against the provided `root`.
-    pub fn verify_proof(root: &MH::Hash, proof: &MerkleProof<MH::Hash>, leaf: &MH::Hash) -> bool {
-        proof.verify_with_root::<MH>(root, leaf)
+    pub fn verify_proof<MH>(&self, proof: &MerkleProof<H>, leaf: &H) -> bool
+    where
+        MH: MerkleHasher<Hash = H>,
+    {
+        if let Some(root) = self.root() {
+            proof.verify_with_root::<MH>(&root, leaf)
+        } else {
+            false
+        }
     }
 }
 
@@ -102,7 +112,7 @@ mod tests {
 
     #[test]
     fn empty_tree() {
-        let tree: BinaryMerkleTree<Sha256Hasher> = BinaryMerkleTree::from_leaves(&[]);
+        let tree: BinaryMerkleTree<H> = BinaryMerkleTree::from_leaves::<Sha256Hasher>(&[]);
         assert!(tree.root().is_none());
         assert!(tree.gen_proof(0).is_none());
     }
@@ -110,14 +120,11 @@ mod tests {
     #[test]
     fn build_and_verify() {
         let leaves = make_leaves(5);
-        let tree: BinaryMerkleTree<Sha256Hasher> = BinaryMerkleTree::from_leaves(&leaves);
-        let root = tree.root().unwrap();
+        let tree: BinaryMerkleTree<H> = BinaryMerkleTree::from_leaves::<Sha256Hasher>(&leaves);
 
         for (i, leaf) in leaves.iter().enumerate() {
             let proof: MerkleProof<H> = tree.gen_proof(i).unwrap();
-            assert!(BinaryMerkleTree::<Sha256Hasher>::verify_proof(
-                &root, &proof, leaf
-            ));
+            assert!(tree.verify_proof::<Sha256Hasher>(&proof, &leaf));
         }
     }
 }
