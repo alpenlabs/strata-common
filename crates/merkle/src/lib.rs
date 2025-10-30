@@ -21,9 +21,6 @@ pub mod mmr;
 pub mod proof;
 pub mod tree;
 
-// Mark digest as used to satisfy unused dependency lint in workspace.
-use digest as _;
-
 use hasher::{DigestMerkleHasher, DigestMerkleHasherNoPrefix};
 use sha2::Sha256;
 

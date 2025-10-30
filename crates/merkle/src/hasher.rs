@@ -101,7 +101,7 @@ impl<D: Digest, const N: usize> MerkleHasher for DigestMerkleHasher<D, N> {
         result
             .as_ref()
             .try_into()
-            .expect("mmr: digest output not 32 bytes")
+            .expect("digest output length mismatch")
     }
 
     fn hash_node(left: Self::Hash, right: Self::Hash) -> Self::Hash {
@@ -114,7 +114,7 @@ impl<D: Digest, const N: usize> MerkleHasher for DigestMerkleHasher<D, N> {
         result
             .as_ref()
             .try_into()
-            .expect("mmr: digest output not 32 bytes")
+            .expect("digest output length mismatch")
     }
 }
 
@@ -135,7 +135,7 @@ impl<D: Digest, const N: usize> MerkleHasher for DigestMerkleHasherNoPrefix<D, N
         result
             .as_ref()
             .try_into()
-            .expect("mmr: digest output not 32 bytes")
+            .expect("digest output length mismatch")
     }
 
     fn hash_node(left: Self::Hash, right: Self::Hash) -> Self::Hash {
@@ -147,6 +147,6 @@ impl<D: Digest, const N: usize> MerkleHasher for DigestMerkleHasherNoPrefix<D, N
         result
             .as_ref()
             .try_into()
-            .expect("mmr: digest output not 32 bytes")
+            .expect("digest output length mismatch")
     }
 }
