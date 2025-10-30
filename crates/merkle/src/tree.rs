@@ -113,7 +113,7 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
     where
         MH: MerkleHasher<Hash = H>,
     {
-        proof.verify_with_root::<MH>(&self.root(), leaf)
+        proof.verify_with_root::<MH>(self.root(), leaf)
     }
 }
 
@@ -147,15 +147,20 @@ mod tests {
         let tree: BinaryMerkleTree<H> =
             BinaryMerkleTree::from_leaves::<Sha256Hasher>(vec![leaf]).unwrap();
         assert_eq!(tree.root(), &leaf);
+        assert_eq!(tree.num_leafs(), 1);
+        assert_eq!(tree.leafs(), &[leaf]);
         let proof: MerkleProof<H> = tree.gen_proof(0).expect("proof exists");
         assert!(tree.verify_proof::<Sha256Hasher>(&proof, &leaf));
     }
 
     #[test]
     fn build_and_verify() {
-        let leaves = make_leaves(4);
+        let num_leafs = 4;
+        let leaves = make_leaves(num_leafs);
         let tree: BinaryMerkleTree<H> =
             BinaryMerkleTree::from_leaves::<Sha256Hasher>(leaves.clone()).unwrap();
+        assert_eq!(tree.leafs().to_vec(), leaves.clone());
+        assert_eq!(tree.num_leafs(), num_leafs);
 
         for (i, leaf) in leaves.iter().enumerate() {
             let proof: MerkleProof<H> = tree.gen_proof(i).unwrap();
