@@ -1,8 +1,8 @@
 //! strata-codec serialization support for Merkle types.
 //! Enable via `--features codec`.
 
-use crate::hasher::{MerkleHash, MerkleHasher};
-use crate::mmr::{CompactMmr64, MerkleMr64};
+use crate::hasher::MerkleHash;
+use crate::mmr::CompactMmr64;
 use crate::proof::{MerkleProof, RawMerkleProof};
 
 use strata_codec::{Codec, CodecError, Decoder, Encoder, VarVec};
@@ -41,28 +41,6 @@ where
             h.encode(enc)?;
         }
         Ok(())
-    }
-}
-
-// MerkleMr64
-
-impl<MH> Codec for MerkleMr64<MH>
-where
-    MH: MerkleHasher + Clone,
-    MH::Hash: Codec,
-{
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let num = u64::decode(dec)?;
-        let peaks_vec: VarVec<MH::Hash> = VarVec::decode(dec)?;
-        Ok(MerkleMr64::from_parts(num, peaks_vec.into_inner()))
-    }
-
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.num.encode(enc)?;
-        let peaks = self.peaks.to_vec();
-        let peaks_vec: VarVec<MH::Hash> =
-            VarVec::<MH::Hash>::from_vec(peaks).ok_or(CodecError::OverflowContainer)?;
-        peaks_vec.encode(enc)
     }
 }
 
@@ -106,6 +84,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::MerkleMr64;
+
     use super::*;
     use sha2::Sha256;
     use strata_codec::{decode_buf_exact, encode_to_vec};
@@ -137,35 +117,16 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_mmr() {
-        let mut mmr: MerkleMr64<Hasher> = MerkleMr64::new(8);
-        let leaves = make_hashes(7);
-        for h in leaves.iter() {
-            mmr.add_leaf(*h).expect("add leaf");
-        }
-
-        let bytes = encode_to_vec(&mmr).expect("serialize mmr");
-        let de: MerkleMr64<Hasher> = decode_buf_exact(&bytes).expect("deserialize mmr");
-
-        assert_eq!(mmr.num, de.num);
-        assert_eq!(mmr.peaks_slice(), de.peaks_slice());
-    }
-
-    #[test]
     fn roundtrip_compact_mmr() {
         let mut mmr: MerkleMr64<Hasher> = MerkleMr64::new(8);
         let leaves = make_hashes(10);
         for h in leaves.iter() {
             mmr.add_leaf(*h).expect("add leaf");
         }
-        let compact = mmr.to_compact();
+        let compact: CompactMmr64<[u8; 32]> = mmr.into();
 
         let bytes = encode_to_vec(&compact).expect("serialize compact");
         let de: CompactMmr64<H> = decode_buf_exact(&bytes).expect("deserialize compact");
         assert_eq!(compact, de);
-
-        let rebuilt = MerkleMr64::<Hasher>::from_compact(&de);
-        assert_eq!(mmr.num, rebuilt.num);
-        assert_eq!(mmr.peaks_slice(), rebuilt.peaks_slice());
     }
 }

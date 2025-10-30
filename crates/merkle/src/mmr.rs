@@ -76,40 +76,6 @@ where
         &self.peaks
     }
 
-    /// Unpacks the MMR from a compact form.
-    pub fn from_compact(compact: &CompactMmr64<MH::Hash>) -> Self {
-        // FIXME this is somewhat inefficient, we could consume the vec and just
-        // slice out its elements, but this is fine for now
-        let mut roots = vec![MH::zero_hash(); compact.cap_log2 as usize];
-        let mut at = 0;
-        for i in 0..compact.cap_log2 {
-            if (compact.entries >> i) & 1 != 0 {
-                roots[i as usize] = compact.roots[at as usize];
-                at += 1;
-            }
-        }
-
-        Self {
-            num: compact.entries,
-            peaks: roots,
-            _pd: PhantomData,
-        }
-    }
-
-    /// Converts the MMR to a compact form.
-    pub fn to_compact(&self) -> CompactMmr64<MH::Hash> {
-        CompactMmr64 {
-            entries: self.num,
-            cap_log2: self.peaks.len() as u8,
-            roots: self
-                .peaks
-                .iter()
-                .filter(|h| !<MH::Hash as MerkleHash>::is_zero(*h))
-                .copied()
-                .collect(),
-        }
-    }
-
     /// Returns the total number of elements we're allowed to insert into the
     /// MMR, based on the roots size.
     pub fn max_capacity(&self) -> u64 {
@@ -332,14 +298,53 @@ where
     }
 }
 
+impl<MH> From<CompactMmr64<MH::Hash>> for MerkleMr64<MH>
+where
+    MH: MerkleHasher + Clone,
+{
+    fn from(compact: CompactMmr64<MH::Hash>) -> Self {
+        let mut roots = vec![MH::zero_hash(); compact.cap_log2 as usize];
+        let mut roots_iter = compact.roots.into_iter();
+
+        for i in 0..compact.cap_log2 {
+            if (compact.entries >> i) & 1 != 0 {
+                roots[i as usize] = roots_iter.next().expect("compact roots exhausted early");
+            }
+        }
+
+        Self {
+            num: compact.entries,
+            peaks: roots,
+            _pd: PhantomData,
+        }
+    }
+}
+
+impl<MH> From<MerkleMr64<MH>> for CompactMmr64<MH::Hash>
+where
+    MH: MerkleHasher + Clone,
+{
+    fn from(mmr: MerkleMr64<MH>) -> Self {
+        Self {
+            entries: mmr.num,
+            cap_log2: mmr.peaks.len() as u8,
+            roots: mmr
+                .peaks
+                .into_iter()
+                .filter(|h| !<MH::Hash as MerkleHash>::is_zero(h))
+                .collect(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use sha2::{Digest, Sha256};
 
     use super::MerkleMr64;
-    use crate::Sha256Hasher;
     use crate::error::MerkleError;
     use crate::proof::MerkleProof;
+    use crate::{CompactMmr64, Sha256Hasher};
 
     type Hash32 = [u8; 32];
 
@@ -521,11 +526,11 @@ mod test {
     fn check_compact_and_non_compact() {
         let (mmr, _) = generate_for_n_integers(5);
 
-        let compact_mmr = mmr.to_compact();
-        let deserialized_mmr = crate::mmr::MerkleMr64::<Sha256Hasher>::from_compact(&compact_mmr);
+        let compact_mmr: CompactMmr64<_> = mmr.clone().into();
+        let deserialized_mmr = MerkleMr64::<Sha256Hasher>::from(compact_mmr);
 
-        assert_eq!(mmr.num, deserialized_mmr.num);
         assert_eq!(mmr.peaks, deserialized_mmr.peaks);
+        assert_eq!(mmr.num, deserialized_mmr.num);
     }
 
     #[test]
