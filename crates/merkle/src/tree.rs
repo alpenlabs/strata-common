@@ -52,14 +52,30 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
         Ok(Self { nodes })
     }
 
+    /// Returns the number of leaves in the tree.
+    pub fn num_leafs(&self) -> usize {
+        self.nodes.len().div_ceil(2)
+    }
+
+    /// Returns a slice of the leaf nodes.
+    pub fn leafs(&self) -> &[H] {
+        let n = self.num_leafs();
+        &self.nodes[..n]
+    }
+
+    /// Returns the height of the tree (number of levels from leaves to root).
+    // REVIEW: check consistency with MMR
+    pub fn height(&self) -> usize {
+        self.num_leafs().ilog2() as usize + 1
+    }
+
     /// Returns the tree root.
     ///
     /// In this construction, tree creation rejects non-power-of-two sizes,
     /// including zero, so a root is always present.
-    pub fn root(&self) -> H {
+    pub fn root(&self) -> &H {
         // SAFETY: constructor guarantees at least one level with at least one node.
-        *self
-            .nodes
+        self.nodes
             .last()
             .expect("BinaryMerkleTree: root must exist")
     }
@@ -130,7 +146,7 @@ mod tests {
         let leaf = [1u8; 32];
         let tree: BinaryMerkleTree<H> =
             BinaryMerkleTree::from_leaves::<Sha256Hasher>(vec![leaf]).unwrap();
-        assert_eq!(tree.root(), leaf);
+        assert_eq!(tree.root(), &leaf);
         let proof: MerkleProof<H> = tree.gen_proof(0).expect("proof exists");
         assert!(tree.verify_proof::<Sha256Hasher>(&proof, &leaf));
     }

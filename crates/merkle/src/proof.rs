@@ -1,6 +1,6 @@
 //! Proof types shared by MMR and the binary Merkle tree.
 
-use crate::hasher::MerkleHash;
+use crate::hasher::{MerkleHash, MerkleHasher};
 
 /// Proof for an entry in an MMR/tree.
 ///
@@ -73,7 +73,7 @@ impl<H: MerkleHash> MerkleProof<H> {
     /// The caller specifies the merkle hasher implementation via `MH`.
     pub fn compute_root<MH>(&self, leaf: &H) -> H
     where
-        MH: crate::hasher::MerkleHasher<Hash = H>,
+        MH: MerkleHasher<Hash = H>,
     {
         if self.cohashes().is_empty() {
             return *leaf;
@@ -96,7 +96,7 @@ impl<H: MerkleHash> MerkleProof<H> {
     /// Verifies this proof for `leaf` against the expected `root`.
     pub fn verify_with_root<MH>(&self, root: &H, leaf: &H) -> bool
     where
-        MH: crate::hasher::MerkleHasher<Hash = H>,
+        MH: MerkleHasher<Hash = H>,
     {
         let computed = self.compute_root::<MH>(leaf);
         <H as MerkleHash>::eq_ct(&computed, root)
