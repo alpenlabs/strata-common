@@ -21,18 +21,17 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
     ///
     /// `leaves.len()` must be a power of two (including 1). Any other length,
     /// including zero, returns `Err(MerkleError::NotPowerOfTwo)`.
-    pub fn from_leaves<MH>(leaves: &[H]) -> Result<Self, MerkleError>
+    pub fn from_leaves<MH>(leaves: impl Into<Vec<H>>) -> Result<Self, MerkleError>
     where
         MH: MerkleHasher<Hash = H>,
     {
-        if !leaves.len().is_power_of_two() || leaves.is_empty() {
+        let mut nodes = leaves.into();
+        if !nodes.len().is_power_of_two() || nodes.is_empty() {
             return Err(MerkleError::NotPowerOfTwo);
         }
-        let n = leaves.len();
+        let n = nodes.len();
         let total = 2 * n - 1;
-        let mut nodes = Vec::with_capacity(total);
-        // push leaves
-        nodes.extend_from_slice(leaves);
+        nodes.reserve_exact(total - n);
 
         // Build upper levels, appending parents sequentially.
         let mut level_start = 0; // start index of current level
@@ -130,7 +129,7 @@ mod tests {
     fn single_leaf_tree() {
         let leaf = [1u8; 32];
         let tree: BinaryMerkleTree<H> =
-            BinaryMerkleTree::from_leaves::<Sha256Hasher>(&[leaf]).unwrap();
+            BinaryMerkleTree::from_leaves::<Sha256Hasher>(vec![leaf]).unwrap();
         assert_eq!(tree.root(), leaf);
         let proof: MerkleProof<H> = tree.gen_proof(0).expect("proof exists");
         assert!(tree.verify_proof::<Sha256Hasher>(&proof, &leaf));
@@ -140,7 +139,7 @@ mod tests {
     fn build_and_verify() {
         let leaves = make_leaves(4);
         let tree: BinaryMerkleTree<H> =
-            BinaryMerkleTree::from_leaves::<Sha256Hasher>(&leaves).unwrap();
+            BinaryMerkleTree::from_leaves::<Sha256Hasher>(leaves.clone()).unwrap();
 
         for (i, leaf) in leaves.iter().enumerate() {
             let proof: MerkleProof<H> = tree.gen_proof(i).unwrap();
@@ -151,7 +150,7 @@ mod tests {
     #[test]
     fn not_power_of_two_rejected() {
         let leaves = make_leaves(5);
-        let err = BinaryMerkleTree::from_leaves::<Sha256Hasher>(&leaves).unwrap_err();
+        let err = BinaryMerkleTree::from_leaves::<Sha256Hasher>(leaves).unwrap_err();
         assert_eq!(err, MerkleError::NotPowerOfTwo);
     }
 }
