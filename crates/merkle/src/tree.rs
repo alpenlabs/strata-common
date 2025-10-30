@@ -36,13 +36,13 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
         // Build upper levels, appending parents sequentially.
         let mut level_start = 0; // start index of current level
         let mut level_size = n; // size of current level
+
+        // Stop when level_size == 1, as that single node is the root
         while level_size > 1 {
-            let mut i = 0;
-            while i < level_size {
+            for i in (0..level_size).step_by(2) {
                 let left = nodes[level_start + i];
                 let right = nodes[level_start + i + 1];
                 nodes.push(MH::hash_node(left, right));
-                i += 2;
             }
             // next level starts where we just appended
             level_start += level_size;
