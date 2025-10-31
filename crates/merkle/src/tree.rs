@@ -31,18 +31,20 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
         }
         let n = nodes.len();
         let total = 2 * n - 1;
-        nodes.reserve_exact(total - n);
+        nodes.resize(total, H::zero());
 
-        // Build upper levels, appending parents sequentially.
+        // Build upper levels, writing parents to absolute indices.
         let mut level_start = 0; // start index of current level
         let mut level_size = n; // size of current level
+        let mut write_pos = n; // absolute index to write next parent
 
         // Stop when level_size == 1, as that single node is the root
         while level_size > 1 {
             for i in (0..level_size).step_by(2) {
                 let left = nodes[level_start + i];
                 let right = nodes[level_start + i + 1];
-                nodes.push(MH::hash_node(left, right));
+                nodes[write_pos] = MH::hash_node(left, right);
+                write_pos += 1;
             }
             // next level starts where we just appended
             level_start += level_size;
@@ -64,7 +66,6 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
     }
 
     /// Returns the height of the tree (number of levels from leaves to root).
-    // REVIEW: check consistency with MMR
     pub fn height(&self) -> usize {
         self.num_leafs().ilog2() as usize + 1
     }
@@ -74,7 +75,6 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
     /// In this construction, tree creation rejects non-power-of-two sizes,
     /// including zero, so a root is always present.
     pub fn root(&self) -> &H {
-        // SAFETY: constructor guarantees at least one level with at least one node.
         self.nodes
             .last()
             .expect("BinaryMerkleTree: root must exist")
