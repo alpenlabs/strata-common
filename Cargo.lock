@@ -1322,13 +1322,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-mmr"
+name = "strata-merkle"
 version = "0.1.0"
 dependencies = [
  "borsh",
  "digest",
+ "proptest",
  "serde",
  "sha2",
+ "strata-codec",
  "thiserror 2.0.17",
 ]
 

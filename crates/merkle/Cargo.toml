@@ -1,0 +1,24 @@
+[package]
+name = "strata-merkle"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+borsh = { workspace = true, optional = true }
+digest.workspace = true
+serde = { workspace = true, optional = true, features = ["derive"] }
+sha2.workspace = true
+strata-codec = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[features]
+default = ["borsh", "codec", "serde"]
+borsh = ["dep:borsh"]
+codec = ["dep:strata-codec"]
+serde = ["dep:serde"]

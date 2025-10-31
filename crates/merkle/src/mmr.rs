@@ -1,62 +1,22 @@
-//! Merkle mountain range implementation crate.
-#![expect(
-    clippy::declare_interior_mutable_const,
-    reason = "Constants with interior mutability are needed for MMR implementation"
-)]
-#![expect(
-    clippy::borrow_interior_mutable_const,
-    reason = "Borrowing interior mutable constants is required for MMR operations"
-)]
-
-pub mod error;
-pub mod hasher;
+//! Merkle Mountain Range (MMR) accumulator and related types.
 
 use std::marker::PhantomData;
 
-use borsh::{BorshDeserialize, BorshSerialize};
-use error::MerkleError;
-use hasher::{DigestMerkleHasher, MerkleHash, MerkleHasher};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use sha2::Sha256;
+use crate::error::MerkleError;
+use crate::hasher::{MerkleHash, MerkleHasher};
+use crate::proof::{MerkleProof, RawMerkleProof};
 
-/// Merkle hash impl for SHA-256 `Digest` impl.
-pub type Sha256Hasher = DigestMerkleHasher<Sha256, 32>;
-
-/// Compact representation of the MMR that should be borsh serializable easily.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
-pub struct CompactMmr<H: MerkleHash> {
-    entries: u64,
-    cap_log2: u8,
-    roots: Vec<H>,
-}
-
-impl<H> Serialize for CompactMmr<H>
-where
-    H: MerkleHash + Serialize,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        (&self.entries, &self.cap_log2, &self.roots).serialize(serializer)
-    }
-}
-
-impl<'de, H> Deserialize<'de> for CompactMmr<H>
-where
-    H: MerkleHash + Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let (entries, cap_log2, roots) = <(u64, u8, Vec<H>)>::deserialize(deserializer)?;
-        Ok(Self {
-            entries,
-            cap_log2,
-            roots,
-        })
-    }
+/// Compact representation of the MMR that can hold upto 2**64 elements.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
+pub struct CompactMmr64<H: MerkleHash> {
+    pub(crate) entries: u64,
+    pub(crate) cap_log2: u8,
+    pub(crate) roots: Vec<H>,
 }
 
 /// Merkle mountain range that can hold up to 2**64 elements.
@@ -67,13 +27,16 @@ pub struct MerkleMr64<MH: MerkleHasher + Clone> {
 
     /// Buffer of all possible peaks in MMR.  Only some of these will be valid
     /// at a time.
-    pub(crate) peaks: Box<[MH::Hash]>,
+    pub(crate) peaks: Vec<MH::Hash>,
 
     /// phantom data for hasher
     _pd: PhantomData<MH>,
 }
 
-impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
+impl<MH> MerkleMr64<MH>
+where
+    MH: MerkleHasher + Clone,
+{
     /// Constructs a new MMR with some scale.  This is the number of peaks we
     /// will keep in the MMR.  The real capacity is 2**n of this value
     /// specified.
@@ -88,64 +51,29 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
 
         Self {
             num: 0,
-            peaks: vec![MH::zero_hash(); cap_log2].into_boxed_slice(),
+            peaks: vec![MH::zero_hash(); cap_log2],
             _pd: PhantomData,
         }
     }
 
-    /// Gets the number of entries inserted into the MMR.
-    pub fn num_entries(&self) -> u64 {
-        self.num
-    }
-
-    /// Returns an iterator over the set merkle peaks, exposing their height.
+    /// Constructs an MMR from raw parts.
     ///
-    /// This is mainly useful for testing/troubleshooting.
-    pub fn peaks_iter(&self) -> impl Iterator<Item = (u8, &MH::Hash)> {
-        self.peaks
-            .iter()
-            .enumerate()
-            .filter(|(_, h)| !<MH::Hash as MerkleHash>::is_zero(h))
-            .map(|(i, h)| (i as u8, h))
-    }
-
-    /// Gets if there have been no entries inserted into the MMR.
-    pub fn is_empty(&self) -> bool {
-        self.num_entries() == 0
-    }
-
-    /// Unpacks the MMR from a compact form.
-    pub fn from_compact(compact: &CompactMmr<MH::Hash>) -> Self {
-        // FIXME this is somewhat inefficient, we could consume the vec and just
-        // slice out its elements, but this is fine for now
-        let mut roots = vec![MH::zero_hash(); compact.cap_log2 as usize];
-        let mut at = 0;
-        for i in 0..compact.cap_log2 {
-            if (compact.entries >> i) & 1 != 0 {
-                roots[i as usize] = compact.roots[at as usize];
-                at += 1;
-            }
-        }
-
+    /// This is primarily used by serialization code paths to rebuild an MMR
+    /// from a stored `num` and the vector of `peaks`.
+    pub fn from_parts(num: u64, peaks: Vec<MH::Hash>) -> Self {
         Self {
-            num: compact.entries,
-            peaks: roots.into(),
+            num,
+            peaks,
             _pd: PhantomData,
         }
     }
 
-    /// Converts the MMR to a compact form.
-    pub fn to_compact(&self) -> CompactMmr<MH::Hash> {
-        CompactMmr {
-            entries: self.num,
-            cap_log2: self.peaks.len() as u8,
-            roots: self
-                .peaks
-                .iter()
-                .filter(|h| !<MH::Hash as MerkleHash>::is_zero(*h))
-                .copied()
-                .collect(),
-        }
+    /// Returns the internal peaks as a slice.
+    ///
+    /// Useful for testing and (de)serialization helpers to compare state
+    /// without exposing mutation.
+    pub fn peaks_slice(&self) -> &[MH::Hash] {
+        &self.peaks
     }
 
     /// Returns the total number of elements we're allowed to insert into the
@@ -349,31 +277,8 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
 
     /// Verifies a single proof for a leaf against the current MMR state.
     pub fn verify(&self, proof: &MerkleProof<MH::Hash>, leaf: &MH::Hash) -> bool {
-        self.verify_raw(proof.cohashes(), proof.index(), leaf)
-    }
-
-    fn verify_raw(&self, cohashes: &[MH::Hash], leaf_index: u64, leaf_hash: &MH::Hash) -> bool {
-        let root = &self.peaks[cohashes.len()];
-
-        if cohashes.is_empty() {
-            return <MH::Hash as MerkleHash>::eq_ct(root, leaf_hash);
-        }
-
-        let mut cur_hash = *leaf_hash;
-        let mut side_flags = leaf_index;
-
-        for cohash in cohashes.iter() {
-            let node_hash = if side_flags & 1 == 1 {
-                MH::hash_node(*cohash, cur_hash)
-            } else {
-                MH::hash_node(cur_hash, *cohash)
-            };
-
-            side_flags >>= 1;
-            cur_hash = node_hash;
-        }
-
-        <MH::Hash as MerkleHash>::eq_ct(&cur_hash, root)
+        let root = &self.peaks[proof.cohashes().len()];
+        proof.verify_with_root::<MH>(root, leaf)
     }
 
     #[allow(dead_code, clippy::allow_attributes, reason = "used for testing")]
@@ -393,104 +298,42 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     }
 }
 
-/// Proof for an entry in an MMR/tree.
-///
-/// If the MMR that produced this proof is updated, then this proof has to be
-/// updated as well.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct MerkleProof<H>
+impl<MH> From<CompactMmr64<MH::Hash>> for MerkleMr64<MH>
 where
-    H: MerkleHash,
+    MH: MerkleHasher + Clone,
 {
-    /// Sibling hashes required for proof.
-    pub(crate) inner: RawMerkleProof<H>,
+    fn from(compact: CompactMmr64<MH::Hash>) -> Self {
+        let mut roots = vec![MH::zero_hash(); compact.cap_log2 as usize];
+        let mut roots_iter = compact.roots.into_iter();
 
-    /// Index of the element for which this proof is for.
-    pub(crate) index: u64,
-}
+        for i in 0..compact.cap_log2 {
+            if (compact.entries >> i) & 1 != 0 {
+                roots[i as usize] = roots_iter.next().expect("compact roots exhausted early");
+            }
+        }
 
-impl<H: MerkleHash> MerkleProof<H> {
-    fn new(inner: RawMerkleProof<H>, index: u64) -> Self {
-        Self { inner, index }
-    }
-
-    /// Constructs a new empty proof for the 0 index.
-    pub fn new_zero() -> Self {
-        Self::new_empty(0)
-    }
-
-    /// Constructs a new empty proof for some index.  This probably will not
-    /// validate properly.
-    fn new_empty(index: u64) -> Self {
-        Self::new(RawMerkleProof::new_zero(), index)
-    }
-
-    /// Constructs a new instance from the path.
-    pub fn from_cohashes(cohashes: Vec<H>, index: u64) -> Self {
-        Self::new(RawMerkleProof::new(cohashes), index)
-    }
-
-    /// Exposes the raw inner proof, which you probably don't want to use.
-    pub fn inner_raw(&self) -> &RawMerkleProof<H> {
-        &self.inner
-    }
-
-    fn inner_mut(&mut self) -> &mut RawMerkleProof<H> {
-        &mut self.inner
-    }
-
-    /// Returns the cohash path for this proof.
-    pub fn cohashes(&self) -> &[H] {
-        self.inner.cohashes()
-    }
-
-    /// Returns the index this proof is for.
-    pub fn index(&self) -> u64 {
-        self.index
-    }
-
-    /// Discards the index and returns the raw merkle proof.
-    pub fn into_raw(self) -> RawMerkleProof<H> {
-        self.inner
+        Self {
+            num: compact.entries,
+            peaks: roots,
+            _pd: PhantomData,
+        }
     }
 }
 
-/// Raw proof for some entry in a MMR/tree.
-///
-/// This doesn't include the index of the entry being proven, which makes this
-/// useful in contexts where we establish that value separately.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct RawMerkleProof<H>
+impl<MH> From<MerkleMr64<MH>> for CompactMmr64<MH::Hash>
 where
-    H: MerkleHash,
+    MH: MerkleHasher + Clone,
 {
-    pub(crate) cohashes: Vec<H>,
-}
-
-impl<H: MerkleHash> RawMerkleProof<H> {
-    /// Creates a new raw proof from a cohash path.
-    pub fn new(cohashes: Vec<H>) -> Self {
-        Self { cohashes }
-    }
-
-    /// Creates an empty raw proof (zero cohash path).
-    pub fn new_zero() -> Self {
-        Self::new(Vec::new())
-    }
-
-    /// Returns the cohash path in this proof.
-    pub fn cohashes(&self) -> &[H] {
-        &self.cohashes
-    }
-
-    fn cohashes_vec_mut(&mut self) -> &mut Vec<H> {
-        &mut self.cohashes
-    }
-
-    /// Takes an index that this merkle proof is allegedly for and constructs a
-    /// full proof using the cohash path we have.
-    pub fn into_indexed(self, idx: u64) -> MerkleProof<H> {
-        MerkleProof::from_cohashes(self.cohashes, idx)
+    fn from(mmr: MerkleMr64<MH>) -> Self {
+        Self {
+            entries: mmr.num,
+            cap_log2: mmr.peaks.len() as u8,
+            roots: mmr
+                .peaks
+                .into_iter()
+                .filter(|h| !<MH::Hash as MerkleHash>::is_zero(h))
+                .collect(),
+        }
     }
 }
 
@@ -498,8 +341,10 @@ impl<H: MerkleHash> RawMerkleProof<H> {
 mod test {
     use sha2::{Digest, Sha256};
 
-    use super::{MerkleMr64, MerkleProof, Sha256Hasher};
+    use super::MerkleMr64;
     use crate::error::MerkleError;
+    use crate::proof::MerkleProof;
+    use crate::{CompactMmr64, Sha256Hasher};
 
     type Hash32 = [u8; 32];
 
@@ -681,11 +526,11 @@ mod test {
     fn check_compact_and_non_compact() {
         let (mmr, _) = generate_for_n_integers(5);
 
-        let compact_mmr = mmr.to_compact();
-        let deserialized_mmr = MerkleMr64::<Sha256Hasher>::from_compact(&compact_mmr);
+        let compact_mmr: CompactMmr64<_> = mmr.clone().into();
+        let deserialized_mmr = MerkleMr64::<Sha256Hasher>::from(compact_mmr);
 
-        assert_eq!(mmr.num, deserialized_mmr.num);
         assert_eq!(mmr.peaks, deserialized_mmr.peaks);
+        assert_eq!(mmr.num, deserialized_mmr.num);
     }
 
     #[test]

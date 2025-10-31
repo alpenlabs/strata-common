@@ -4,7 +4,7 @@ members = [
   "crates/codec-tests",
   "crates/l1proto/envelope-fmt",
   "crates/l1proto/txfmt",
-  "crates/mmr",
+  "crates/merkle",
   "crates/msg-fmt",
   "crates/predicate",
   "crates/service",
@@ -17,7 +17,7 @@ resolver = "3"
 strata-codec = { path = "crates/codec" }
 strata-codec-tests = { path = "crates/codec-tests" }
 strata-l1-txfmt = { path = "crates/l1proto/txfmt" }
-strata-mmr = { path = "crates/mmr" }
+strata-merkle = { path = "crates/merkle" }
 strata-msg-fmt = { path = "crates/msg-fmt" }
 strata-predicate = { path = "crates/predicate" }
 strata-service = { path = "crates/services" }
@@ -31,6 +31,7 @@ digest = "0.10"
 futures = "0.3"
 futures-util = "0.3"
 hex = "0.4"
+proptest = "1.8"
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.94"
