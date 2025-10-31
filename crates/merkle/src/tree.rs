@@ -120,13 +120,12 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
 #[cfg(test)]
 mod tests {
     use super::BinaryMerkleTree;
-    use crate::error::MerkleError;
-    use crate::hasher::DigestMerkleHasher;
+    use crate::Sha256Hasher;
     use crate::proof::MerkleProof;
+    use crate::{StrataMerkle, error::MerkleError};
     use sha2::Sha256;
 
     type H = [u8; 32];
-    type Sha256Hasher = DigestMerkleHasher<Sha256, 32>;
 
     fn make_leaves(n: usize) -> Vec<H> {
         use sha2::Digest;
@@ -139,6 +138,21 @@ mod tests {
     fn empty_tree_rejected() {
         let err = BinaryMerkleTree::from_leaves::<Sha256Hasher>(&[]).unwrap_err();
         assert_eq!(err, MerkleError::NotPowerOfTwo);
+    }
+
+    #[test]
+    fn test_nodes() {
+        type H = Sha256Hasher;
+        let a = H::hash_leaf(&[1]);
+        let b = H::hash_leaf(&[2]);
+        let c = H::hash_leaf(&[3]);
+        let d = H::hash_leaf(&[4]);
+        let ab = H::hash_node(a, b);
+        let cd = H::hash_node(c, d);
+        let abcd = H::hash_node(ab, cd);
+
+        let tree = BinaryMerkleTree::from_leaves::<H>(vec![a, b, c, d]).unwrap();
+        assert_eq!(tree.nodes, vec![a, b, c, d, ab, cd, abcd]);
     }
 
     #[test]
