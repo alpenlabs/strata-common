@@ -1327,6 +1327,7 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "digest",
+ "proptest",
  "serde",
  "sha2",
  "strata-codec",

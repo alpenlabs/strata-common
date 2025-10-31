@@ -87,6 +87,7 @@ mod tests {
     use crate::MerkleMr64;
 
     use super::*;
+    use proptest::prelude::*;
     use sha2::Sha256;
     use strata_codec::{decode_buf_exact, encode_to_vec};
 
@@ -100,33 +101,43 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn roundtrip_raw_proof() {
-        let raw = RawMerkleProof::<H>::new(vec![[1u8; 32], [2u8; 32], [3u8; 32]]);
-        let bytes = encode_to_vec(&raw).expect("serialize raw");
-        let de: RawMerkleProof<H> = decode_buf_exact(&bytes).expect("deserialize raw");
-        assert_eq!(raw, de);
+    fn arb_hash() -> impl Strategy<Value = H> {
+        any::<[u8; 32]>()
     }
 
-    #[test]
-    fn roundtrip_merkle_proof() {
-        let proof = MerkleProof::<H>::from_cohashes(vec![[9u8; 32], [8u8; 32]], 5);
-        let bytes = encode_to_vec(&proof).expect("serialize proof");
-        let de: MerkleProof<H> = decode_buf_exact(&bytes).expect("deserialize proof");
-        assert_eq!(proof, de);
+    fn arb_cohashes() -> impl Strategy<Value = Vec<H>> {
+        prop::collection::vec(arb_hash(), 0..20)
     }
 
-    #[test]
-    fn roundtrip_compact_mmr() {
-        let mut mmr: MerkleMr64<Hasher> = MerkleMr64::new(8);
-        let leaves = make_hashes(10);
-        for h in leaves.iter() {
-            mmr.add_leaf(*h).expect("add leaf");
+    proptest! {
+        #[test]
+        fn roundtrip_raw_proof(cohashes in arb_cohashes()) {
+            let raw = RawMerkleProof::<H>::new(cohashes);
+            let bytes = encode_to_vec(&raw).expect("serialize raw");
+            let de: RawMerkleProof<H> = decode_buf_exact(&bytes).expect("deserialize raw");
+            prop_assert_eq!(raw, de);
         }
-        let compact: CompactMmr64<[u8; 32]> = mmr.into();
 
-        let bytes = encode_to_vec(&compact).expect("serialize compact");
-        let de: CompactMmr64<H> = decode_buf_exact(&bytes).expect("deserialize compact");
-        assert_eq!(compact, de);
+        #[test]
+        fn roundtrip_merkle_proof(cohashes in arb_cohashes(), index in any::<u64>()) {
+            let proof = MerkleProof::<H>::from_cohashes(cohashes, index);
+            let bytes = encode_to_vec(&proof).expect("serialize proof");
+            let de: MerkleProof<H> = decode_buf_exact(&bytes).expect("deserialize proof");
+            prop_assert_eq!(proof, de);
+        }
+
+        #[test]
+        fn roundtrip_compact_mmr(num_leaves in 1usize..=64) {
+            let mut mmr: MerkleMr64<Hasher> = MerkleMr64::new(8);
+            let leaves = make_hashes(num_leaves);
+            for h in leaves.iter() {
+                mmr.add_leaf(*h).expect("add leaf");
+            }
+            let compact: CompactMmr64<[u8; 32]> = mmr.into();
+
+            let bytes = encode_to_vec(&compact).expect("serialize compact");
+            let de: CompactMmr64<H> = decode_buf_exact(&bytes).expect("deserialize compact");
+            prop_assert_eq!(compact, de);
+        }
     }
 }

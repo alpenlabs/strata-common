@@ -14,6 +14,9 @@ sha2.workspace = true
 strata-codec = { workspace = true, optional = true }
 thiserror.workspace = true
 
+[dev-dependencies]
+proptest.workspace = true
+
 [features]
 default = ["borsh", "codec", "serde"]
 borsh = ["dep:borsh"]
