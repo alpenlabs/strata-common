@@ -68,12 +68,33 @@ where
         }
     }
 
+    /// Gets the number of entries inserted into the MMR.
+    pub fn num_entries(&self) -> u64 {
+        self.num
+    }
+
+    /// Gets if there have been no entries inserted into the MMR.
+    pub fn is_empty(&self) -> bool {
+        self.num_entries() == 0
+    }
+
     /// Returns the internal peaks as a slice.
     ///
     /// Useful for testing and (de)serialization helpers to compare state
     /// without exposing mutation.
     pub fn peaks_slice(&self) -> &[MH::Hash] {
         &self.peaks
+    }
+
+    /// Returns an iterator over the set merkle peaks, exposing their height.
+    ///
+    /// This is mainly useful for testing/troubleshooting.
+    pub fn peaks_iter(&self) -> impl Iterator<Item = (u8, &MH::Hash)> {
+        self.peaks
+            .iter()
+            .enumerate()
+            .filter(|(_, h)| !<MH::Hash as MerkleHash>::is_zero(h))
+            .map(|(i, h)| (i as u8, h))
     }
 
     /// Returns the total number of elements we're allowed to insert into the
