@@ -19,7 +19,9 @@ fn make_tag(s: &[u8]) -> Tag {
 }
 
 /// Hash wrapper trait used by the MMR.
-pub trait MerkleHash: Copy + Clone {
+///
+/// All hash types must support SSZ encoding/decoding for use with SSZ-generated types.
+pub trait MerkleHash: Copy + Clone + ssz::Encode + ssz::Decode {
     /// Length of the hash in bytes.
     const HASH_LEN: usize;
 

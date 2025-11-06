@@ -1,44 +1,39 @@
 //! strata-codec serialization support for Merkle types.
 //! Enable via `--features codec`.
 
+use crate::CompactMmr64;
 use crate::hasher::MerkleHash;
-use crate::mmr::CompactMmr64;
 use crate::proof::{MerkleProof, RawMerkleProof};
 
 use strata_codec::{Codec, CodecError, Decoder, Encoder, VarVec};
 
-// CompactMmr64
-
 impl<H> Codec for CompactMmr64<H>
 where
-    H: MerkleHash + Codec,
+    H: MerkleHash + Codec + ssz::Encode + ssz::Decode,
 {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let entries = u64::decode(dec)?;
         let cap_log2 = u8::decode(dec)?;
-        // Number of roots equals popcount of entries (one per peak)
-        let roots_len = entries.count_ones() as usize;
-        let mut roots = Vec::with_capacity(roots_len);
-        for _ in 0..roots_len {
-            roots.push(H::decode(dec)?);
+        // Reconstruct full peaks array including zeros to preserve capacity
+        let mut roots = vec![H::zero(); cap_log2 as usize];
+        // Read actual peaks and place them at the correct positions
+        for (i, root) in roots.iter_mut().enumerate() {
+            if (entries >> i) & 1 != 0 {
+                *root = H::decode(dec)?;
+            }
         }
-        Ok(Self {
-            entries,
-            cap_log2,
-            roots,
-        })
+        CompactMmr64::from_parts(entries, roots)
+            .map_err(|_| CodecError::MalformedField("CompactMmr64.roots"))
     }
 
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.entries.encode(enc)?;
-        self.cap_log2.encode(enc)?;
-        // Validate roots length matches expected popcount to avoid misalignment
-        let expected = self.entries.count_ones() as usize;
-        if self.roots.len() != expected {
-            return Err(CodecError::MalformedField("CompactMmr64.roots"));
-        }
-        for h in &self.roots {
-            h.encode(enc)?;
+        self.cap_log2().encode(enc)?;
+        // Write only non-zero peaks (actual peaks)
+        for (i, h) in self.roots().iter().enumerate() {
+            if (self.entries >> i) & 1 != 0 {
+                h.encode(enc)?;
+            }
         }
         Ok(())
     }
@@ -48,18 +43,17 @@ where
 
 impl<H> Codec for RawMerkleProof<H>
 where
-    H: MerkleHash + Codec,
+    H: MerkleHash + Codec + ssz::Encode + ssz::Decode,
 {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let cohashes_vec: VarVec<H> = VarVec::decode(dec)?;
-        Ok(Self {
-            cohashes: cohashes_vec.into_inner(),
-        })
+        RawMerkleProof::new_from_vec(cohashes_vec.into_inner())
+            .map_err(|_| CodecError::MalformedField("RawMerkleProof.cohashes"))
     }
 
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         let vec: VarVec<H> =
-            VarVec::<H>::from_vec(self.cohashes.clone()).ok_or(CodecError::OverflowContainer)?;
+            VarVec::<H>::from_vec(self.cohashes().to_vec()).ok_or(CodecError::OverflowContainer)?;
         vec.encode(enc)
     }
 }
@@ -68,7 +62,7 @@ where
 
 impl<H> Codec for MerkleProof<H>
 where
-    H: MerkleHash + Codec,
+    H: MerkleHash + Codec + ssz::Encode + ssz::Decode,
 {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let inner = RawMerkleProof::<H>::decode(dec)?;
@@ -112,7 +106,7 @@ mod tests {
     proptest! {
         #[test]
         fn roundtrip_raw_proof(cohashes in arb_cohashes()) {
-            let raw = RawMerkleProof::<H>::new(cohashes);
+            let raw = RawMerkleProof::<H>::new_from_vec(cohashes).expect("create raw proof");
             let bytes = encode_to_vec(&raw).expect("serialize raw");
             let de: RawMerkleProof<H> = decode_buf_exact(&bytes).expect("deserialize raw");
             prop_assert_eq!(raw, de);
@@ -120,7 +114,7 @@ mod tests {
 
         #[test]
         fn roundtrip_merkle_proof(cohashes in arb_cohashes(), index in any::<u64>()) {
-            let proof = MerkleProof::<H>::from_cohashes(cohashes, index);
+            let proof = MerkleProof::<H>::from_cohashes_vec(cohashes, index).expect("create proof");
             let bytes = encode_to_vec(&proof).expect("serialize proof");
             let de: MerkleProof<H> = decode_buf_exact(&bytes).expect("deserialize proof");
             prop_assert_eq!(proof, de);

@@ -19,6 +19,16 @@ pub mod error;
 pub mod hasher;
 pub mod mmr;
 pub mod proof;
+#[allow(
+    missing_docs,
+    unreachable_pub,
+    rustdoc::private_intra_doc_links,
+    reason = "generated code from SSZ schemas"
+)]
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated_ssz.rs"));
+}
+
 pub mod tree;
 
 use hasher::{DigestMerkleHasher, DigestMerkleHasherNoPrefix};
@@ -35,6 +45,12 @@ pub use hasher::MerkleHasher as StrataMerkle;
 
 // Common re-exports for ergonomic access at the crate root.
 pub use hasher::{MerkleHash, MerkleHasher};
-pub use mmr::{CompactMmr64, MerkleMr64};
-pub use proof::{MerkleProof, RawMerkleProof};
+pub use mmr::MerkleMr64;
 pub use tree::BinaryMerkleTree;
+
+// Re-export SSZ-generated types
+// These types have Encode, Decode, and TreeHash implementations for SSZ serialization
+pub use ssz_generated::ssz::mmr::{CompactMmr64, CompactMmr64Ref, MAX_MMR_PEAKS};
+pub use ssz_generated::ssz::proof::{
+    MerkleProof, MerkleProofRef, RawMerkleProof, RawMerkleProofRef,
+};
