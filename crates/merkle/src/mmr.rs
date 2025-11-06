@@ -4,7 +4,49 @@ use std::marker::PhantomData;
 
 use crate::error::MerkleError;
 use crate::hasher::{MerkleHash, MerkleHasher};
-use crate::proof::{MerkleProof, RawMerkleProof};
+use crate::proof::{MerkleProof, ProofData, RawMerkleProof, verify_with_root};
+
+/// Trait for compact MMR data.
+///
+/// This trait is implemented by both `CompactMmr64<H>` and `CompactMmr64B32`,
+/// allowing generic algorithms to work with either representation.
+pub trait CompactMmrData {
+    /// The hash type used in this MMR.
+    type Hash: MerkleHash;
+
+    /// Returns the number of entries in the MMR.
+    fn entries(&self) -> u64;
+
+    /// Returns the capacity log2.
+    fn cap_log2(&self) -> u8;
+
+    /// Returns an iterator over the roots.
+    fn roots_iter(&self) -> impl Iterator<Item = &Self::Hash>;
+
+    /// Gets the root for verifying a proof at the given height.
+    ///
+    /// The height corresponds to the number of cohashes in the proof.
+    /// This directly computes and returns the required root without
+    /// materializing all roots.
+    fn get_root_for_height(&self, height: usize) -> Option<&Self::Hash>;
+}
+
+/// Verifies a proof for a leaf against this MMR.
+///
+/// This generic function works with any types implementing `CompactMmrData` and `ProofData`.
+pub fn verify<C, P, MH>(mmr: &C, proof: &P, leaf: &C::Hash) -> bool
+where
+    C: CompactMmrData,
+    P: ProofData<Hash = C::Hash>,
+    MH: MerkleHasher<Hash = C::Hash>,
+{
+    let height = proof.cohashes_len();
+    let root = match mmr.get_root_for_height(height) {
+        Some(r) => r,
+        None => return false,
+    };
+    verify_with_root::<P, MH>(proof, root, leaf)
+}
 
 /// Compact representation of the MMR that can hold upto 2**64 elements.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -25,9 +67,28 @@ impl<H: MerkleHash> CompactMmr64<H> {
     where
         MH: MerkleHasher<Hash = H>,
     {
-        let height = proof.cohashes().len();
+        verify::<Self, MerkleProof<H>, MH>(self, proof, leaf)
+    }
+}
+
+impl<H: MerkleHash> CompactMmrData for CompactMmr64<H> {
+    type Hash = H;
+
+    fn entries(&self) -> u64 {
+        self.entries
+    }
+
+    fn cap_log2(&self) -> u8 {
+        self.cap_log2
+    }
+
+    fn roots_iter(&self) -> impl Iterator<Item = &Self::Hash> {
+        self.roots.iter()
+    }
+
+    fn get_root_for_height(&self, height: usize) -> Option<&Self::Hash> {
         let root_index = (self.entries & ((1 << height) - 1)).count_ones() as usize;
-        proof.verify_with_root::<MH>(&self.roots[root_index], leaf)
+        self.roots.get(root_index)
     }
 }
 
@@ -370,8 +431,142 @@ where
     }
 }
 
+#[cfg(feature = "ssz")]
+mod mmr64b32 {
+    use super::*;
+    use crate::{
+        Sha256Hasher,
+        hasher::MerkleHasher,
+        ssz_generated::ssz::{
+            mmr::{CompactMmr64B32, MerkleMr64B32},
+            proof::MerkleProofB32,
+        },
+    };
+    use ssz_types::FixedBytes;
+
+    type Hash32 = <Sha256Hasher as MerkleHasher>::Hash;
+
+    impl CompactMmr64B32 {
+        /// Creates a concrete MMR from a generic CompactMmr64
+        pub fn from_generic(mmr: &CompactMmr64<Hash32>) -> Self {
+            let roots: Vec<_> = mmr
+                .roots
+                .iter()
+                .map(|r| FixedBytes::<32>::from(*r))
+                .collect();
+            Self {
+                entries: mmr.entries,
+                cap_log2: mmr.cap_log2,
+                roots: roots.into(),
+            }
+        }
+
+        /// Verifies a single proof for a leaf.
+        ///
+        /// This method uses Sha256Hasher as the merkle hasher implementation.
+        pub fn verify(&self, proof: &MerkleProofB32, leaf: &[u8; 32]) -> bool {
+            verify::<Self, MerkleProofB32, Sha256Hasher>(self, proof, leaf)
+        }
+    }
+
+    impl CompactMmrData for CompactMmr64B32 {
+        type Hash = [u8; 32];
+
+        fn entries(&self) -> u64 {
+            self.entries
+        }
+
+        fn cap_log2(&self) -> u8 {
+            self.cap_log2
+        }
+
+        fn roots_iter(&self) -> impl Iterator<Item = &Self::Hash> {
+            self.roots.iter().map(|fb| &fb.0)
+        }
+
+        fn get_root_for_height(&self, height: usize) -> Option<&Self::Hash> {
+            let root_index = (self.entries & ((1 << height) - 1)).count_ones() as usize;
+            self.roots.get(root_index).map(|fb| &fb.0)
+        }
+    }
+
+    impl MerkleMr64B32 {
+        /// Creates a concrete MMR from a generic MerkleMr64
+        pub fn from_generic(mmr: &MerkleMr64<Sha256Hasher>) -> Self {
+            let peaks: Vec<_> = mmr
+                .peaks_slice()
+                .iter()
+                .map(|p| FixedBytes::<32>::from(*p))
+                .collect();
+            Self {
+                num: mmr.num_entries(),
+                peaks: peaks.into(),
+            }
+        }
+
+        /// Converts to a generic MerkleMr64
+        pub fn to_generic(&self) -> MerkleMr64<Sha256Hasher> {
+            let peaks: Vec<Hash32> = self.peaks.iter().map(|fb| fb.0).collect();
+            MerkleMr64::from_parts(self.num, peaks)
+        }
+
+        /// Gets the number of entries inserted into the MMR.
+        pub fn num_entries(&self) -> u64 {
+            self.num
+        }
+
+        /// Gets if there have been no entries inserted into the MMR.
+        pub fn is_empty(&self) -> bool {
+            self.num == 0
+        }
+
+        /// Returns the internal peaks as a slice of FixedBytes.
+        pub fn peaks_slice(&self) -> &[FixedBytes<32>] {
+            &self.peaks
+        }
+
+        /// Adds a new leaf to the MMR.
+        ///
+        /// This method uses Sha256Hasher as the merkle hasher implementation.
+        pub fn add_leaf(&mut self, leaf: [u8; 32]) -> Result<(), MerkleError> {
+            let mut generic_mmr = self.to_generic();
+            generic_mmr.add_leaf(leaf)?;
+            *self = Self::from_generic(&generic_mmr);
+            Ok(())
+        }
+
+        /// Returns the total number of elements we're allowed to insert into the MMR.
+        pub fn max_capacity(&self) -> u64 {
+            match self.peaks.len() as u64 {
+                0 => 0,
+                peaks => u64::MAX >> (64 - peaks),
+            }
+        }
+
+        /// Converts to CompactMmr64B32 (filters out zero peaks)
+        pub fn to_compact(&self) -> CompactMmr64B32 {
+            let compact: CompactMmr64<Hash32> = self.to_generic().into();
+            CompactMmr64B32::from_generic(&compact)
+        }
+
+        /// Creates from CompactMmr64B32 (restores zero peaks)
+        pub fn from_compact(compact: &CompactMmr64B32) -> Self {
+            // First convert to generic CompactMmr64
+            let generic_compact = CompactMmr64 {
+                entries: compact.entries,
+                cap_log2: compact.cap_log2,
+                roots: compact.roots.iter().map(|fb| fb.0).collect(),
+            };
+            // Then convert to generic MerkleMr64
+            let generic_mmr: MerkleMr64<Sha256Hasher> = generic_compact.into();
+            // Finally convert to concrete
+            Self::from_generic(&generic_mmr)
+        }
+    }
+}
+
 #[cfg(test)]
-mod test {
+mod tests {
     use sha2::{Digest, Sha256};
 
     use super::MerkleMr64;
@@ -379,8 +574,208 @@ mod test {
     use crate::proof::MerkleProof;
     use crate::{CompactMmr64, Sha256Hasher};
 
+    #[cfg(feature = "ssz")]
+    use {
+        crate::{CompactMmr64B32, MerkleMr64B32, MerkleProofB32},
+        ssz::{Decode, Encode},
+        ssz_types::FixedBytes,
+    };
+
     type Hash32 = [u8; 32];
 
+    // B32 type tests
+    #[test]
+    #[cfg(feature = "ssz")]
+    fn test_mmr_conversion_from_generic() {
+        // Create a generic MMR
+        let mut mmr = MerkleMr64::<Sha256Hasher>::new(10);
+
+        let hash1: Hash32 = Sha256::digest(b"leaf1").into();
+        let hash2: Hash32 = Sha256::digest(b"leaf2").into();
+        let hash3: Hash32 = Sha256::digest(b"leaf3").into();
+
+        mmr.add_leaf(hash1).expect("add leaf");
+        mmr.add_leaf(hash2).expect("add leaf");
+        mmr.add_leaf(hash3).expect("add leaf");
+
+        let compact_mmr: CompactMmr64<Hash32> = mmr.into();
+
+        // Convert to concrete
+        let concrete_mmr = CompactMmr64B32::from_generic(&compact_mmr);
+
+        // Verify fields match
+        assert_eq!(concrete_mmr.entries, compact_mmr.entries);
+        assert_eq!(concrete_mmr.cap_log2, compact_mmr.cap_log2);
+        assert_eq!(concrete_mmr.roots.len(), compact_mmr.roots.len());
+        for (concrete_root, generic_root) in concrete_mmr.roots.iter().zip(compact_mmr.roots.iter())
+        {
+            assert_eq!(concrete_root.0, *generic_root);
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "ssz")]
+    fn test_proof_verification() {
+        // Create an MMR and generate a proof
+        let mut mmr = MerkleMr64::<Sha256Hasher>::new(10);
+
+        let hash1: Hash32 = Sha256::digest(b"leaf1").into();
+        let hash2: Hash32 = Sha256::digest(b"leaf2").into();
+
+        let mut proof_list = Vec::new();
+        mmr.add_leaf_updating_proof_list(hash1, &mut proof_list)
+            .unwrap();
+        let proof = mmr
+            .add_leaf_updating_proof_list(hash2, &mut proof_list)
+            .unwrap();
+
+        let compact_mmr: CompactMmr64<Hash32> = mmr.into();
+
+        // Convert to concrete types
+        let concrete_mmr = CompactMmr64B32::from_generic(&compact_mmr);
+        let concrete_proof = MerkleProofB32::from_generic(&proof);
+
+        // Verify the proof using concrete types
+        assert!(concrete_mmr.verify(&concrete_proof, &hash2));
+
+        // Verify proof verification fails for wrong leaf
+        let wrong_hash: Hash32 = Sha256::digest(b"wrong").into();
+        assert!(!concrete_mmr.verify(&concrete_proof, &wrong_hash));
+    }
+
+    #[cfg(feature = "ssz")]
+    #[test]
+    fn test_merklemr64_conversion_from_generic() {
+        // Create a generic MMR
+        let mut mmr = MerkleMr64::<Sha256Hasher>::new(10);
+
+        let hash1: Hash32 = Sha256::digest(b"leaf1").into();
+        let hash2: Hash32 = Sha256::digest(b"leaf2").into();
+        let hash3: Hash32 = Sha256::digest(b"leaf3").into();
+
+        mmr.add_leaf(hash1).expect("add leaf");
+        mmr.add_leaf(hash2).expect("add leaf");
+        mmr.add_leaf(hash3).expect("add leaf");
+
+        // Convert to concrete
+        let concrete_mmr = MerkleMr64B32::from_generic(&mmr);
+
+        // Verify fields match
+        assert_eq!(concrete_mmr.num_entries(), mmr.num_entries());
+        assert_eq!(concrete_mmr.peaks.len(), mmr.peaks_slice().len());
+        for (concrete_peak, generic_peak) in concrete_mmr.peaks.iter().zip(mmr.peaks_slice().iter())
+        {
+            assert_eq!(concrete_peak.0, *generic_peak);
+        }
+    }
+
+    #[cfg(feature = "ssz")]
+    #[test]
+    fn test_merklemr64_to_generic() {
+        // Create a concrete MMR
+        let mut concrete_mmr = MerkleMr64B32 {
+            num: 0,
+            peaks: vec![FixedBytes([0u8; 32]); 10].into(),
+        };
+
+        let hash1: [u8; 32] = Sha256::digest(b"leaf1").into();
+        let hash2: [u8; 32] = Sha256::digest(b"leaf2").into();
+
+        concrete_mmr.add_leaf(hash1).expect("add leaf");
+        concrete_mmr.add_leaf(hash2).expect("add leaf");
+
+        // Convert to generic
+        let generic_mmr = concrete_mmr.to_generic();
+
+        // Verify fields match
+        assert_eq!(generic_mmr.num_entries(), concrete_mmr.num_entries());
+        assert_eq!(generic_mmr.peaks_slice().len(), concrete_mmr.peaks.len());
+    }
+
+    #[cfg(feature = "ssz")]
+    #[test]
+    fn test_merklemr64_add_leaf() {
+        // Create a concrete MMR
+        let mut mmr = MerkleMr64B32 {
+            num: 0,
+            peaks: vec![FixedBytes([0u8; 32]); 10].into(),
+        };
+
+        let hash1: [u8; 32] = Sha256::digest(b"leaf1").into();
+        let hash2: [u8; 32] = Sha256::digest(b"leaf2").into();
+        let hash3: [u8; 32] = Sha256::digest(b"leaf3").into();
+
+        // Add leaves
+        mmr.add_leaf(hash1).expect("add leaf");
+        assert_eq!(mmr.num_entries(), 1);
+
+        mmr.add_leaf(hash2).expect("add leaf");
+        assert_eq!(mmr.num_entries(), 2);
+
+        mmr.add_leaf(hash3).expect("add leaf");
+        assert_eq!(mmr.num_entries(), 3);
+
+        // Verify not empty
+        assert!(!mmr.is_empty());
+    }
+
+    #[cfg(feature = "ssz")]
+    #[test]
+    fn test_merklemr64_compact_conversion() {
+        // Create a concrete MMR with some leaves
+        let mut mmr = MerkleMr64B32 {
+            num: 0,
+            peaks: vec![FixedBytes([0u8; 32]); 10].into(),
+        };
+
+        let hash1: [u8; 32] = Sha256::digest(b"leaf1").into();
+        let hash2: [u8; 32] = Sha256::digest(b"leaf2").into();
+        let hash3: [u8; 32] = Sha256::digest(b"leaf3").into();
+
+        mmr.add_leaf(hash1).expect("add leaf");
+        mmr.add_leaf(hash2).expect("add leaf");
+        mmr.add_leaf(hash3).expect("add leaf");
+
+        // Convert to compact (should filter zeros)
+        let compact = mmr.to_compact();
+        assert_eq!(compact.entries, mmr.num_entries());
+
+        // Convert back from compact (should restore zeros)
+        let restored = MerkleMr64B32::from_compact(&compact);
+        assert_eq!(restored.num_entries(), mmr.num_entries());
+        assert_eq!(restored.peaks.len(), mmr.peaks.len());
+    }
+
+    #[cfg(feature = "ssz")]
+    #[test]
+    fn test_merklemr64_ssz_roundtrip() {
+        // Create a concrete MMR with some leaves
+        let mut mmr = MerkleMr64B32 {
+            num: 0,
+            peaks: vec![FixedBytes([0u8; 32]); 10].into(),
+        };
+
+        let hash1: [u8; 32] = Sha256::digest(b"leaf1").into();
+        let hash2: [u8; 32] = Sha256::digest(b"leaf2").into();
+
+        mmr.add_leaf(hash1).expect("add leaf");
+        mmr.add_leaf(hash2).expect("add leaf");
+
+        // Serialize
+        let encoded = mmr.as_ssz_bytes();
+
+        // Deserialize
+        let decoded = MerkleMr64B32::from_ssz_bytes(&encoded).expect("Failed to decode");
+
+        // Verify fields match
+        assert_eq!(decoded.num, mmr.num);
+        assert_eq!(decoded.peaks.len(), mmr.peaks.len());
+        for (orig, dec) in mmr.peaks.iter().zip(decoded.peaks.iter()) {
+            assert_eq!(orig.0, dec.0);
+        }
+    }
+
+    // Generic MMR tests - helper functions
     fn generate_for_n_integers(n: usize) -> (MerkleMr64<Sha256Hasher>, Vec<MerkleProof<Hash32>>) {
         let mut mmr: MerkleMr64<Sha256Hasher> = MerkleMr64::new(14);
 
@@ -625,6 +1020,95 @@ mod test {
         for i in 0..num_elems {
             assert!(mmr.verify(&proof_list[i], &num_hash[i]));
             assert!(compact_mmr.verify::<Sha256Hasher>(&proof_list[i], &num_hash[i]));
+        }
+    }
+
+    // SSZ serialization test
+    #[test]
+    #[cfg(feature = "ssz")]
+    fn test_compact_mmr_ssz_encode_decode() {
+        // Create a generic CompactMmr64
+        let mut mmr = MerkleMr64::<Sha256Hasher>::new(10);
+
+        let hashed0: Hash32 = Sha256::digest(b"first").into();
+        let hashed1: Hash32 = Sha256::digest(b"second").into();
+        let hashed2: Hash32 = Sha256::digest(b"third").into();
+
+        mmr.add_leaf(hashed0).expect("test: add leaf");
+        mmr.add_leaf(hashed1).expect("test: add leaf");
+        mmr.add_leaf(hashed2).expect("test: add leaf");
+
+        let compact_mmr: CompactMmr64<Hash32> = mmr.into();
+
+        // Create SSZ type from generic type
+        let roots_vec: Vec<_> = compact_mmr
+            .roots
+            .iter()
+            .map(|r| FixedBytes::<32>::from(*r))
+            .collect();
+        let ssz_mmr = CompactMmr64B32 {
+            entries: compact_mmr.entries,
+            cap_log2: compact_mmr.cap_log2,
+            roots: roots_vec.into(),
+        };
+
+        // Encode to SSZ
+        let encoded = ssz_mmr.as_ssz_bytes();
+
+        // Decode from SSZ
+        let decoded = CompactMmr64B32::from_ssz_bytes(&encoded).expect("Failed to decode");
+
+        // Verify fields match
+        assert_eq!(ssz_mmr.entries, decoded.entries);
+        assert_eq!(ssz_mmr.cap_log2, decoded.cap_log2);
+        assert_eq!(ssz_mmr.roots, decoded.roots);
+    }
+
+    #[test]
+    #[cfg(feature = "ssz")]
+    fn test_empty_compact_mmr_ssz() {
+        let ssz_mmr = CompactMmr64B32 {
+            entries: 0,
+            cap_log2: 0,
+            roots: vec![].try_into().expect("empty vec should work"),
+        };
+
+        let encoded = ssz_mmr.as_ssz_bytes();
+        let decoded = CompactMmr64B32::from_ssz_bytes(&encoded).expect("Failed to decode");
+
+        assert_eq!(ssz_mmr.entries, decoded.entries);
+        assert_eq!(ssz_mmr.cap_log2, decoded.cap_log2);
+        assert_eq!(ssz_mmr.roots, decoded.roots);
+    }
+
+    #[test]
+    #[cfg(feature = "ssz")]
+    fn test_compact_mmr_ssz_roundtrip() {
+        // Test with various sizes
+        for n in [1, 5, 10, 20, 50] {
+            let (mmr, _) = generate_for_n_integers(n);
+            let compact_mmr: CompactMmr64<Hash32> = mmr.into();
+
+            let roots_vec: Vec<_> = compact_mmr
+                .roots
+                .iter()
+                .map(|r| FixedBytes::<32>::from(*r))
+                .collect();
+            let ssz_mmr = CompactMmr64B32 {
+                entries: compact_mmr.entries,
+                cap_log2: compact_mmr.cap_log2,
+                roots: roots_vec.into(),
+            };
+
+            let encoded = ssz_mmr.as_ssz_bytes();
+            let decoded = CompactMmr64B32::from_ssz_bytes(&encoded).expect("Failed to decode");
+
+            assert_eq!(ssz_mmr.entries, decoded.entries);
+            assert_eq!(ssz_mmr.cap_log2, decoded.cap_log2);
+            assert_eq!(ssz_mmr.roots.len(), decoded.roots.len());
+            for (orig, dec) in ssz_mmr.roots.iter().zip(decoded.roots.iter()) {
+                assert_eq!(orig, dec);
+            }
         }
     }
 }
