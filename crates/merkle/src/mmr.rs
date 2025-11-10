@@ -19,6 +19,18 @@ pub struct CompactMmr64<H: MerkleHash> {
     pub(crate) roots: Vec<H>,
 }
 
+impl<H: MerkleHash> CompactMmr64<H> {
+    /// Verifies a single proof for a leaf.
+    pub fn verify<MH>(&self, proof: &MerkleProof<H>, leaf: &H) -> bool
+    where
+        MH: MerkleHasher<Hash = H>,
+    {
+        let height = proof.cohashes().len();
+        let root_index = (self.entries & ((1 << height) - 1)).count_ones() as usize;
+        proof.verify_with_root::<MH>(&self.roots[root_index], leaf)
+    }
+}
+
 /// Merkle mountain range that can hold up to 2**64 elements.
 #[derive(Clone, Debug)]
 pub struct MerkleMr64<MH: MerkleHasher + Clone> {
@@ -409,6 +421,11 @@ mod test {
         (0..specific_nodes.len()).for_each(|i| {
             assert!(mmr.verify(&proof[i], &hash[i]));
         });
+
+        let compact_mmr: CompactMmr64<Hash32> = mmr.into();
+        (0..specific_nodes.len()).for_each(|i| {
+            assert!(compact_mmr.verify::<Sha256Hasher>(&proof[i], &hash[i]));
+        });
     }
 
     #[test]
@@ -498,6 +515,9 @@ mod test {
         let invalid_proof = MerkleProof::<Hash32>::new_empty(6);
         let hash = Sha256::digest(42usize.to_be_bytes()).into();
         assert!(!mmr.verify(&invalid_proof, &hash));
+
+        let compact_mmr: CompactMmr64<Hash32> = mmr.into();
+        assert!(!compact_mmr.verify::<Sha256Hasher>(&invalid_proof, &hash));
     }
 
     #[test]
@@ -541,6 +561,13 @@ mod test {
         assert!(mmr.verify(&proof_list[2], &hashed2));
         assert!(mmr.verify(&proof_list[3], &hashed3));
         assert!(mmr.verify(&proof_list[4], &hashed4));
+
+        let compact_mmr: CompactMmr64<Hash32> = mmr.into();
+        assert!(compact_mmr.verify::<Sha256Hasher>(&proof_list[0], &hashed0));
+        assert!(compact_mmr.verify::<Sha256Hasher>(&proof_list[1], &hashed1));
+        assert!(compact_mmr.verify::<Sha256Hasher>(&proof_list[2], &hashed2));
+        assert!(compact_mmr.verify::<Sha256Hasher>(&proof_list[3], &hashed3));
+        assert!(compact_mmr.verify::<Sha256Hasher>(&proof_list[4], &hashed4));
     }
 
     #[test]
@@ -572,6 +599,9 @@ mod test {
         }
 
         assert!(mmr.verify(&proof, &num_hash[0]));
+
+        let compact_mmr: CompactMmr64<Hash32> = mmr.into();
+        assert!(compact_mmr.verify::<Sha256Hasher>(&proof, &num_hash[0]));
     }
 
     #[test]
@@ -591,8 +621,10 @@ mod test {
             proof_list.push(new_proof);
         }
 
+        let compact_mmr: CompactMmr64<Hash32> = mmr.clone().into();
         for i in 0..num_elems {
             assert!(mmr.verify(&proof_list[i], &num_hash[i]));
+            assert!(compact_mmr.verify::<Sha256Hasher>(&proof_list[i], &num_hash[i]));
         }
     }
 }
