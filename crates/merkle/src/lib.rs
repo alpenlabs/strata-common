@@ -13,8 +13,15 @@
     reason = "Borrowing interior mutable constants is required for MMR operations"
 )]
 
+#[cfg(feature = "borsh")]
+mod borsh_impl;
 #[cfg(feature = "codec")]
 mod codec_impl;
+#[cfg(feature = "serde")]
+mod serde_impl;
+#[cfg(feature = "serde")]
+use serde_json as _;
+
 pub mod error;
 pub mod hasher;
 pub mod mmr;

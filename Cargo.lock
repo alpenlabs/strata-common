@@ -1488,8 +1488,11 @@ dependencies = [
 name = "strata-merkle"
 version = "0.1.0"
 dependencies = [
+ "borsh",
  "digest",
  "proptest",
+ "serde",
+ "serde_json",
  "sha2",
  "ssz",
  "ssz_codegen",

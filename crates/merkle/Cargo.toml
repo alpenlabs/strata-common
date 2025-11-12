@@ -7,7 +7,10 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+borsh = { workspace = true, optional = true }
 digest.workspace = true
+serde = { workspace = true, optional = true, features = ["derive"] }
+serde_json = { workspace = true, optional = true }
 sha2.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true
@@ -24,5 +27,7 @@ ssz_codegen.workspace = true
 proptest.workspace = true
 
 [features]
-default = ["codec"]
+default = ["borsh", "codec", "serde"]
+borsh = ["dep:borsh"]
 codec = ["dep:strata-codec"]
+serde = ["dep:serde", "dep:serde_json"]
