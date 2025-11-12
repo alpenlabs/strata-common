@@ -1,0 +1,23 @@
+# SSZ schema definitions for Merkle proof types
+# These types are used for SSZ serialization of merkle proof structures
+
+### Maximum depth of a merkle proof (supports trees up to 2^64 elements)
+MAX_PROOF_DEPTH = 64
+
+### Raw proof for some entry in a MMR/tree.
+### This doesn't include the index of the entry being proven, which makes this
+### useful in contexts where we establish that value separately.
+### Generic over hash type H.
+class RawMerkleProof[H](Container):
+    ### Sibling hashes required for proof.
+    cohashes: List[H, MAX_PROOF_DEPTH]
+
+### Proof for an entry in an MMR/tree.
+### If the MMR or tree that produced this proof is updated, then this proof has
+### to be updated as well.
+### Generic over hash type H.
+class MerkleProof[H](Container):
+    ### Sibling hashes required for proof.
+    inner: RawMerkleProof[H]
+    ### Index of the element for which this proof is for.
+    index: uint64

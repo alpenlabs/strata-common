@@ -2,22 +2,12 @@
 
 use std::marker::PhantomData;
 
+use ssz_types::VariableList;
+
 use crate::error::MerkleError;
 use crate::hasher::{MerkleHash, MerkleHasher};
 use crate::proof::{MerkleProof, RawMerkleProof};
-
-/// Compact representation of the MMR that can hold upto 2**64 elements.
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(
-    feature = "borsh",
-    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
-)]
-pub struct CompactMmr64<H: MerkleHash> {
-    pub(crate) entries: u64,
-    pub(crate) cap_log2: u8,
-    pub(crate) roots: Vec<H>,
-}
+use crate::{CompactMmr64, MAX_MMR_PEAKS};
 
 impl<H: MerkleHash> CompactMmr64<H> {
     /// Verifies a single proof for a leaf.
@@ -26,7 +16,7 @@ impl<H: MerkleHash> CompactMmr64<H> {
         MH: MerkleHasher<Hash = H>,
     {
         let height = proof.cohashes().len();
-        let root_index = (self.entries & ((1 << height) - 1)).count_ones() as usize;
+        let root_index = height;
         proof.verify_with_root::<MH>(&self.roots[root_index], leaf)
     }
 }
@@ -57,8 +47,8 @@ where
     ///
     /// If the `cap_log2` parameter is larger than 64.
     pub fn new(cap_log2: usize) -> Self {
-        if cap_log2 > 64 {
-            panic!("mmr: tried to create MMR of size {cap_log2} (max is 64)");
+        if cap_log2 > MAX_MMR_PEAKS as usize {
+            panic!("mmr: tried to create MMR of size {cap_log2} (max is {MAX_MMR_PEAKS})");
         }
 
         Self {
@@ -234,10 +224,13 @@ where
     ) {
         let proof_parent_tree = proof_index >> (current_height + 1);
         if leaf_parent_tree == proof_parent_tree {
-            let cohashes = proof.cohashes_vec_mut();
+            let cohashes = proof.cohashes_list_mut();
 
-            if current_height >= cohashes.len() {
-                cohashes.resize(current_height + 1, MH::zero_hash());
+            // Extend the list if needed
+            while current_height >= cohashes.len() {
+                cohashes
+                    .push(MH::zero_hash())
+                    .expect("proof depth within MAX_PROOF_DEPTH");
             }
 
             if (proof_index >> current_height) & 1 == 1 {
@@ -331,19 +324,49 @@ where
     }
 }
 
+// Extension methods for CompactMmr64
+impl<H> CompactMmr64<H>
+where
+    H: MerkleHash + ssz::Encode + ssz::Decode,
+{
+    /// Returns the capacity log2 derived from the roots length.
+    /// This value represents the maximum capacity as 2^cap_log2.
+    pub fn cap_log2(&self) -> u8 {
+        self.roots.len() as u8
+    }
+
+    /// Creates a CompactMmr64 from raw parts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the roots Vec exceeds MAX_MMR_PEAKS (64).
+    pub fn from_parts(entries: u64, roots: Vec<H>) -> Result<Self, ssz_types::Error> {
+        Ok(Self {
+            entries,
+            roots: VariableList::new(roots)?,
+        })
+    }
+
+    /// Returns the entries count.
+    pub fn entries(&self) -> u64 {
+        self.entries
+    }
+
+    /// Returns a reference to the roots.
+    pub fn roots(&self) -> &[H] {
+        &self.roots
+    }
+}
+
 impl<MH> From<CompactMmr64<MH::Hash>> for MerkleMr64<MH>
 where
     MH: MerkleHasher + Clone,
+    MH::Hash: MerkleHash + ssz::Encode + ssz::Decode,
 {
     fn from(compact: CompactMmr64<MH::Hash>) -> Self {
-        let mut roots = vec![MH::zero_hash(); compact.cap_log2 as usize];
-        let mut roots_iter = compact.roots.into_iter();
-
-        for i in 0..compact.cap_log2 {
-            if (compact.entries >> i) & 1 != 0 {
-                roots[i as usize] = roots_iter.next().expect("compact roots exhausted early");
-            }
-        }
+        // The compact representation stores all peaks including zeros to preserve capacity
+        // Simply convert the VariableList to a Vec
+        let roots: Vec<_> = compact.roots.into_iter().collect();
 
         Self {
             num: compact.entries,
@@ -356,28 +379,24 @@ where
 impl<MH> From<MerkleMr64<MH>> for CompactMmr64<MH::Hash>
 where
     MH: MerkleHasher + Clone,
+    MH::Hash: MerkleHash + ssz::Encode + ssz::Decode,
 {
     fn from(mmr: MerkleMr64<MH>) -> Self {
-        Self {
-            entries: mmr.num,
-            cap_log2: mmr.peaks.len() as u8,
-            roots: mmr
-                .peaks
-                .into_iter()
-                .filter(|h| !<MH::Hash as MerkleHash>::is_zero(h))
-                .collect(),
-        }
+        // Store all peaks including zeros to preserve capacity information
+        // The cap_log2 is derived from the full peaks buffer length
+        let roots = mmr.peaks;
+
+        CompactMmr64::from_parts(mmr.num, roots).expect("roots within MMR peaks limit")
     }
 }
 
 #[cfg(test)]
 mod test {
-    use sha2::{Digest, Sha256};
-
     use super::MerkleMr64;
     use crate::error::MerkleError;
     use crate::proof::MerkleProof;
     use crate::{CompactMmr64, Sha256Hasher};
+    use sha2::{Digest, Sha256};
 
     type Hash32 = [u8; 32];
 
@@ -626,5 +645,59 @@ mod test {
             assert!(mmr.verify(&proof_list[i], &num_hash[i]));
             assert!(compact_mmr.verify::<Sha256Hasher>(&proof_list[i], &num_hash[i]));
         }
+    }
+
+    #[test]
+    fn test_compact_mmr_ssz_roundtrip() {
+        use ssz::{Decode, Encode};
+        use ssz_types::VariableList;
+
+        let roots = VariableList::new(vec![[1u8; 32], [2u8; 32], [3u8; 32]]).unwrap();
+        let mmr = CompactMmr64 { entries: 7, roots };
+
+        let encoded = mmr.as_ssz_bytes();
+        let decoded = CompactMmr64::<Hash32>::from_ssz_bytes(&encoded).unwrap();
+
+        assert_eq!(mmr.entries, decoded.entries);
+        assert_eq!(mmr.roots.len(), decoded.roots.len());
+        for (a, b) in mmr.roots.iter().zip(decoded.roots.iter()) {
+            assert_eq!(a, b);
+        }
+    }
+
+    #[test]
+    fn test_compact_mmr_ssz_empty_roots() {
+        use ssz::{Decode, Encode};
+        use ssz_types::VariableList;
+
+        let roots: VariableList<Hash32, 64> = VariableList::new(vec![]).unwrap();
+        let mmr = CompactMmr64 { entries: 0, roots };
+
+        let encoded = mmr.as_ssz_bytes();
+        let decoded = CompactMmr64::<Hash32>::from_ssz_bytes(&encoded).unwrap();
+
+        assert_eq!(mmr.entries, decoded.entries);
+        assert_eq!(mmr.roots.len(), 0);
+        assert_eq!(decoded.roots.len(), 0);
+    }
+
+    #[test]
+    fn test_compact_mmr_ssz_max_peaks() {
+        use ssz::{Decode, Encode};
+        use ssz_types::VariableList;
+
+        // Test with maximum number of peaks (64)
+        let roots = VariableList::new(vec![[0u8; 32]; 64]).unwrap();
+        let mmr = CompactMmr64 {
+            entries: u64::MAX,
+            roots,
+        };
+
+        let encoded = mmr.as_ssz_bytes();
+        let decoded = CompactMmr64::<Hash32>::from_ssz_bytes(&encoded).unwrap();
+
+        assert_eq!(mmr.entries, decoded.entries);
+        assert_eq!(mmr.roots.len(), 64);
+        assert_eq!(decoded.roots.len(), 64);
     }
 }

@@ -1,0 +1,13 @@
+# SSZ schema definitions for MMR types
+# These types are used for SSZ serialization of Merkle Mountain Range structures
+
+### Maximum number of peaks in an MMR (corresponds to 64-bit capacity)
+MAX_MMR_PEAKS = 64
+
+### Compact representation of the MMR that can hold upto 2**64 elements.
+### Generic over hash type H.
+class CompactMmr64[H](Container):
+    ### Total number of entries inserted into the MMR.
+    entries: uint64
+    ### Peak roots of the MMR.
+    roots: List[H, MAX_MMR_PEAKS]
