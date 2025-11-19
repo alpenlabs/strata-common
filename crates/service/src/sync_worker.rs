@@ -8,13 +8,13 @@ use tracing::*;
 use crate::instrumentation::{
     record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason,
 };
-use crate::{Response, ServiceState, SyncService, SyncServiceInput};
+use crate::{Response, ServiceState, SyncGuard, SyncService, SyncServiceInput};
 
 pub(crate) fn worker_task<S: SyncService, I>(
     mut state: S::State,
     mut inp: I,
     status_tx: watch::Sender<S::Status>,
-    shutdown_guard: strata_tasks::ShutdownGuard,
+    shutdown_guard: impl SyncGuard,
 ) -> anyhow::Result<()>
 where
     I: SyncServiceInput<Msg = S::Msg>,

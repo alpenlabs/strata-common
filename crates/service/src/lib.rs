@@ -93,6 +93,7 @@ mod async_worker;
 mod builder;
 mod command;
 mod errors;
+mod executor;
 mod instrumentation;
 mod status;
 mod sync_worker;
@@ -102,6 +103,7 @@ pub use adapters::*;
 pub use builder::ServiceBuilder;
 pub use command::{CommandCompletionSender, CommandHandle};
 pub use errors::ServiceError;
+pub use executor::*;
 pub use instrumentation::{
     HistogramBuckets, InstrumentationBuilder, OperationResult, ServiceInstrumentation,
     ShutdownReason,
