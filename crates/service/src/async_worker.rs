@@ -4,14 +4,14 @@ use futures::FutureExt;
 use tokio::sync::watch;
 use tracing::*;
 
-use crate::{AsyncService, AsyncServiceInput, Response, ServiceState};
+use crate::{AsyncGuard, AsyncService, AsyncServiceInput, Response, ServiceState};
 
 /// Async worker task.
 pub(crate) async fn worker_task<S: AsyncService, I>(
     mut state: S::State,
     mut inp: I,
     status_tx: watch::Sender<S::Status>,
-    shutdown_guard: strata_tasks::ShutdownGuard,
+    shutdown_guard: impl AsyncGuard,
 ) -> anyhow::Result<()>
 where
     I: AsyncServiceInput<Msg = S::Msg>,

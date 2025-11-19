@@ -5,8 +5,9 @@ use std::fmt::Debug;
 use tokio::sync::{mpsc, watch};
 
 use crate::{
-    async_worker, sync_worker, AsyncService, AsyncServiceInput, CommandHandle, Service,
-    ServiceInput, ServiceMonitor, ServiceMsg, SyncService, SyncServiceInput, TokioMpscInput,
+    async_worker, sync_worker, AsyncExecutor, AsyncService, AsyncServiceInput, CommandHandle,
+    Service, ServiceInput, ServiceMonitor, ServiceMsg, SyncExecutor, SyncService, SyncServiceInput,
+    TokioMpscInput,
 };
 
 /// Builder to help with constructing service workers.
@@ -53,7 +54,7 @@ where
     pub async fn launch_async(
         self,
         name: &'static str,
-        texec: &strata_tasks::TaskExecutor,
+        texec: &impl AsyncExecutor,
     ) -> anyhow::Result<ServiceMonitor<S::Status>> {
         // TODO convert to fallible results?
         let state = self.state.expect("service/builder: missing state");
@@ -63,7 +64,7 @@ where
         let (status_tx, status_rx) = watch::channel(init_status);
 
         let worker_fut_cls = move |g| async_worker::worker_task::<S, I>(state, inp, status_tx, g);
-        texec.spawn_critical_async_with_shutdown(name, worker_fut_cls);
+        texec.spawn_async(name, worker_fut_cls);
 
         Ok(ServiceMonitor::new(status_rx))
     }
@@ -77,7 +78,7 @@ where
     pub fn launch_sync(
         self,
         name: &'static str,
-        texec: &strata_tasks::TaskExecutor,
+        texec: &impl SyncExecutor,
     ) -> anyhow::Result<ServiceMonitor<S::Status>> {
         // TODO convert to fallible results?
         let state = self.state.expect("service/builder: missing state");
@@ -87,7 +88,7 @@ where
         let (status_tx, status_rx) = watch::channel(init_status);
 
         let worker_cls = move |g| sync_worker::worker_task::<S, I>(state, inp, status_tx, g);
-        texec.spawn_critical(name, worker_cls);
+        texec.spawn_sync(name, worker_cls);
 
         Ok(ServiceMonitor::new(status_rx))
     }
