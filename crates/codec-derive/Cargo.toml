@@ -1,0 +1,18 @@
+[package]
+name = "strata-codec-derive"
+version = "0.1.0"
+edition = "2024"
+description = "Derive macro for strata-codec Codec trait"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2.0", features = ["full", "derive"] }
+quote = "1.0"
+
+[dev-dependencies]
+strata-codec = { path = "../codec" }
+
+[lints]
+workspace = true

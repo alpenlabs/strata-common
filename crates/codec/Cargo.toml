@@ -7,6 +7,11 @@ description = "Special purpose binary encoding framework"
 
 [dependencies]
 thiserror.workspace = true
+strata-codec-derive = { path = "../codec-derive", optional = true }
+
+[features]
+default = []
+derive = ["strata-codec-derive"]
 
 [dev-dependencies]
 

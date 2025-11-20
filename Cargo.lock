@@ -1293,7 +1293,17 @@ dependencies = [
 name = "strata-codec"
 version = "0.1.0"
 dependencies = [
+ "strata-codec-derive",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "strata-codec-derive"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "strata-codec",
+ "syn",
 ]
 
 [[package]]
@@ -1303,6 +1313,7 @@ dependencies = [
  "paste",
  "proptest",
  "strata-codec",
+ "strata-codec-derive",
 ]
 
 [[package]]

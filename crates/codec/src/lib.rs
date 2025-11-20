@@ -15,5 +15,9 @@ pub use util::{decode_buf_exact, encode_to_vec};
 pub use varint::{VARINT_MAX, Varint, VarintInner, VarintWidth};
 pub use varint_vec::VarVec;
 
+// Re-export the derive macro when the "derive" feature is enabled
+#[cfg(feature = "derive")]
+pub use strata_codec_derive::Codec;
+
 #[cfg(test)]
 mod tests;
