@@ -5,7 +5,8 @@ edition = "2024"
 description = "Property testing macros and utilities for strata-codec"
 
 [dependencies]
-strata-codec = { path = "../codec" }
+strata-codec = { path = "../codec", features = ["derive"] }
+strata-codec-derive = { path = "../codec-derive" }
 
 paste = "1.0"
 proptest.workspace = true

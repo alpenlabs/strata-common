@@ -4,6 +4,9 @@
 //! that implement the `Codec` trait from strata-codec. The main export is the
 //! `generate_codec_tests!` macro.
 
+// Suppress unused dependency warning - strata-codec-derive is used in tests
+use strata_codec_derive as _;
+
 // Re-export dependencies for macro usage
 pub use paste;
 pub use proptest;
