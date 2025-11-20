@@ -122,7 +122,10 @@ fn test_compatibility_with_manual_impl() {
             })
         }
 
-        fn encode(&self, enc: &mut impl strata_codec::Encoder) -> Result<(), strata_codec::CodecError> {
+        fn encode(
+            &self,
+            enc: &mut impl strata_codec::Encoder,
+        ) -> Result<(), strata_codec::CodecError> {
             self.a.encode(enc)?;
             self.b.encode(enc)?;
             Ok(())
