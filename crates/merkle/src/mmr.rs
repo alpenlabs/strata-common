@@ -434,14 +434,7 @@ where
 #[cfg(feature = "ssz")]
 mod mmr64b32 {
     use super::*;
-    use crate::{
-        Sha256Hasher,
-        hasher::MerkleHasher,
-        ssz_generated::ssz::{
-            mmr::{CompactMmr64B32, MerkleMr64B32},
-            proof::MerkleProofB32,
-        },
-    };
+    use crate::*;
     use ssz_types::FixedBytes;
 
     type Hash32 = <Sha256Hasher as MerkleHasher>::Hash;
@@ -491,8 +484,20 @@ mod mmr64b32 {
     }
 
     impl MerkleMr64B32 {
+        /// Creates a new instance with some specified maximum capacity.
+        pub fn new(cap_log2: usize) -> Self {
+            let mut peaks = ssz_types::VariableList::empty();
+            for _ in 0..cap_log2 {
+                peaks
+                    .push(ssz_types::FixedBytes::zero())
+                    .expect("mmr: too large capacity");
+            }
+            Self { num: 0, peaks }
+        }
+
         /// Creates a concrete MMR from a generic MerkleMr64
         pub fn from_generic(mmr: &MerkleMr64<Sha256Hasher>) -> Self {
+            // TODO make this avoid a bunch of copies
             let peaks: Vec<_> = mmr
                 .peaks_slice()
                 .iter()
