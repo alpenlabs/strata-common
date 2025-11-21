@@ -55,10 +55,6 @@ pub use tree::BinaryMerkleTree;
 
 // Re-export SSZ-generated concrete types (32-byte hash versions)
 #[cfg(feature = "ssz")]
-pub use ssz_generated::ssz::mmr::{
-    CompactMmr64B32, CompactMmr64B32Ref, MAX_MMR_PEAKS, MerkleMr64B32, MerkleMr64B32Ref,
-};
+pub use ssz_generated::ssz::mmr::*;
 #[cfg(feature = "ssz")]
-pub use ssz_generated::ssz::proof::{
-    MerkleProofB32, MerkleProofB32Ref, RawMerkleProofB32, RawMerkleProofB32Ref,
-};
+pub use ssz_generated::ssz::proof::*;
