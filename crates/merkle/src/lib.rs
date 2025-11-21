@@ -19,6 +19,20 @@ pub mod error;
 pub mod hasher;
 pub mod mmr;
 pub mod proof;
+
+// Include SSZ-generated types
+#[cfg(feature = "ssz")]
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    missing_docs,
+    reason = "generated code"
+)]
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated_ssz.rs"));
+}
+
 pub mod tree;
 
 use hasher::{DigestMerkleHasher, DigestMerkleHasherNoPrefix};
@@ -38,3 +52,13 @@ pub use hasher::{MerkleHash, MerkleHasher};
 pub use mmr::{CompactMmr64, MerkleMr64};
 pub use proof::{MerkleProof, RawMerkleProof};
 pub use tree::BinaryMerkleTree;
+
+// Re-export SSZ-generated concrete types (32-byte hash versions)
+#[cfg(feature = "ssz")]
+pub use ssz_generated::ssz::mmr::{
+    CompactMmr64B32, CompactMmr64B32Ref, MAX_MMR_PEAKS, MerkleMr64B32, MerkleMr64B32Ref,
+};
+#[cfg(feature = "ssz")]
+pub use ssz_generated::ssz::proof::{
+    MerkleProofB32, MerkleProofB32Ref, RawMerkleProofB32, RawMerkleProofB32Ref,
+};

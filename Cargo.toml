@@ -25,6 +25,15 @@ strata-predicate = { path = "crates/predicate" }
 strata-service = { path = "crates/services" }
 strata-tasks = { path = "crates/tasks" }
 
+# SSZ dependencies
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", branch = "ref-types-fix" }
+ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", branch = "ref-types-fix" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", branch = "ref-types-fix" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", branch = "ref-types-fix" }
+tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", branch = "ref-types-fix" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", branch = "ref-types-fix" }
+
+# External dependencies
 anyhow = "1"
 arbitrary = { version = "1.4", features = ["derive"] }
 bitcoin = { version = "0.32.6" }
