@@ -19,7 +19,7 @@ fn make_tag(s: &[u8]) -> Tag {
 }
 
 /// Hash wrapper trait used by the MMR.
-pub trait MerkleHash: Copy + Clone {
+pub trait MerkleHash: Copy + Clone + 'static {
     /// Length of the hash in bytes.
     const HASH_LEN: usize;
 

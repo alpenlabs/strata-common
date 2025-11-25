@@ -13,12 +13,24 @@
     reason = "Borrowing interior mutable constants is required for MMR operations"
 )]
 
+// stupid linter issue
+#[cfg(test)]
+use criterion as _;
+
 #[cfg(feature = "codec")]
 mod codec_impl;
 pub mod error;
 pub mod hasher;
-pub mod mmr;
-pub mod proof;
+pub mod mmr; // old
+pub mod proof; // old
+pub mod tree;
+
+pub mod new_mmr;
+pub mod new_state;
+pub mod traits;
+
+pub use new_state::NewMmrState;
+pub use traits::MmrState;
 
 // Include SSZ-generated types
 #[cfg(feature = "ssz")]
@@ -32,8 +44,6 @@ pub mod proof;
 mod ssz_generated {
     include!(concat!(env!("OUT_DIR"), "/generated_ssz.rs"));
 }
-
-pub mod tree;
 
 use hasher::{DigestMerkleHasher, DigestMerkleHasherNoPrefix};
 use sha2::Sha256;
