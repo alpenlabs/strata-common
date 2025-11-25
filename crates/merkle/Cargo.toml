@@ -23,6 +23,7 @@ tree_hash_derive = { workspace = true, optional = true }
 ssz_codegen = { workspace = true, optional = true }
 
 [dev-dependencies]
+criterion = "0.5"
 proptest.workspace = true
 
 [features]
@@ -38,3 +39,7 @@ ssz = [
   "dep:tree_hash_derive",
   "dep:ssz_codegen",
 ]
+
+[[bench]]
+name = "mmr_comparison"
+harness = false
