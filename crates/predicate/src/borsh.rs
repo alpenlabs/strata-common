@@ -4,7 +4,10 @@ use crate::{PredicateKey, PredicateKeyBuf};
 
 impl BorshSerialize for PredicateKey {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        self.as_buf_ref().to_bytes().serialize(writer)
+        self.try_as_buf_ref()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?
+            .to_bytes()
+            .serialize(writer)
     }
 }
 

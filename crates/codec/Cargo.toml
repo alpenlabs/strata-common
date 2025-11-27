@@ -6,8 +6,8 @@ readme = "README.md"
 description = "Special purpose binary encoding framework"
 
 [dependencies]
-thiserror.workspace = true
 strata-codec-derive = { path = "../codec-derive", optional = true }
+thiserror.workspace = true
 
 [features]
 default = []

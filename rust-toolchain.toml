@@ -10,4 +10,3 @@ components = [
   "rust-src",
   "rust-std",
 ]
-

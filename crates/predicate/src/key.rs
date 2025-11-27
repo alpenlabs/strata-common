@@ -1,21 +1,9 @@
 //! Predicate key implementation and type registry.
 
+use crate::PredicateKey;
 use crate::errors::{PredicateError, PredicateResult};
 use crate::type_ids::PredicateTypeId;
 use crate::verifiers::VerifierType;
-
-/// A predicate key encodes a formal boolean statement with a type identifier.
-///
-/// As defined in the SPS-predicate-fmt specification, a predicate key consists of:
-/// - `id`: PredicateTypeId - Indicates which predicate backend to use
-/// - `condition`: `Vec<u8>` - Backend-specific predicate condition bytes
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PredicateKey {
-    /// The predicate type identifier.
-    id: PredicateTypeId,
-    /// Backend-specific predicate condition bytes.
-    condition: Vec<u8>,
-}
 
 /// A zero-copy predicate key that borrows from a buffer.
 ///
@@ -44,11 +32,14 @@ impl PredicateKey {
     /// let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test".to_vec());
     /// ```
     pub fn new(id: PredicateTypeId, condition: Vec<u8>) -> Self {
-        Self { id, condition }
+        Self {
+            id: id.as_u8(),
+            condition: condition.into(),
+        }
     }
 
-    /// Returns the predicate type identifier.
-    pub fn id(&self) -> PredicateTypeId {
+    /// Returns the raw predicate type identifier.
+    pub fn id(&self) -> u8 {
         self.id
     }
 
@@ -76,10 +67,16 @@ impl PredicateKey {
     ///
     /// This provides zero-copy access to the predicate key condition bytes.
     pub fn as_buf_ref(&self) -> PredicateKeyBuf<'_> {
-        PredicateKeyBuf {
-            id: self.id,
+        self.try_as_buf_ref()
+            .expect("predicate type should be validated at construction")
+    }
+
+    /// Attempts to borrow this predicate key as a `PredicateKeyBuf` without panicking.
+    pub fn try_as_buf_ref(&self) -> PredicateResult<PredicateKeyBuf<'_>> {
+        Ok(PredicateKeyBuf {
+            id: self.id.try_into()?,
             condition: &self.condition,
-        }
+        })
     }
 
     /// Verifies that a witness satisfies this predicate key for a given claim.
@@ -92,7 +89,7 @@ impl PredicateKey {
     /// * `Ok(())` if verification succeeds
     /// * `Err(PredicateError)` if verification fails or an error occurs
     pub fn verify_claim_witness(&self, claim: &[u8], witness: &[u8]) -> PredicateResult<()> {
-        self.as_buf_ref().verify_claim_witness(claim, witness)
+        self.try_as_buf_ref()?.verify_claim_witness(claim, witness)
     }
 }
 
@@ -143,8 +140,8 @@ impl<'b> PredicateKeyBuf<'b> {
     /// This allocates and copies the buffer condition bytes.
     pub fn to_owned(&self) -> PredicateKey {
         PredicateKey {
-            id: self.id,
-            condition: self.condition.to_vec(),
+            id: self.id.as_u8(),
+            condition: self.condition.to_vec().into(),
         }
     }
 
@@ -186,7 +183,7 @@ mod tests {
 
         // Should be able to convert to owned
         let owned = key_buf.to_owned();
-        assert_eq!(owned.id(), PredicateTypeId::AlwaysAccept);
+        assert_eq!(owned.id(), PredicateTypeId::AlwaysAccept as u8);
         assert_eq!(owned.condition(), b"test_condition");
     }
 
@@ -195,7 +192,7 @@ mod tests {
         let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test_condition".to_vec());
 
         // Should have correct type and condition bytes
-        assert_eq!(predkey.id(), PredicateTypeId::AlwaysAccept);
+        assert_eq!(predkey.id(), PredicateTypeId::AlwaysAccept as u8);
         assert_eq!(predkey.condition(), b"test_condition");
 
         // Serialization should work correctly through buf_ref
@@ -225,7 +222,7 @@ mod tests {
 
         // Test that always_accept() creates correct predicate
         let predkey = PredicateKey::always_accept();
-        assert_eq!(predkey.id(), PredicateTypeId::AlwaysAccept);
+        assert_eq!(predkey.id(), PredicateTypeId::AlwaysAccept as u8);
         assert!(predkey.condition().is_empty());
     }
 
@@ -248,7 +245,7 @@ mod tests {
         let valid_data = [PredicateTypeId::AlwaysAccept.as_u8(), 0x01, 0x02];
         let key_buf = PredicateKeyBuf::try_from(valid_data.as_slice()).unwrap();
         let owned = key_buf.to_owned();
-        assert_eq!(owned.id(), PredicateTypeId::AlwaysAccept);
+        assert_eq!(owned.id(), PredicateTypeId::AlwaysAccept as u8);
     }
 
     #[test]
@@ -258,7 +255,7 @@ mod tests {
         let key_buf = predkey.as_buf_ref();
 
         // Should have same type and condition bytes
-        assert_eq!(key_buf.id(), predkey.id());
+        assert_eq!(key_buf.id() as u8, predkey.id());
         assert_eq!(key_buf.condition(), predkey.condition());
 
         // Test round-trip conversion

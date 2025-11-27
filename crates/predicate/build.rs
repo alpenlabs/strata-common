@@ -1,3 +1,5 @@
+//! Build script for generating SSZ code from schema definitions
+
 use std::path::Path;
 
 use ssz_codegen::{ModuleGeneration, build_ssz_files};

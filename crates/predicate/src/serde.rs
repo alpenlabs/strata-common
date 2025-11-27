@@ -41,20 +41,21 @@ impl Serialize for PredicateKey {
     where
         S: Serializer,
     {
+        let id: PredicateTypeId = self.id.try_into().map_err(serde::ser::Error::custom)?;
         if serializer.is_human_readable() {
             // Human-readable format: use string representation
             let formatted = if self.condition().is_empty() {
-                format!("{}", self.id())
+                format!("{id}")
             } else {
                 let hex_condition = hex::encode(self.condition());
-                format!("{}:{}", self.id(), hex_condition)
+                format!("{id}:{hex_condition}")
             };
             serializer.serialize_str(&formatted)
         } else {
             // Binary format: serialize as tuple of (id_u8, condition_bytes)
             use serde::ser::SerializeTuple;
             let mut tuple = serializer.serialize_tuple(2)?;
-            tuple.serialize_element(&(self.id() as u8))?;
+            tuple.serialize_element(&id.as_u8())?;
             tuple.serialize_element(self.condition())?;
             tuple.end()
         }
