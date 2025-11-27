@@ -1536,6 +1536,7 @@ dependencies = [
  "serde_json",
  "signature",
  "sp1-verifier",
+ "ssz_codegen",
  "thiserror 2.0.17",
  "zkaleido",
  "zkaleido-sp1-groth16-verifier",

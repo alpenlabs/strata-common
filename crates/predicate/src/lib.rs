@@ -102,8 +102,15 @@ mod borsh;
 #[cfg(feature = "arbitrary")]
 mod arbitrary;
 
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated_ssz.rs"));
+}
+
+// Publicly re-export only the SSZ items this crate's API intends to expose
+pub use ssz_generated::ssz::key::PredicateKey;
+
 // Re-export main API
-pub use key::{PredicateKey, PredicateKeyBuf};
+pub use key::PredicateKeyBuf;
 
 // Re-export predicate type constants and enum for convenience
 pub use type_ids::PredicateTypeId;
