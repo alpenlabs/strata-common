@@ -123,8 +123,8 @@ impl<'de> Deserialize<'de> for PredicateKey {
 mod tests {
     use super::*;
 
+    use crate::test_utils::predicate_key_strategy;
     use proptest::prelude::*;
-    use zkaleido_sp1_groth16_verifier::SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED;
 
     #[test]
     fn test_serde_json_serialization() {
@@ -180,25 +180,6 @@ mod tests {
         let encoded3 = bincode::serialize(&predkey3).unwrap();
         let decoded3: PredicateKey = bincode::deserialize(&encoded3).unwrap();
         assert_eq!(predkey3, decoded3);
-    }
-
-    // Strategy to generate arbitrary PredicateTypeId
-    fn predicate_type_id_strategy() -> impl Strategy<Value = PredicateTypeId> {
-        prop_oneof![
-            Just(PredicateTypeId::NeverAccept),
-            Just(PredicateTypeId::AlwaysAccept),
-            Just(PredicateTypeId::Bip340Schnorr),
-            Just(PredicateTypeId::Sp1Groth16),
-        ]
-    }
-
-    // Strategy to generate arbitrary PredicateKey
-    fn predicate_key_strategy() -> impl Strategy<Value = PredicateKey> {
-        (
-            predicate_type_id_strategy(),
-            prop::collection::vec(any::<u8>(), 0..SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED),
-        )
-            .prop_map(|(id, condition)| PredicateKey::new(id, condition))
     }
 
     proptest! {

@@ -163,103 +163,74 @@ impl<'b> PredicateKeyBuf<'b> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::type_ids::PredicateTypeId;
+    use crate::PredicateKeyRef;
+    use crate::test_utils::{bounded_condition_strategy, predicate_key_strategy};
+    use proptest::prelude::*;
+    use ssz::view::DecodeView;
+    use ssz::{Decode, Encode};
 
     #[test]
-    fn test_non_empty_predicate_key_buf() {
-        let original_data = [PredicateTypeId::AlwaysAccept.as_u8()]
-            .iter()
-            .chain(b"test_condition")
-            .copied()
-            .collect::<Vec<u8>>();
-        let key_buf = PredicateKeyBuf::try_from(original_data.as_slice()).unwrap();
+    fn proptest_predicate_key_roundtrip() {
+        proptest!(|(predkey in predicate_key_strategy())| {
+            let condition = predkey.condition().to_vec();
+            let id: PredicateTypeId = predkey.id().try_into().unwrap();
+            let predkey = PredicateKey::new(id, condition.clone());
+            let buf = predkey.as_buf_ref();
 
-        // Should decode to correct type and condition bytes
-        assert_eq!(key_buf.id(), PredicateTypeId::AlwaysAccept);
-        assert_eq!(key_buf.condition(), b"test_condition");
+            prop_assert_eq!(buf.id(), id);
+            prop_assert_eq!(buf.condition(), condition.as_slice());
 
-        // Should return the correct bytes
-        assert_eq!(key_buf.to_bytes(), original_data);
+            let serialized = buf.to_bytes();
+            prop_assert_eq!(serialized.get(0), Some(&id.as_u8()));
+            prop_assert_eq!(&serialized[1..], condition.as_slice());
 
-        // Should be able to convert to owned
-        let owned = key_buf.to_owned();
-        assert_eq!(owned.id(), PredicateTypeId::AlwaysAccept as u8);
-        assert_eq!(owned.condition(), b"test_condition");
+            let reparsed = PredicateKeyBuf::try_from(serialized.as_slice()).unwrap();
+            prop_assert_eq!(reparsed.id(), id);
+            prop_assert_eq!(reparsed.condition(), condition.as_slice());
+
+            let owned = reparsed.to_owned();
+            prop_assert_eq!(owned.id(), predkey.id());
+            prop_assert_eq!(owned.condition(), predkey.condition());
+        });
     }
 
     #[test]
-    fn test_non_empty_predicate_key() {
-        let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test_condition".to_vec());
+    fn proptest_rejects_invalid_type_id() {
+        proptest!(|(
+            invalid_type in any::<u8>().prop_filter(
+                "invalid predicate type",
+                |&id| PredicateTypeId::try_from(id).is_err(),
+            ),
+            condition in bounded_condition_strategy(64)
+        )| {
+            let mut bytes = Vec::with_capacity(1 + condition.len());
+            bytes.push(invalid_type);
+            bytes.extend(condition);
 
-        // Should have correct type and condition bytes
-        assert_eq!(predkey.id(), PredicateTypeId::AlwaysAccept as u8);
-        assert_eq!(predkey.condition(), b"test_condition");
-
-        // Serialization should work correctly through buf_ref
-        let serialized = predkey.as_buf_ref().to_bytes();
-        assert_eq!(serialized[0], PredicateTypeId::AlwaysAccept.as_u8());
-        assert_eq!(&serialized[1..], b"test_condition");
-
-        // Round-trip should work through PredicateKeyBuf
-        let restored_buf = PredicateKeyBuf::try_from(serialized.as_slice()).unwrap();
-        let restored = restored_buf.to_owned();
-        assert_eq!(predkey, restored);
+            let result = PredicateKeyBuf::try_from(bytes.as_slice());
+            prop_assert!(matches!(result, Err(PredicateError::InvalidPredicateType(id)) if id == invalid_type));
+        });
     }
 
     #[test]
-    fn test_predicate_type_validation() {
-        // Test invalid predicate type (99 is not supported) through PredicateKeyBuf
-        let invalid_bytes = vec![99u8, b't', b'e', b's', b't'];
-        let result = PredicateKeyBuf::try_from(invalid_bytes.as_slice());
+    fn proptest_ssz_roundtrip() {
+        proptest!(|(predkey in predicate_key_strategy())| {
+            let ssz_bytes = predkey.as_ssz_bytes();
 
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            crate::errors::PredicateError::InvalidPredicateType(invalid_type) => {
-                assert_eq!(invalid_type, 99);
-            }
-            _ => panic!("Expected InvalidPredicateType error"),
-        }
+            // Decode via owned SSZ type
+            let decoded = PredicateKey::from_ssz_bytes(&ssz_bytes).unwrap();
+            prop_assert_eq!(&predkey, &decoded);
 
-        // Test that always_accept() creates correct predicate
-        let predkey = PredicateKey::always_accept();
-        assert_eq!(predkey.id(), PredicateTypeId::AlwaysAccept as u8);
-        assert!(predkey.condition().is_empty());
+            // Decode via zero-copy view
+            let view = PredicateKeyRef::from_ssz_bytes(&ssz_bytes).unwrap();
+            let owned_from_view = view.to_owned();
+            prop_assert_eq!(&predkey, &owned_from_view);
+        });
     }
 
     #[test]
-    fn test_predicate_key_buf_validation() {
-        // Valid predicate types should succeed
-        assert!(PredicateKeyBuf::try_from(&[PredicateTypeId::AlwaysAccept.as_u8()][..]).is_ok());
-        assert!(
-            PredicateKeyBuf::try_from(&[PredicateTypeId::Bip340Schnorr.as_u8(), 0x01][..]).is_ok()
-        );
-
-        // Empty bytes should fail
-        assert!(PredicateKeyBuf::try_from(&[][..]).is_err());
-
-        // Invalid predicate types should fail
-        assert!(PredicateKeyBuf::try_from(&[99][..]).is_err());
-        assert!(PredicateKeyBuf::try_from(&[255, 0x01, 0x02][..]).is_err());
-
-        // Valid condition bytes should work through TryFrom and convert properly
-        let valid_data = [PredicateTypeId::AlwaysAccept.as_u8(), 0x01, 0x02];
-        let key_buf = PredicateKeyBuf::try_from(valid_data.as_slice()).unwrap();
-        let owned = key_buf.to_owned();
-        assert_eq!(owned.id(), PredicateTypeId::AlwaysAccept as u8);
-    }
-
-    #[test]
-    fn test_conversions_and_round_trips() {
-        // Test conversion with condition bytes
-        let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test_data".to_vec());
-        let key_buf = predkey.as_buf_ref();
-
-        // Should have same type and condition bytes
-        assert_eq!(key_buf.id() as u8, predkey.id());
-        assert_eq!(key_buf.condition(), predkey.condition());
-
-        // Test round-trip conversion
-        let back_to_owned = key_buf.to_owned();
-        assert_eq!(predkey, back_to_owned);
+    fn test_missing_type_prefix() {
+        let result = PredicateKeyBuf::try_from(&[][..]);
+        assert!(matches!(result, Err(PredicateError::MissingPredicateType)));
     }
 }

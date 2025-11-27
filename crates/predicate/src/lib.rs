@@ -108,7 +108,7 @@ mod ssz_generated {
 }
 
 // Publicly re-export only the SSZ items this crate's API intends to expose
-pub use ssz_generated::ssz::key::{PredicateKey, PredicateKeyRef};
+pub use ssz_generated::ssz::key::{MAX_CONDITION_LEN, PredicateKey, PredicateKeyRef};
 
 // Re-export main API
 pub use key::PredicateKeyBuf;
