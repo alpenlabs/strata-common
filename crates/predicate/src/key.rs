@@ -181,7 +181,7 @@ mod tests {
             prop_assert_eq!(buf.condition(), condition.as_slice());
 
             let serialized = buf.to_bytes();
-            prop_assert_eq!(serialized.get(0), Some(&id.as_u8()));
+            prop_assert_eq!(serialized.first(), Some(&id.as_u8()));
             prop_assert_eq!(&serialized[1..], condition.as_slice());
 
             let reparsed = PredicateKeyBuf::try_from(serialized.as_slice()).unwrap();
