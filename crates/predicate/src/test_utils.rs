@@ -4,7 +4,9 @@
 //! different predicate verifier implementations to ensure consistent error
 //! checking and reduce code duplication in tests.
 
-use crate::{errors::PredicateError, type_ids::PredicateTypeId};
+use crate::{MAX_CONDITION_LEN, PredicateKey, errors::PredicateError, type_ids::PredicateTypeId};
+
+use proptest::prelude::*;
 
 /// Asserts that a result contains a `PredicateParsingFailed` error for the given predicate type.
 pub(crate) fn assert_predicate_parsing_failed(
@@ -46,4 +48,26 @@ pub(crate) fn assert_verification_failed(
         }
         _ => panic!("Expected VerificationFailed, got: {err:?}"),
     }
+}
+
+pub(crate) fn predicate_type_id_strategy() -> impl Strategy<Value = PredicateTypeId> {
+    prop_oneof![
+        Just(PredicateTypeId::NeverAccept),
+        Just(PredicateTypeId::AlwaysAccept),
+        Just(PredicateTypeId::Bip340Schnorr),
+        Just(PredicateTypeId::Sp1Groth16),
+    ]
+}
+
+pub(crate) fn condition_strategy() -> impl Strategy<Value = Vec<u8>> {
+    bounded_condition_strategy(MAX_CONDITION_LEN as usize)
+}
+
+pub(crate) fn bounded_condition_strategy(max_len: usize) -> impl Strategy<Value = Vec<u8>> {
+    prop::collection::vec(any::<u8>(), 0..max_len)
+}
+
+pub(crate) fn predicate_key_strategy() -> impl Strategy<Value = PredicateKey> {
+    (predicate_type_id_strategy(), condition_strategy())
+        .prop_map(|(id, condition)| PredicateKey::new(id, condition))
 }

@@ -1,0 +1,9 @@
+### Maximum length of the predicate condition bytes
+MAX_CONDITION_LEN = 1 << 10
+
+### A predicate key encodes a formal boolean statement with a type identifier.
+class PredicateKey(Container):
+    ### The predicate type identifier.
+    id: uint8
+    ### Backend-specific predicate condition bytes.
+    condition: List[byte, MAX_CONDITION_LEN]

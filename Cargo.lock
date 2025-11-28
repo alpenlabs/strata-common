@@ -1536,7 +1536,13 @@ dependencies = [
  "serde_json",
  "signature",
  "sp1-verifier",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_types",
  "thiserror 2.0.17",
+ "tree_hash",
+ "tree_hash_derive",
  "zkaleido",
  "zkaleido-sp1-groth16-verifier",
 ]

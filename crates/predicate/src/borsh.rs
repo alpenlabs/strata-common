@@ -4,7 +4,10 @@ use crate::{PredicateKey, PredicateKeyBuf};
 
 impl BorshSerialize for PredicateKey {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        self.as_buf_ref().to_bytes().serialize(writer)
+        self.try_as_buf_ref()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?
+            .to_bytes()
+            .serialize(writer)
     }
 }
 
@@ -22,28 +25,11 @@ mod tests {
     use super::*;
 
     use crate::PredicateTypeId;
+    use crate::test_utils::{
+        bounded_condition_strategy, predicate_key_strategy, predicate_type_id_strategy,
+    };
 
     use proptest::prelude::*;
-    use zkaleido_sp1_groth16_verifier::SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED;
-
-    // Strategy to generate arbitrary PredicateTypeId
-    fn predicate_type_id_strategy() -> impl Strategy<Value = PredicateTypeId> {
-        prop_oneof![
-            Just(PredicateTypeId::NeverAccept),
-            Just(PredicateTypeId::AlwaysAccept),
-            Just(PredicateTypeId::Bip340Schnorr),
-            Just(PredicateTypeId::Sp1Groth16),
-        ]
-    }
-
-    // Strategy to generate arbitrary PredicateKey
-    fn predicate_key_strategy() -> impl Strategy<Value = PredicateKey> {
-        (
-            predicate_type_id_strategy(),
-            prop::collection::vec(any::<u8>(), 0..SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED),
-        )
-            .prop_map(|(id, condition)| PredicateKey::new(id, condition))
-    }
 
     proptest! {
             #[test]
@@ -61,7 +47,7 @@ mod tests {
             #[test]
             fn proptest_borsh_format_consistency(
                 id in predicate_type_id_strategy(),
-                condition in prop::collection::vec(any::<u8>(), 0..256)
+                condition in bounded_condition_strategy(256)
             ) {
                 let predkey = PredicateKey::new(id, condition.clone());
                 let serialized = borsh::to_vec(&predkey).unwrap();

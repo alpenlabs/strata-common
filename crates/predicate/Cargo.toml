@@ -13,8 +13,16 @@ hex = { workspace = true, optional = true }
 k256 = { version = "0.13.4", features = ["schnorr"] }
 serde = { workspace = true, optional = true }
 signature = "2.2"
+ssz.workspace = true
+ssz_derive.workspace = true
+ssz_types.workspace = true
 thiserror.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
 zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc17" }
+
+[build-dependencies]
+ssz_codegen.workspace = true
 
 [dev-dependencies]
 bincode = "1.3"
