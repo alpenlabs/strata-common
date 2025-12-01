@@ -408,16 +408,22 @@ mod proofb32 {
 
         /// Computes the root obtained by applying this proof to `leaf`.
         ///
-        /// This method uses Sha256Hasher as the merkle hasher implementation.
-        pub fn compute_root(&self, leaf: &[u8; 32]) -> [u8; 32] {
-            compute_root::<Self, Sha256Hasher>(self, leaf)
+        /// This method is generic over `MerkleHasher` and is bounded by `Hash = [u8; 32]`.
+        pub fn compute_root<MH>(&self, leaf: &[u8; 32]) -> [u8; 32]
+        where
+            MH: MerkleHasher<Hash = [u8; 32]>,
+        {
+            compute_root::<Self, MH>(self, leaf)
         }
 
         /// Verifies this proof for `leaf` against the expected `root`.
         ///
-        /// This method uses Sha256Hasher as the merkle hasher implementation.
-        pub fn verify_with_root(&self, root: &[u8; 32], leaf: &[u8; 32]) -> bool {
-            verify_with_root::<Self, Sha256Hasher>(self, root, leaf)
+        /// This method is generic over `MerkleHasher` and is bounded by `Hash = [u8; 32]`.
+        pub fn verify_with_root<MH>(&self, root: &[u8; 32], leaf: &[u8; 32]) -> bool
+        where
+            MH: MerkleHasher<Hash = [u8; 32]>,
+        {
+            verify_with_root::<Self, MH>(self, root, leaf)
         }
     }
 
@@ -484,7 +490,7 @@ mod tests {
 
         // Compute root using both methods
         let generic_root = generic_proof.compute_root::<Sha256Hasher>(&leaf);
-        let concrete_root = concrete_proof.compute_root(&leaf);
+        let concrete_root = concrete_proof.compute_root::<Sha256Hasher>(&leaf);
 
         // Should produce same result
         assert_eq!(generic_root, concrete_root);
