@@ -1303,7 +1303,7 @@ dependencies = [
 [[package]]
 name = "sizzle-parser"
 version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=fix%2Fconditional-serde-imports#2b0fa0d5a59f9e85438840083efb86f0e9300b7f"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
 dependencies = [
  "thiserror 2.0.17",
 ]
@@ -1396,7 +1396,7 @@ dependencies = [
 [[package]]
 name = "ssz"
 version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=fix%2Fconditional-serde-imports#2b0fa0d5a59f9e85438840083efb86f0e9300b7f"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
 dependencies = [
  "itertools 0.13.0",
  "smallvec",
@@ -1406,7 +1406,7 @@ dependencies = [
 [[package]]
 name = "ssz_codegen"
 version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=fix%2Fconditional-serde-imports#2b0fa0d5a59f9e85438840083efb86f0e9300b7f"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -1425,7 +1425,7 @@ dependencies = [
 [[package]]
 name = "ssz_derive"
 version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=fix%2Fconditional-serde-imports#2b0fa0d5a59f9e85438840083efb86f0e9300b7f"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
 dependencies = [
  "darling",
  "quote",
@@ -1435,7 +1435,7 @@ dependencies = [
 [[package]]
 name = "ssz_primitives"
 version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=fix%2Fconditional-serde-imports#2b0fa0d5a59f9e85438840083efb86f0e9300b7f"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
 dependencies = [
  "hex",
  "rand 0.8.5",
@@ -1445,7 +1445,7 @@ dependencies = [
 [[package]]
 name = "ssz_types"
 version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=fix%2Fconditional-serde-imports#2b0fa0d5a59f9e85438840083efb86f0e9300b7f"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
 dependencies = [
  "ssz",
  "ssz_primitives",
@@ -1811,7 +1811,7 @@ dependencies = [
 [[package]]
 name = "tree_hash"
 version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=fix%2Fconditional-serde-imports#2b0fa0d5a59f9e85438840083efb86f0e9300b7f"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
 dependencies = [
  "digest",
  "sha2",
@@ -1823,7 +1823,7 @@ dependencies = [
 [[package]]
 name = "tree_hash_derive"
 version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=fix%2Fconditional-serde-imports#2b0fa0d5a59f9e85438840083efb86f0e9300b7f"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
 dependencies = [
  "darling",
  "quote",
