@@ -26,12 +26,12 @@ strata-service = { path = "crates/services" }
 strata-tasks = { path = "crates/tasks" }
 
 # SSZ dependencies
-ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.3" }
-ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen",  tag = "v0.8.3" }
-ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.3" }
-ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.3" }
-tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.3" }
-tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.3" }
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.4" }
+ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen",  tag = "v0.8.4" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.4" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.4" }
+tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.4" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.4" }
 
 # External dependencies
 anyhow = "1"

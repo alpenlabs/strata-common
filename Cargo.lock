@@ -70,9 +70,9 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 
 [[package]]
 name = "bech32"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d965446196e3b7decd44aa7ee49e31d630118f90ef12f97900f262eb915c951d"
+checksum = "32637268377fc7b10a8c6d51de3e7fba1ce5dd371a96e342b34e6078db558e7f"
 
 [[package]]
 name = "bincode"
@@ -123,9 +123,9 @@ checksum = "30bdbe14aa07b06e6cfeffc529a1f099e5fbe249524f8125358604df99a4bed2"
 
 [[package]]
 name = "bitcoin-io"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b47c4ab7a93edb0c7198c5535ed9b52b63095f4e9b45279c6736cec4b856baf"
+checksum = "2dee39a0ee5b4095224a0cfc6bf4cc1baf0f9624b96b367e53b66d974e51d953"
 
 [[package]]
 name = "bitcoin-units"
@@ -231,9 +231,9 @@ checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
 
 [[package]]
 name = "cc"
-version = "1.2.47"
+version = "1.2.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd405d82c84ff7f35739f175f67d8b9fb7687a0e84ccdc78bd3568839827cf07"
+checksum = "c481bdbf0ed3b892f6f806287d72acd515b352a4ec27a208489b8c1bc839633a"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -705,9 +705,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.177"
+version = "0.2.178"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
+checksum = "37c93d8daa9d8a012fd8ab92f088405fb202ea0b6ab73ee2482ae66af4f42091"
 
 [[package]]
 name = "libm"
@@ -1302,8 +1302,8 @@ dependencies = [
 
 [[package]]
 name = "sizzle-parser"
-version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
+version = "0.8.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.4#dc1affe933c46c1b709c208b0bcd6ce4e741efd5"
 dependencies = [
  "thiserror 2.0.17",
 ]
@@ -1395,8 +1395,8 @@ dependencies = [
 
 [[package]]
 name = "ssz"
-version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
+version = "0.8.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.4#dc1affe933c46c1b709c208b0bcd6ce4e741efd5"
 dependencies = [
  "itertools 0.13.0",
  "smallvec",
@@ -1405,8 +1405,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_codegen"
-version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
+version = "0.8.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.4#dc1affe933c46c1b709c208b0bcd6ce4e741efd5"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -1424,8 +1424,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_derive"
-version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
+version = "0.8.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.4#dc1affe933c46c1b709c208b0bcd6ce4e741efd5"
 dependencies = [
  "darling",
  "quote",
@@ -1434,8 +1434,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_primitives"
-version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
+version = "0.8.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.4#dc1affe933c46c1b709c208b0bcd6ce4e741efd5"
 dependencies = [
  "hex",
  "rand 0.8.5",
@@ -1444,8 +1444,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_types"
-version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
+version = "0.8.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.4#dc1affe933c46c1b709c208b0bcd6ce4e741efd5"
 dependencies = [
  "ssz",
  "ssz_primitives",
@@ -1779,9 +1779,9 @@ checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "tracing"
-version = "0.1.41"
+version = "0.1.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "784e0ac535deb450455cbfa28a6f0df145ea1bb7ae51b821cf5e7927fdcfbdd0"
+checksum = "2d15d90a0b5c19378952d479dc858407149d7bb45a14de0142f6c534b16fc647"
 dependencies = [
  "pin-project-lite",
  "tracing-attributes",
@@ -1810,8 +1810,8 @@ dependencies = [
 
 [[package]]
 name = "tree_hash"
-version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
+version = "0.8.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.4#dc1affe933c46c1b709c208b0bcd6ce4e741efd5"
 dependencies = [
  "digest",
  "sha2",
@@ -1822,8 +1822,8 @@ dependencies = [
 
 [[package]]
 name = "tree_hash_derive"
-version = "0.8.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
+version = "0.8.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.4#dc1affe933c46c1b709c208b0bcd6ce4e741efd5"
 dependencies = [
  "darling",
  "quote",
@@ -1990,18 +1990,18 @@ checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
 
 [[package]]
 name = "zerocopy"
-version = "0.8.30"
+version = "0.8.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ea879c944afe8a2b25fef16bb4ba234f47c694565e97383b36f3a878219065c"
+checksum = "fd74ec98b9250adb3ca554bdde269adf631549f51d8a8f8f0a10b50f1cb298c3"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.30"
+version = "0.8.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf955aa904d6040f70dc8e9384444cb1030aed272ba3cb09bbc4ab9e7c1f34f5"
+checksum = "d8a8d209fdf45cf5138cbb5a506f6b52522a25afccc534d1475dad8e31105c6a"
 dependencies = [
  "proc-macro2",
  "quote",
