@@ -161,13 +161,12 @@ impl TagData {
 ///
 /// This reads the first output of the given transaction and attempts to decode
 /// an SPS-50 OP_RETURN tag, returning both the discovered magic bytes and the
-/// remaining tag data on success. Callers can use the returned magic value to
-/// decide whether the transaction belongs to a known subprotocol.
+/// remaining tag data on success. Returns an error if the transaction is
+/// missing output 0, is not an OP_RETURN, or the payload is malformed. Callers
+/// can use the returned magic value to decide whether the transaction belongs
+/// to a known subprotocol.
 ///
-/// # Errors
-///
-/// Returns an error if the transaction is missing output 0, is not an
-/// OP_RETURN, or the payload is malformed.
+/// to a known subprotocol.
 pub fn extract_tx_magic_and_tag<'t>(
     tx: &'t Transaction,
 ) -> TxFmtResult<(MagicBytes, TagDataRef<'t>)> {
@@ -259,7 +258,7 @@ fn try_parse_script_buf<'t>(
     try_parse_buf(data, config)
 }
 
-fn extract_tag_data_from_script<'t>(script: &'t ScriptBuf) -> TxFmtResult<&'t [u8]> {
+fn extract_tag_data_from_script(script: &ScriptBuf) -> TxFmtResult<&[u8]> {
     // 2) Iterate instructions: expect first to be the OP_RETURN opcode
     let mut instrs = script.instructions();
     match instrs.next() {
