@@ -157,6 +157,24 @@ impl TagData {
     }
 }
 
+/// Extracts magic bytes and tag data from a transaction without validating them.
+///
+/// This reads the first output of the given transaction and attempts to decode
+/// an SPS-50 OP_RETURN tag, returning both the discovered magic bytes and the
+/// remaining tag data on success. Returns an error if the transaction is
+/// missing output 0, is not an OP_RETURN, or the payload is malformed. Callers
+/// can use the returned magic value to decide whether the transaction belongs
+/// to a known subprotocol.
+///
+/// to a known subprotocol.
+pub fn extract_tx_magic_and_tag<'t>(
+    tx: &'t Transaction,
+) -> TxFmtResult<(MagicBytes, TagDataRef<'t>)> {
+    let first_out = tx.output.first().ok_or(TxFmtError::MissingOutput0)?;
+    let data = extract_tag_data_from_script(&first_out.script_pubkey)?;
+    extract_magic_and_tag_from_buf(data)
+}
+
 /// Config for parsing txs.
 #[derive(Clone, Debug)]
 pub struct ParseConfig {
@@ -224,16 +242,23 @@ fn try_parse_tx_header_tag<'t>(
     tx: &'t Transaction,
     config: &ParseConfig,
 ) -> TxFmtResult<TagDataRef<'t>> {
-    // 1) Ensure there's an output 0
-    let first_out = tx.output.first().ok_or(TxFmtError::MissingOutput0)?;
-    let script = &first_out.script_pubkey;
-    try_parse_script_buf(script, config)
+    let (magic, tag) = extract_tx_magic_and_tag(tx)?;
+    if magic != config.magic_bytes {
+        return Err(TxFmtError::MismatchMagic(magic));
+    }
+
+    Ok(tag)
 }
 
 fn try_parse_script_buf<'t>(
     script: &'t ScriptBuf,
     config: &ParseConfig,
 ) -> TxFmtResult<TagDataRef<'t>> {
+    let data = extract_tag_data_from_script(script)?;
+    try_parse_buf(data, config)
+}
+
+fn extract_tag_data_from_script(script: &ScriptBuf) -> TxFmtResult<&[u8]> {
     // 2) Iterate instructions: expect first to be the OP_RETURN opcode
     let mut instrs = script.instructions();
     match instrs.next() {
@@ -247,23 +272,26 @@ fn try_parse_script_buf<'t>(
         _ => return Err(TxFmtError::MalformedOpret),
     };
 
-    // 4) Parse the data buf itself.
-    try_parse_buf(data.as_bytes(), config)
+    Ok(data.as_bytes())
 }
 
 fn try_parse_buf<'t>(buf: &'t [u8], config: &ParseConfig) -> TxFmtResult<TagDataRef<'t>> {
-    if buf.len() < MIN_TAG_LEN {
-        return Err(TxFmtError::MalformedOpret);
-    }
-
-    // Check the magic.
-    let mut magic = [0; 4];
-    magic.copy_from_slice(&buf[..4]);
+    let (magic, tag) = extract_magic_and_tag_from_buf(buf)?;
     if magic != config.magic_bytes {
         return Err(TxFmtError::MismatchMagic(magic));
     }
 
-    // Then just take out the remaining fields.
+    Ok(tag)
+}
+
+fn extract_magic_and_tag_from_buf<'t>(buf: &'t [u8]) -> TxFmtResult<(MagicBytes, TagDataRef<'t>)> {
+    if buf.len() < MIN_TAG_LEN {
+        return Err(TxFmtError::MalformedOpret);
+    }
+
+    let mut magic = [0; 4];
+    magic.copy_from_slice(&buf[..4]);
+
     let subproto_id = buf[4];
     let tx_type = buf[5];
     let aux_data = &buf[MIN_TAG_LEN..];
@@ -272,18 +300,23 @@ fn try_parse_buf<'t>(buf: &'t [u8], config: &ParseConfig) -> TxFmtResult<TagData
         return Err(TxFmtError::AuxTooLong);
     }
 
-    Ok(TagDataRef {
-        subproto_id,
-        tx_type,
-        aux_data,
-    })
+    Ok((
+        magic,
+        TagDataRef {
+            subproto_id,
+            tx_type,
+            aux_data,
+        },
+    ))
 }
 
 #[cfg(test)]
 mod test {
     use bitcoin::{
+        Amount, Transaction, TxOut, absolute,
         opcodes::all::{OP_DUP, OP_RETURN},
         script::PushBytesBuf,
+        transaction::Version,
     };
 
     use super::*;
@@ -331,6 +364,41 @@ mod test {
             .into_script();
 
         let tag = parse_script(&script).expect("test: should parse");
+        assert_eq!(tag.subproto_id(), subproto_id);
+        assert_eq!(tag.tx_type(), tx_type);
+        assert_eq!(tag.aux_data(), aux_data);
+    }
+
+    #[test]
+    fn parse_tx_without_magic_validation() {
+        let magic = MAGIC_BYTES;
+        let subproto_id = 7u8;
+        let tx_type = 11u8;
+        let aux_data = b"xyz";
+
+        let mut payload = Vec::new();
+        payload.extend_from_slice(magic);
+        payload.push(subproto_id);
+        payload.push(tx_type);
+        payload.extend_from_slice(aux_data);
+
+        let script = ScriptBuf::builder()
+            .push_opcode(OP_RETURN)
+            .push_slice(PushBytesBuf::try_from(payload).unwrap())
+            .into_script();
+
+        let tx = Transaction {
+            version: Version::TWO,
+            lock_time: absolute::LockTime::ZERO,
+            input: Vec::new(),
+            output: vec![TxOut {
+                value: Amount::ZERO,
+                script_pubkey: script,
+            }],
+        };
+
+        let (magic_bytes, tag) = extract_tx_magic_and_tag(&tx).expect("test: should parse");
+        assert_eq!(magic_bytes, *MAGIC_BYTES);
         assert_eq!(tag.subproto_id(), subproto_id);
         assert_eq!(tag.tx_type(), tx_type);
         assert_eq!(tag.aux_data(), aux_data);
