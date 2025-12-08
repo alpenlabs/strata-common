@@ -17,7 +17,7 @@ use crate::traits::MmrState;
 /// the end of the list, since these are the ones we add/remove the most often.
 // replace this with one defined in SSZ
 #[derive(Clone, Debug)]
-pub struct NewMmrState<H> {
+pub struct MmrStateVec<H> {
     /// The total number of entries.
     ///
     /// The set bits in this number describe the "real" tiers of the entries in
@@ -30,7 +30,7 @@ pub struct NewMmrState<H> {
     packed_peaks: Vec<H>,
 }
 
-impl<H: MerkleHash> NewMmrState<H> {
+impl<H: MerkleHash> MmrStateVec<H> {
     /// Creates a new empty MMR state with no entries and no peaks.
     pub fn new_empty() -> Self {
         Self {
@@ -133,7 +133,7 @@ impl<H: MerkleHash> NewMmrState<H> {
     }
 }
 
-impl<H: MerkleHash> MmrState<H> for NewMmrState<H> {
+impl<H: MerkleHash> MmrState<H> for MmrStateVec<H> {
     fn max_num_peaks(&self) -> u8 {
         u64::BITS as u8
     }
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn test_new_empty() {
-        let state = NewMmrState::<Hash32>::new_empty();
+        let state = MmrStateVec::<Hash32>::new_empty();
         assert_eq!(state.num_entries(), 0);
         assert_eq!(state.num_present_peaks(), 0);
         state.sanity_check();
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_set_single_peak() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash = make_hash(b"peak0");
 
         // Set peak at height 0
@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_set_multiple_peaks() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash0 = make_hash(b"peak0");
         let hash2 = make_hash(b"peak2");
 
@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn test_set_peaks_reverse_order() {
         // Test that setting peaks in reverse order also works
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash0 = make_hash(b"peak0");
         let hash2 = make_hash(b"peak2");
 
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_unset_peak() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash0 = make_hash(b"peak0");
         let hash2 = make_hash(b"peak2");
 
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_update_existing_peak() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash_old = make_hash(b"old");
         let hash_new = make_hash(b"new");
 
@@ -314,14 +314,14 @@ mod tests {
 
     #[test]
     fn test_iter_peaks_empty() {
-        let state = NewMmrState::<Hash32>::new_empty();
+        let state = MmrStateVec::<Hash32>::new_empty();
         let peaks: Vec<_> = state.iter_peaks().collect();
         assert!(peaks.is_empty());
     }
 
     #[test]
     fn test_iter_peaks_single() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash = make_hash(b"peak");
         state.set_peak(3, hash);
 
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn test_iter_peaks_multiple() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash0 = make_hash(b"peak0");
         let hash1 = make_hash(b"peak1");
         let hash2 = make_hash(b"peak2");
@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_iter_peaks_non_contiguous() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash0 = make_hash(b"peak0");
         let hash3 = make_hash(b"peak3");
 
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn test_set_peak_out_of_bounds() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash = make_hash(b"peak");
 
         // Peak index 64 is out of bounds (max is 63 for u64)
@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_unset_already_unset() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let zero_hash = Hash32::zero();
 
         // Trying to unset a peak that was never set should return false
@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn test_set_then_get_all_heights() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
 
         // Test a few different heights
         for i in [0u8, 5, 10, 20, 63] {
@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_unset_then_get() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash = make_hash(b"peak");
         let zero_hash = Hash32::zero();
 
@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn test_complex_sequence() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let zero_hash = Hash32::zero();
 
         // Simulate a realistic sequence of operations

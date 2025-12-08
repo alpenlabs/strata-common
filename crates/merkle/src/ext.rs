@@ -269,19 +269,18 @@ where
 }
 
 #[cfg(test)]
-#[allow(deprecated)] // Tests use MerkleMr64 for differential testing
 mod tests {
     use sha2::{Digest, Sha256};
 
     use super::*;
-    use crate::mmr::{CompactMmr64, MerkleMr64};
+    use crate::mmr::CompactMmr64;
     use crate::proof::MerkleProof;
     use crate::traits::MmrState;
-    use crate::{NewMmrState, Sha256Hasher};
+    use crate::{MmrStateVec, Sha256Hasher};
 
     #[cfg(feature = "ssz")]
     use {
-        crate::{CompactMmr64B32, MerkleMr64B32, MerkleProofB32},
+        crate::{CompactMmr64B32, MerkleProofB32},
         ssz::{Decode, Encode},
     };
 
@@ -293,14 +292,14 @@ mod tests {
 
     #[test]
     fn test_empty_mmr() {
-        let state = NewMmrState::<Hash32>::new_empty();
+        let state = MmrStateVec::<Hash32>::new_empty();
         assert!(Mmr::<Sha256Hasher>::is_empty(&state));
         assert_eq!(state.num_entries(), 0);
     }
 
     #[test]
     fn test_add_single_leaf() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash = make_hash(b"leaf1");
 
         Mmr::<Sha256Hasher>::add_leaf(&mut state, hash).unwrap();
@@ -312,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_add_two_leaves_merge() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash1 = make_hash(b"leaf1");
         let hash2 = make_hash(b"leaf2");
 
@@ -327,7 +326,7 @@ mod tests {
 
     #[test]
     fn test_add_three_leaves() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash1 = make_hash(b"leaf1");
         let hash2 = make_hash(b"leaf2");
         let hash3 = make_hash(b"leaf3");
@@ -344,7 +343,7 @@ mod tests {
 
     #[test]
     fn test_get_single_root_power_of_two() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let hash = make_hash(b"leaf1");
 
         Mmr::<Sha256Hasher>::add_leaf(&mut state, hash).unwrap();
@@ -355,7 +354,7 @@ mod tests {
 
     #[test]
     fn test_get_single_root_not_power_of_two() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
 
         Mmr::<Sha256Hasher>::add_leaf(&mut state, make_hash(b"leaf1")).unwrap();
         Mmr::<Sha256Hasher>::add_leaf(&mut state, make_hash(b"leaf2")).unwrap();
@@ -367,7 +366,7 @@ mod tests {
 
     #[test]
     fn test_verify_proof() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let mut proof_list: Vec<MerkleProof<Hash32>> = Vec::new();
 
         let hash1 = make_hash(b"leaf1");
@@ -398,7 +397,7 @@ mod tests {
 
     #[test]
     fn test_add_leaf_updating_single_proof() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
 
         let hash1 = make_hash(b"leaf1");
         let hash2 = make_hash(b"leaf2");
@@ -420,7 +419,7 @@ mod tests {
 
     #[test]
     fn test_add_many_leaves_with_proofs() {
-        let mut state = NewMmrState::<Hash32>::new_empty();
+        let mut state = MmrStateVec::<Hash32>::new_empty();
         let mut proof_list: Vec<MerkleProof<Hash32>> = Vec::new();
 
         let hashes: Vec<Hash32> = (0..10).map(|i| make_hash(&[i])).collect();
@@ -444,90 +443,6 @@ mod tests {
                 "proof {} failed",
                 i
             );
-        }
-    }
-
-    #[test]
-    fn test_compare_with_old_mmr() {
-        use crate::mmr::MerkleMr64;
-
-        // Test that new implementation produces same results as old one.
-        let mut old_mmr = MerkleMr64::<Sha256Hasher>::new(64);
-        let mut new_state = NewMmrState::<Hash32>::new_empty();
-
-        let hashes: Vec<Hash32> = (0..20).map(|i| make_hash(&[i])).collect();
-
-        for hash in &hashes {
-            old_mmr.add_leaf(*hash).unwrap();
-            Mmr::<Sha256Hasher>::add_leaf(&mut new_state, *hash).unwrap();
-        }
-
-        // Compare num_entries.
-        assert_eq!(old_mmr.num_entries(), new_state.num_entries());
-
-        // Compare peaks.
-        for (height, old_peak) in old_mmr.peaks_iter() {
-            let new_peak = new_state.get_peak(height);
-            assert_eq!(
-                Some(old_peak),
-                new_peak,
-                "peak mismatch at height {}",
-                height
-            );
-        }
-    }
-
-    #[test]
-    fn test_compare_proofs_with_old_mmr() {
-        use crate::mmr::MerkleMr64;
-
-        let mut old_mmr = MerkleMr64::<Sha256Hasher>::new(64);
-        let mut new_state = NewMmrState::<Hash32>::new_empty();
-
-        let mut old_proof_list: Vec<MerkleProof<Hash32>> = Vec::new();
-        let mut new_proof_list: Vec<MerkleProof<Hash32>> = Vec::new();
-
-        let hashes: Vec<Hash32> = (0..10).map(|i| make_hash(&[i])).collect();
-
-        for hash in &hashes {
-            let old_proof = old_mmr
-                .add_leaf_updating_proof_list(*hash, &mut old_proof_list)
-                .unwrap();
-            old_proof_list.push(old_proof);
-
-            let new_proof = Mmr::<Sha256Hasher>::add_leaf_updating_proof_list(
-                &mut new_state,
-                *hash,
-                &mut new_proof_list,
-            )
-            .unwrap();
-            new_proof_list.push(new_proof);
-        }
-
-        // Compare proofs.
-        for i in 0..hashes.len() {
-            assert_eq!(
-                old_proof_list[i].index(),
-                new_proof_list[i].index(),
-                "proof index mismatch at {}",
-                i
-            );
-            assert_eq!(
-                old_proof_list[i].cohashes(),
-                new_proof_list[i].cohashes(),
-                "proof cohashes mismatch at {}",
-                i
-            );
-        }
-
-        // Verify new proofs work with old MMR and vice versa.
-        for (i, hash) in hashes.iter().enumerate() {
-            assert!(old_mmr.verify(&new_proof_list[i], hash));
-            assert!(Mmr::<Sha256Hasher>::verify(
-                &new_state,
-                &old_proof_list[i],
-                hash
-            ));
         }
     }
 
@@ -557,41 +472,36 @@ mod tests {
 
     #[test]
     fn test_cross_impl_same_peaks() {
-        // Test that inserting the same sequence into all MmrState implementations
+        // Test that inserting the same sequence into MmrState implementations
         // produces the same peaks.
         let hashes: Vec<Hash32> = (0u8..20).map(|i| make_hash(&[i])).collect();
 
-        // NewMmrState
-        let mut new_state = NewMmrState::<Hash32>::new_empty();
+        // MmrStateVec
+        let mut mmr_state = MmrStateVec::<Hash32>::new_empty();
         for hash in &hashes {
-            Mmr::<Sha256Hasher>::add_leaf(&mut new_state, *hash).unwrap();
+            Mmr::<Sha256Hasher>::add_leaf(&mut mmr_state, *hash).unwrap();
         }
-        let new_peaks = collect_peaks(&new_state);
+        let state_peaks = collect_peaks(&mmr_state);
 
-        // MerkleMr64 (legacy)
-        let mut legacy_mmr = MerkleMr64::<Sha256Hasher>::new(64);
+        // CompactMmr64 built the same way
+        let mut compact_mmr = CompactMmr64::<Hash32> {
+            entries: 0,
+            cap_log2: 64,
+            roots: Vec::new(),
+        };
         for hash in &hashes {
-            legacy_mmr.add_leaf(*hash).unwrap();
+            Mmr::<Sha256Hasher>::add_leaf(&mut compact_mmr, *hash).unwrap();
         }
-        let legacy_peaks = collect_peaks(&legacy_mmr);
-
-        // CompactMmr64 (via conversion from MerkleMr64)
-        let compact_mmr: CompactMmr64<Hash32> = legacy_mmr.clone().into();
         let compact_peaks = collect_peaks(&compact_mmr);
 
         // Compare all peaks match
         assert_eq!(
-            new_peaks, legacy_peaks,
-            "NewMmrState and MerkleMr64 peaks should match"
-        );
-        assert_eq!(
-            new_peaks, compact_peaks,
-            "NewMmrState and CompactMmr64 peaks should match"
+            state_peaks, compact_peaks,
+            "MmrStateVec and CompactMmr64 peaks should match"
         );
 
-        // Verify num_entries matches across all implementations
-        assert_eq!(new_state.num_entries(), legacy_mmr.num_entries());
-        assert_eq!(new_state.num_entries(), compact_mmr.num_entries());
+        // Verify num_entries matches across implementations
+        assert_eq!(mmr_state.num_entries(), compact_mmr.num_entries());
     }
 
     #[test]
@@ -600,41 +510,35 @@ mod tests {
         // Extended test including SSZ types
         let hashes: Vec<Hash32> = (0u8..20).map(|i| make_hash(&[i])).collect();
 
-        // NewMmrState
-        let mut new_state = NewMmrState::<Hash32>::new_empty();
+        // MmrStateVec
+        let mut mmr_state = MmrStateVec::<Hash32>::new_empty();
         for hash in &hashes {
-            Mmr::<Sha256Hasher>::add_leaf(&mut new_state, *hash).unwrap();
+            Mmr::<Sha256Hasher>::add_leaf(&mut mmr_state, *hash).unwrap();
         }
-        let new_peaks = collect_peaks(&new_state);
+        let state_peaks = collect_peaks(&mmr_state);
 
-        // MerkleMr64 (legacy)
-        let mut legacy_mmr = MerkleMr64::<Sha256Hasher>::new(64);
+        // CompactMmr64
+        let mut compact_mmr = CompactMmr64::<Hash32> {
+            entries: 0,
+            cap_log2: 64,
+            roots: Vec::new(),
+        };
         for hash in &hashes {
-            legacy_mmr.add_leaf(*hash).unwrap();
+            Mmr::<Sha256Hasher>::add_leaf(&mut compact_mmr, *hash).unwrap();
         }
-
-        // MerkleMr64B32 (SSZ flat)
-        let ssz_flat_mmr = MerkleMr64B32::from_generic(&legacy_mmr);
-        let ssz_flat_peaks = collect_peaks(&ssz_flat_mmr);
 
         // CompactMmr64B32 (SSZ compact)
-        let compact_mmr: CompactMmr64<Hash32> = legacy_mmr.clone().into();
         let ssz_compact_mmr = CompactMmr64B32::from_generic(&compact_mmr);
         let ssz_compact_peaks = collect_peaks(&ssz_compact_mmr);
 
-        // Compare all peaks match
+        // Compare peaks match
         assert_eq!(
-            new_peaks, ssz_flat_peaks,
-            "NewMmrState and MerkleMr64B32 peaks should match"
-        );
-        assert_eq!(
-            new_peaks, ssz_compact_peaks,
-            "NewMmrState and CompactMmr64B32 peaks should match"
+            state_peaks, ssz_compact_peaks,
+            "MmrStateVec and CompactMmr64B32 peaks should match"
         );
 
         // Verify num_entries matches
-        assert_eq!(new_state.num_entries(), ssz_flat_mmr.num_entries());
-        assert_eq!(new_state.num_entries(), ssz_compact_mmr.num_entries());
+        assert_eq!(mmr_state.num_entries(), ssz_compact_mmr.num_entries());
     }
 
     #[test]
@@ -642,51 +546,42 @@ mod tests {
         // Generate proof with one impl, verify with another
         let hashes: Vec<Hash32> = (0u8..15).map(|i| make_hash(&[i])).collect();
 
-        // Generate proofs using NewMmrState
-        let mut new_state = NewMmrState::<Hash32>::new_empty();
-        let new_proofs = insert_leaves_with_proofs(&mut new_state, &hashes);
+        // Generate proofs using MmrStateVec
+        let mut mmr_state = MmrStateVec::<Hash32>::new_empty();
+        let state_proofs = insert_leaves_with_proofs(&mut mmr_state, &hashes);
 
-        // Generate proofs using MerkleMr64
-        let mut legacy_mmr = MerkleMr64::<Sha256Hasher>::new(64);
-        let legacy_proofs = insert_leaves_with_proofs(&mut legacy_mmr, &hashes);
+        // Build CompactMmr64 with same leaves
+        let mut compact_mmr = CompactMmr64::<Hash32> {
+            entries: 0,
+            cap_log2: 64,
+            roots: Vec::new(),
+        };
+        let compact_proofs = insert_leaves_with_proofs(&mut compact_mmr, &hashes);
 
-        // Create CompactMmr64 from legacy
-        let compact_mmr: CompactMmr64<Hash32> = legacy_mmr.clone().into();
-
-        // Cross-verify: NewMmrState proofs against all implementations
+        // Cross-verify: MmrStateVec proofs against all implementations
         for (i, hash) in hashes.iter().enumerate() {
             assert!(
-                Mmr::<Sha256Hasher>::verify(&new_state, &new_proofs[i], hash),
-                "NewMmrState proof {} should verify against NewMmrState",
+                Mmr::<Sha256Hasher>::verify(&mmr_state, &state_proofs[i], hash),
+                "MmrStateVec proof {} should verify against MmrStateVec",
                 i
             );
             assert!(
-                Mmr::<Sha256Hasher>::verify(&legacy_mmr, &new_proofs[i], hash),
-                "NewMmrState proof {} should verify against MerkleMr64",
-                i
-            );
-            assert!(
-                Mmr::<Sha256Hasher>::verify(&compact_mmr, &new_proofs[i], hash),
-                "NewMmrState proof {} should verify against CompactMmr64",
+                Mmr::<Sha256Hasher>::verify(&compact_mmr, &state_proofs[i], hash),
+                "MmrStateVec proof {} should verify against CompactMmr64",
                 i
             );
         }
 
-        // Cross-verify: Legacy proofs against all implementations
+        // Cross-verify: CompactMmr64 proofs against all implementations
         for (i, hash) in hashes.iter().enumerate() {
             assert!(
-                Mmr::<Sha256Hasher>::verify(&new_state, &legacy_proofs[i], hash),
-                "MerkleMr64 proof {} should verify against NewMmrState",
+                Mmr::<Sha256Hasher>::verify(&mmr_state, &compact_proofs[i], hash),
+                "CompactMmr64 proof {} should verify against MmrStateVec",
                 i
             );
             assert!(
-                Mmr::<Sha256Hasher>::verify(&legacy_mmr, &legacy_proofs[i], hash),
-                "MerkleMr64 proof {} should verify against MerkleMr64",
-                i
-            );
-            assert!(
-                Mmr::<Sha256Hasher>::verify(&compact_mmr, &legacy_proofs[i], hash),
-                "MerkleMr64 proof {} should verify against CompactMmr64",
+                Mmr::<Sha256Hasher>::verify(&compact_mmr, &compact_proofs[i], hash),
+                "CompactMmr64 proof {} should verify against CompactMmr64",
                 i
             );
         }
@@ -698,17 +593,19 @@ mod tests {
         // Generate proof with generic impl, verify with SSZ impls
         let hashes: Vec<Hash32> = (0u8..15).map(|i| make_hash(&[i])).collect();
 
-        // Generate proofs using NewMmrState
-        let mut new_state = NewMmrState::<Hash32>::new_empty();
-        let proofs = insert_leaves_with_proofs(&mut new_state, &hashes);
+        // Generate proofs using MmrStateVec
+        let mut mmr_state = MmrStateVec::<Hash32>::new_empty();
+        let proofs = insert_leaves_with_proofs(&mut mmr_state, &hashes);
 
-        // Create SSZ types
-        let mut legacy_mmr = MerkleMr64::<Sha256Hasher>::new(64);
+        // Create SSZ types from CompactMmr64
+        let mut compact_mmr = CompactMmr64::<Hash32> {
+            entries: 0,
+            cap_log2: 64,
+            roots: Vec::new(),
+        };
         for hash in &hashes {
-            legacy_mmr.add_leaf(*hash).unwrap();
+            Mmr::<Sha256Hasher>::add_leaf(&mut compact_mmr, *hash).unwrap();
         }
-        let ssz_flat_mmr = MerkleMr64B32::from_generic(&legacy_mmr);
-        let compact_mmr: CompactMmr64<Hash32> = legacy_mmr.into();
         let ssz_compact_mmr = CompactMmr64B32::from_generic(&compact_mmr);
 
         // Convert proofs to SSZ format
@@ -717,11 +614,6 @@ mod tests {
 
         // Verify generic proofs against SSZ types
         for (i, hash) in hashes.iter().enumerate() {
-            assert!(
-                Mmr::<Sha256Hasher>::verify(&ssz_flat_mmr, &proofs[i], hash),
-                "Generic proof {} should verify against MerkleMr64B32",
-                i
-            );
             assert!(
                 Mmr::<Sha256Hasher>::verify(&ssz_compact_mmr, &proofs[i], hash),
                 "Generic proof {} should verify against CompactMmr64B32",
@@ -732,85 +624,13 @@ mod tests {
         // Verify SSZ proofs against all types
         for (i, hash) in hashes.iter().enumerate() {
             assert!(
-                Mmr::<Sha256Hasher>::verify(&new_state, &ssz_proofs[i], hash),
-                "SSZ proof {} should verify against NewMmrState",
-                i
-            );
-            assert!(
-                Mmr::<Sha256Hasher>::verify(&ssz_flat_mmr, &ssz_proofs[i], hash),
-                "SSZ proof {} should verify against MerkleMr64B32",
+                Mmr::<Sha256Hasher>::verify(&mmr_state, &ssz_proofs[i], hash),
+                "SSZ proof {} should verify against MmrStateVec",
                 i
             );
             assert!(
                 Mmr::<Sha256Hasher>::verify(&ssz_compact_mmr, &ssz_proofs[i], hash),
                 "SSZ proof {} should verify against CompactMmr64B32",
-                i
-            );
-        }
-    }
-
-    #[test]
-    fn test_conversion_between_representations() {
-        // Test conversion between MerkleMr64 and CompactMmr64 preserves invariants
-        let hashes: Vec<Hash32> = (0u8..17).map(|i| make_hash(&[i])).collect();
-
-        // Build MMR
-        let mut legacy_mmr = MerkleMr64::<Sha256Hasher>::new(64);
-        for hash in &hashes {
-            legacy_mmr.add_leaf(*hash).unwrap();
-        }
-
-        // Convert to compact
-        let compact_mmr: CompactMmr64<Hash32> = legacy_mmr.clone().into();
-
-        // Convert back to full
-        let restored_mmr: MerkleMr64<Sha256Hasher> = compact_mmr.clone().into();
-
-        // Verify invariants are preserved
-        assert_eq!(
-            legacy_mmr.num_entries(),
-            compact_mmr.num_entries(),
-            "num_entries should match after conversion to compact"
-        );
-        assert_eq!(
-            legacy_mmr.num_entries(),
-            restored_mmr.num_entries(),
-            "num_entries should match after roundtrip"
-        );
-
-        // Verify peaks match
-        let original_peaks = collect_peaks(&legacy_mmr);
-        let compact_peaks = collect_peaks(&compact_mmr);
-        let restored_peaks = collect_peaks(&restored_mmr);
-
-        assert_eq!(
-            original_peaks, compact_peaks,
-            "peaks should match after conversion to compact"
-        );
-        assert_eq!(
-            original_peaks, restored_peaks,
-            "peaks should match after roundtrip"
-        );
-
-        // Verify proofs still work after conversion
-        let mut proof_list: Vec<MerkleProof<Hash32>> = Vec::new();
-        let mut mmr_for_proofs = MerkleMr64::<Sha256Hasher>::new(64);
-        for hash in &hashes {
-            let proof = mmr_for_proofs
-                .add_leaf_updating_proof_list(*hash, &mut proof_list)
-                .unwrap();
-            proof_list.push(proof);
-        }
-
-        for (i, hash) in hashes.iter().enumerate() {
-            assert!(
-                Mmr::<Sha256Hasher>::verify(&compact_mmr, &proof_list[i], hash),
-                "proof {} should verify against converted compact MMR",
-                i
-            );
-            assert!(
-                Mmr::<Sha256Hasher>::verify(&restored_mmr, &proof_list[i], hash),
-                "proof {} should verify against roundtrip-restored MMR",
                 i
             );
         }
@@ -823,40 +643,20 @@ mod tests {
         let hashes: Vec<Hash32> = (0u8..13).map(|i| make_hash(&[i])).collect();
 
         // Build and generate proofs
-        let mut legacy_mmr = MerkleMr64::<Sha256Hasher>::new(64);
-        let mut proof_list: Vec<MerkleProof<Hash32>> = Vec::new();
+        let mut mmr_state = MmrStateVec::<Hash32>::new_empty();
+        let proof_list = insert_leaves_with_proofs(&mut mmr_state, &hashes);
+
+        // Create CompactMmr64 and its SSZ form
+        let mut compact_mmr = CompactMmr64::<Hash32> {
+            entries: 0,
+            cap_log2: 64,
+            roots: Vec::new(),
+        };
         for hash in &hashes {
-            let proof = legacy_mmr
-                .add_leaf_updating_proof_list(*hash, &mut proof_list)
-                .unwrap();
-            proof_list.push(proof);
-        }
-
-        // Test MerkleMr64B32 SSZ roundtrip
-        let ssz_flat = MerkleMr64B32::from_generic(&legacy_mmr);
-        let encoded_flat = ssz_flat.as_ssz_bytes();
-        let decoded_flat =
-            MerkleMr64B32::from_ssz_bytes(&encoded_flat).expect("SSZ decode should succeed");
-
-        // Verify MmrState methods work correctly after roundtrip
-        assert_eq!(ssz_flat.num_entries(), decoded_flat.num_entries());
-        assert_eq!(
-            collect_peaks(&ssz_flat),
-            collect_peaks(&decoded_flat),
-            "peaks should match after SSZ roundtrip for MerkleMr64B32"
-        );
-
-        // Verify proofs against decoded SSZ type
-        for (i, hash) in hashes.iter().enumerate() {
-            assert!(
-                Mmr::<Sha256Hasher>::verify(&decoded_flat, &proof_list[i], hash),
-                "proof {} should verify against SSZ-roundtripped MerkleMr64B32",
-                i
-            );
+            Mmr::<Sha256Hasher>::add_leaf(&mut compact_mmr, *hash).unwrap();
         }
 
         // Test CompactMmr64B32 SSZ roundtrip
-        let compact_mmr: CompactMmr64<Hash32> = legacy_mmr.into();
         let ssz_compact = CompactMmr64B32::from_generic(&compact_mmr);
         let encoded_compact = ssz_compact.as_ssz_bytes();
         let decoded_compact =
@@ -886,8 +686,8 @@ mod tests {
         // Test that proofs survive SSZ roundtrip
         let hashes: Vec<Hash32> = (0u8..10).map(|i| make_hash(&[i])).collect();
 
-        let mut new_state = NewMmrState::<Hash32>::new_empty();
-        let proofs = insert_leaves_with_proofs(&mut new_state, &hashes);
+        let mut mmr_state = MmrStateVec::<Hash32>::new_empty();
+        let proofs = insert_leaves_with_proofs(&mut mmr_state, &hashes);
 
         // Roundtrip each proof through SSZ and verify
         for (i, hash) in hashes.iter().enumerate() {
@@ -898,7 +698,7 @@ mod tests {
 
             // Verify decoded proof works
             assert!(
-                Mmr::<Sha256Hasher>::verify(&new_state, &decoded, hash),
+                Mmr::<Sha256Hasher>::verify(&mmr_state, &decoded, hash),
                 "SSZ-roundtripped proof {} should verify",
                 i
             );
@@ -920,95 +720,50 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "ssz")]
-    fn test_compact_to_flat_conversion_ssz() {
-        // Test conversion between CompactMmr64B32 and MerkleMr64B32
-        let hashes: Vec<Hash32> = (0u8..11).map(|i| make_hash(&[i])).collect();
-
-        // Build via MerkleMr64B32
-        let mut ssz_flat = MerkleMr64B32::new(64);
-        for hash in &hashes {
-            ssz_flat.add_leaf(*hash).unwrap();
-        }
-
-        // Convert to compact and back
-        let ssz_compact = ssz_flat.to_compact();
-        let restored_flat = MerkleMr64B32::from_compact(&ssz_compact);
-
-        // Verify num_entries and peaks match
-        assert_eq!(ssz_flat.num_entries(), ssz_compact.num_entries());
-        assert_eq!(ssz_flat.num_entries(), restored_flat.num_entries());
-        assert_eq!(
-            collect_peaks(&ssz_flat),
-            collect_peaks(&ssz_compact),
-            "peaks should match after compact conversion"
-        );
-        assert_eq!(
-            collect_peaks(&ssz_flat),
-            collect_peaks(&restored_flat),
-            "peaks should match after roundtrip through compact"
-        );
-    }
-
-    #[test]
     fn test_all_impls_iter_peaks_order() {
         // Verify that iter_peaks returns peaks in consistent order across impls
         let hashes: Vec<Hash32> = (0u8..7).map(|i| make_hash(&[i])).collect();
 
-        let mut new_state = NewMmrState::<Hash32>::new_empty();
-        let mut legacy_mmr = MerkleMr64::<Sha256Hasher>::new(64);
+        let mut mmr_state = MmrStateVec::<Hash32>::new_empty();
+        let mut compact_mmr = CompactMmr64::<Hash32> {
+            entries: 0,
+            cap_log2: 64,
+            roots: Vec::new(),
+        };
 
         for hash in &hashes {
-            Mmr::<Sha256Hasher>::add_leaf(&mut new_state, *hash).unwrap();
-            legacy_mmr.add_leaf(*hash).unwrap();
+            Mmr::<Sha256Hasher>::add_leaf(&mut mmr_state, *hash).unwrap();
+            Mmr::<Sha256Hasher>::add_leaf(&mut compact_mmr, *hash).unwrap();
         }
 
-        let compact_mmr: CompactMmr64<Hash32> = legacy_mmr.clone().into();
-
         // 7 elements = binary 111, so peaks at heights 0, 1, 2
-        let new_iter: Vec<_> = new_state.iter_peaks().collect();
-        let legacy_iter: Vec<_> = legacy_mmr.iter_peaks().collect();
+        let state_iter: Vec<_> = mmr_state.iter_peaks().collect();
         let compact_iter: Vec<_> = compact_mmr.iter_peaks().collect();
 
         assert_eq!(
-            new_iter.len(),
-            legacy_iter.len(),
-            "iterator lengths should match"
-        );
-        assert_eq!(
-            new_iter.len(),
+            state_iter.len(),
             compact_iter.len(),
             "iterator lengths should match"
         );
 
         // Check that heights are in ascending order and values match
-        for i in 0..new_iter.len() {
+        for i in 0..state_iter.len() {
             assert_eq!(
-                new_iter[i].0, legacy_iter[i].0,
+                state_iter[i].0, compact_iter[i].0,
                 "peak heights should match at position {}",
                 i
             );
             assert_eq!(
-                new_iter[i].0, compact_iter[i].0,
-                "peak heights should match at position {}",
-                i
-            );
-            assert_eq!(
-                new_iter[i].1, legacy_iter[i].1,
-                "peak values should match at position {}",
-                i
-            );
-            assert_eq!(
-                new_iter[i].1, compact_iter[i].1,
+                state_iter[i].1, compact_iter[i].1,
                 "peak values should match at position {}",
                 i
             );
         }
 
         // Verify ascending order
-        for i in 1..new_iter.len() {
+        for i in 1..state_iter.len() {
             assert!(
-                new_iter[i].0 > new_iter[i - 1].0,
+                state_iter[i].0 > state_iter[i - 1].0,
                 "peak heights should be in ascending order"
             );
         }
@@ -1017,25 +772,21 @@ mod tests {
     #[test]
     fn test_empty_mmr_cross_impl() {
         // Verify all implementations handle empty state correctly
-        let new_state = NewMmrState::<Hash32>::new_empty();
-        let legacy_mmr = MerkleMr64::<Sha256Hasher>::new(64);
+        let mmr_state = MmrStateVec::<Hash32>::new_empty();
         let compact_mmr = CompactMmr64::<Hash32> {
             entries: 0,
             cap_log2: 64,
             roots: Vec::new(),
         };
 
-        assert_eq!(new_state.num_entries(), 0);
-        assert_eq!(legacy_mmr.num_entries(), 0);
+        assert_eq!(mmr_state.num_entries(), 0);
         assert_eq!(compact_mmr.num_entries(), 0);
 
-        assert_eq!(new_state.iter_peaks().count(), 0);
-        assert_eq!(legacy_mmr.iter_peaks().count(), 0);
+        assert_eq!(mmr_state.iter_peaks().count(), 0);
         assert_eq!(compact_mmr.iter_peaks().count(), 0);
 
         // All should return None for any peak
-        assert!(new_state.get_peak(0).is_none());
-        assert!(legacy_mmr.get_peak(0).is_none());
+        assert!(mmr_state.get_peak(0).is_none());
         assert!(compact_mmr.get_peak(0).is_none());
     }
 }

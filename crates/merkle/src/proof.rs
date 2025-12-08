@@ -445,11 +445,13 @@ mod proofb32 {
 }
 
 #[cfg(test)]
-#[allow(deprecated)] // Tests use MerkleMr64 for proof generation
 mod tests {
     #[cfg(feature = "ssz")]
     use {
-        crate::{MerkleProof, MerkleProofB32, RawMerkleProofB32, Sha256Hasher, mmr::MerkleMr64},
+        crate::{
+            MerkleProof, MerkleProofB32, RawMerkleProofB32, Sha256Hasher, ext::Mmr,
+            mmr::CompactMmr64,
+        },
         sha2::{Digest, Sha256},
         ssz::{Decode, Encode},
         ssz_types::FixedBytes,
@@ -500,20 +502,20 @@ mod tests {
     // SSZ serialization tests
     #[cfg(feature = "ssz")]
     fn generate_proof_for_test() -> (MerkleProof<Hash32>, Hash32) {
-        let mut mmr: MerkleMr64<Sha256Hasher> = MerkleMr64::new(14);
+        let mut mmr = CompactMmr64::<Hash32>::new(64);
         let hash1: [u8; 32] = Sha256::digest(b"test1").into();
         let hash2: [u8; 32] = Sha256::digest(b"test2").into();
         let hash3: [u8; 32] = Sha256::digest(b"test3").into();
 
         // Add first leaf
         let mut proof_list = Vec::new();
-        mmr.add_leaf_updating_proof_list(hash1, &mut proof_list)
+        Mmr::<Sha256Hasher>::add_leaf_updating_proof_list(&mut mmr, hash1, &mut proof_list)
             .unwrap();
         // Add second leaf
-        let proof2 = mmr
-            .add_leaf_updating_proof_list(hash2, &mut proof_list)
-            .unwrap();
-        mmr.add_leaf_updating_proof_list(hash3, &mut proof_list)
+        let proof2 =
+            Mmr::<Sha256Hasher>::add_leaf_updating_proof_list(&mut mmr, hash2, &mut proof_list)
+                .unwrap();
+        Mmr::<Sha256Hasher>::add_leaf_updating_proof_list(&mut mmr, hash3, &mut proof_list)
             .unwrap();
 
         (proof2, hash2)

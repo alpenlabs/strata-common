@@ -2,25 +2,25 @@
 //!
 //! # MMR (Merkle Mountain Range)
 //!
-//! The primary MMR implementation is [`NewMmrState`] with the [`new_mmr::Mmr`] extension trait.
+//! The primary MMR implementation is [`MmrStateVec`] with the [`ext::Mmr`] extension trait.
 //!
 //! ```rust,ignore
-//! use strata_merkle::{NewMmrState, Sha256Hasher, new_mmr::Mmr};
+//! use strata_merkle::{MmrStateVec, Sha256Hasher, ext::Mmr};
 //!
-//! let mut mmr = NewMmrState::<[u8; 32]>::new_empty();
+//! let mut mmr = MmrStateVec::<[u8; 32]>::new_empty();
 //! Mmr::<Sha256Hasher>::add_leaf(&mut mmr, leaf)?;
 //! Mmr::<Sha256Hasher>::verify(&mmr, &proof, &leaf);
 //! ```
 //!
-//! For SSZ-compatible types, use [`CompactMmr64B32`] or [`MerkleMr64B32`] which implement
-//! the [`MmrState`] trait and work with the same `Mmr` extension methods.
+//! For SSZ-compatible types, use [`CompactMmr64B32`] which implements
+//! the [`MmrState`] trait and works with the same `Mmr` extension methods.
 //!
 //! # Modules
 //!
 //! - `hasher`: common hash and hasher traits/impls
-//! - `mmr`: MMR types (includes legacy [`mmr::MerkleMr64`] for compatibility)
-//! - `new_mmr`: [`Mmr`](new_mmr::Mmr) extension trait with MMR algorithms
-//! - `new_state`: [`NewMmrState`] - the primary MMR state implementation
+//! - `mmr`: [`CompactMmr64`] - compact MMR representation
+//! - `ext`: [`Mmr`](ext::Mmr) extension trait with MMR algorithms
+//! - `state`: [`MmrStateVec`] - the primary MMR state implementation
 //! - `traits`: [`MmrState`] trait for MMR state backends
 //! - `tree`: generic binary Merkle tree with proofs
 #![expect(
@@ -40,15 +40,15 @@ use criterion as _;
 mod codec_impl;
 pub mod error;
 pub mod hasher;
-pub mod mmr; // old
-pub mod proof; // old
+pub mod mmr;
+pub mod proof;
 pub mod tree;
 
-pub mod new_mmr;
-pub mod new_state;
+pub mod ext;
+pub mod state;
 pub mod traits;
 
-pub use new_state::NewMmrState;
+pub use state::MmrStateVec;
 pub use traits::MmrState;
 
 // Include SSZ-generated types

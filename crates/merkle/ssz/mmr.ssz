@@ -12,11 +12,3 @@ class CompactMmr64B32(Container):
     cap_log2: uint8
     ### Peak roots of the MMR (only non-zero peaks).
     roots: List[Bytes32, MAX_MMR_PEAKS]
-
-### Full MMR builder representation with all peak slots (32-byte hash version).
-### This stores ALL peak slots including zeros.
-class MerkleMr64B32(Container):
-    ### Total number of entries inserted into the MMR.
-    num: uint64
-    ### All peak slots (including zeros). Length determines capacity.
-    peaks: List[Bytes32, MAX_MMR_PEAKS]

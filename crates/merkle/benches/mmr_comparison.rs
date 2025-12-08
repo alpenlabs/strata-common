@@ -1,14 +1,13 @@
-//! Benchmark comparing old and new MMR implementations.
+//! Benchmark for MMR implementations.
 #![allow(missing_docs)]
 #![allow(unused_crate_dependencies)]
-#![allow(deprecated)] // Uses MerkleMr64 for comparison benchmarks
 
 // stupid linter issue
 use criterion as _;
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sha2::{Digest, Sha256};
-use strata_merkle::{Sha256Hasher, mmr::MerkleMr64, new_mmr::Mmr, new_state::NewMmrState};
+use strata_merkle::{MmrStateVec, Sha256Hasher, ext::Mmr, mmr::CompactMmr64};
 
 type Hash32 = [u8; 32];
 
@@ -23,28 +22,12 @@ fn generate_random_hashes(count: usize) -> Vec<Hash32> {
         .collect()
 }
 
-/// Benchmark for the old MMR implementation (MerkleMr64).
-fn bench_old_mmr(c: &mut Criterion, size: usize, hashes: Vec<Hash32>) {
-    let group_name = format!("old_mmr_{}", size);
+/// Benchmark for the MmrStateVec implementation.
+fn bench_mmr_state_vec(c: &mut Criterion, size: usize, hashes: Vec<Hash32>) {
+    let group_name = format!("mmr_state_vec_{}", size);
     c.bench_with_input(BenchmarkId::new(&group_name, size), &hashes, |b, hashes| {
         b.iter(|| {
-            // Calculate required capacity (log2 of size, rounded up)
-            let cap_log2 = (size as f64).log2().ceil() as usize;
-            let mut mmr = MerkleMr64::<Sha256Hasher>::new(cap_log2.max(1));
-            for hash in hashes.iter() {
-                mmr.add_leaf(*hash).expect("add_leaf failed");
-            }
-            black_box(mmr);
-        });
-    });
-}
-
-/// Benchmark for the new MMR implementation (NewMmrState + Mmr trait).
-fn bench_new_mmr(c: &mut Criterion, size: usize, hashes: Vec<Hash32>) {
-    let group_name = format!("new_mmr_{}", size);
-    c.bench_with_input(BenchmarkId::new(&group_name, size), &hashes, |b, hashes| {
-        b.iter(|| {
-            let mut mmr: NewMmrState<Hash32> = NewMmrState::new_empty();
+            let mut mmr: MmrStateVec<Hash32> = MmrStateVec::new_empty();
             for hash in hashes.iter() {
                 Mmr::<Sha256Hasher>::add_leaf(&mut mmr, *hash).expect("add_leaf failed");
             }
@@ -53,51 +36,29 @@ fn bench_new_mmr(c: &mut Criterion, size: usize, hashes: Vec<Hash32>) {
     });
 }
 
-/// Benchmark for inserting into a large pre-populated old MMR.
-fn bench_old_mmr_large_base(
-    c: &mut Criterion,
-    base_size: usize,
-    insert_size: usize,
-    hashes: Vec<Hash32>,
-) {
-    println!("Pre-populating old MMR with {} entries...", base_size);
-    let cap_log2 = ((base_size + insert_size) as f64).log2().ceil() as usize;
-    let mut base_mmr = MerkleMr64::<Sha256Hasher>::new(cap_log2.max(1));
-
-    let base_hashes = generate_random_hashes(base_size);
-    for hash in base_hashes.iter() {
-        base_mmr.add_leaf(*hash).expect("add_leaf failed");
-    }
-
-    let group_name = format!(
-        "old_mmr_{}M_to_{}M",
-        base_size / 1_000_000,
-        (base_size + insert_size) / 1_000_000
-    );
-    c.bench_with_input(
-        BenchmarkId::new(&group_name, insert_size),
-        &hashes,
-        |b, hashes| {
-            b.iter(|| {
-                let mut mmr = base_mmr.clone();
-                for hash in hashes.iter() {
-                    mmr.add_leaf(*hash).expect("add_leaf failed");
-                }
-                black_box(mmr);
-            });
-        },
-    );
+/// Benchmark for the CompactMmr64 implementation.
+fn bench_compact_mmr(c: &mut Criterion, size: usize, hashes: Vec<Hash32>) {
+    let group_name = format!("compact_mmr_{}", size);
+    c.bench_with_input(BenchmarkId::new(&group_name, size), &hashes, |b, hashes| {
+        b.iter(|| {
+            let mut mmr = CompactMmr64::<Hash32>::new(64);
+            for hash in hashes.iter() {
+                Mmr::<Sha256Hasher>::add_leaf(&mut mmr, *hash).expect("add_leaf failed");
+            }
+            black_box(mmr);
+        });
+    });
 }
 
-/// Benchmark for inserting into a large pre-populated new MMR.
-fn bench_new_mmr_large_base(
+/// Benchmark for inserting into a large pre-populated MmrStateVec.
+fn bench_mmr_state_vec_large_base(
     c: &mut Criterion,
     base_size: usize,
     insert_size: usize,
     hashes: Vec<Hash32>,
 ) {
-    println!("Pre-populating new MMR with {} entries...", base_size);
-    let mut base_mmr = NewMmrState::<Hash32>::new_empty();
+    println!("Pre-populating MmrStateVec with {} entries...", base_size);
+    let mut base_mmr = MmrStateVec::<Hash32>::new_empty();
 
     let base_hashes = generate_random_hashes(base_size);
     for hash in base_hashes.iter() {
@@ -105,7 +66,7 @@ fn bench_new_mmr_large_base(
     }
 
     let group_name = format!(
-        "new_mmr_{}M_to_{}M",
+        "mmr_state_vec_{}M_to_{}M",
         base_size / 1_000_000,
         (base_size + insert_size) / 1_000_000
     );
@@ -133,11 +94,11 @@ fn benchmark_mmr_implementations(c: &mut Criterion) {
         println!("Generating {size} random hashes...");
         let hashes = generate_random_hashes(size);
 
-        println!("Benchmarking old MMR with {size} entries...");
-        bench_old_mmr(c, size, hashes.clone());
+        println!("Benchmarking MmrStateVec with {size} entries...");
+        bench_mmr_state_vec(c, size, hashes.clone());
 
-        println!("Benchmarking new MMR with {size} entries...");
-        bench_new_mmr(c, size, hashes);
+        println!("Benchmarking CompactMmr64 with {size} entries...");
+        bench_compact_mmr(c, size, hashes);
     }
 
     // Large base benchmark: 34M -> 35M (inserting 1M into 34M)
@@ -152,11 +113,8 @@ fn benchmark_mmr_implementations(c: &mut Criterion) {
     println!("\nGenerating {insert_size_m}M hashes for large base benchmark...",);
     let insert_hashes = generate_random_hashes(insert_size);
 
-    println!("Benchmarking old MMR: {base_size_m}M -> {total_m}M entries...",);
-    bench_old_mmr_large_base(c, base_size, insert_size, insert_hashes.clone());
-
-    println!("Benchmarking new MMR: {base_size_m}M -> {total_m}M entries...",);
-    bench_new_mmr_large_base(c, base_size, insert_size, insert_hashes);
+    println!("Benchmarking MmrStateVec: {base_size_m}M -> {total_m}M entries...",);
+    bench_mmr_state_vec_large_base(c, base_size, insert_size, insert_hashes);
 }
 
 criterion_group! {
