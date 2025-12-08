@@ -190,7 +190,7 @@ mod mmr64b32 {
 
     type Hash32 = <Sha256Hasher as MerkleHasher>::Hash;
 
-    impl crate::CompactMmr64B32 {
+    impl crate::Mmr64B32 {
         /// Creates a concrete MMR from a generic CompactMmr64
         pub fn from_generic(mmr: &CompactMmr64<Hash32>) -> Self {
             let roots: Vec<_> = mmr
@@ -200,7 +200,6 @@ mod mmr64b32 {
                 .collect();
             Self {
                 entries: mmr.entries,
-                cap_log2: mmr.cap_log2,
                 roots: roots.into(),
             }
         }
@@ -209,7 +208,7 @@ mod mmr64b32 {
         pub fn to_generic(&self) -> CompactMmr64<Hash32> {
             CompactMmr64 {
                 entries: self.entries,
-                cap_log2: self.cap_log2,
+                cap_log2: 64,
                 roots: self.roots.iter().map(|fb| fb.0).collect(),
             }
         }
@@ -228,9 +227,9 @@ mod mmr64b32 {
         }
     }
 
-    impl MmrState<Hash32> for crate::CompactMmr64B32 {
+    impl MmrState<Hash32> for crate::Mmr64B32 {
         fn max_num_peaks(&self) -> u8 {
-            self.cap_log2
+            64
         }
 
         fn num_entries(&self) -> u64 {
@@ -258,7 +257,7 @@ mod mmr64b32 {
 
         fn set_peak(&mut self, i: u8, val: Hash32) -> bool {
             // Check if index is within bounds.
-            if i >= self.cap_log2 {
+            if i >= 64 {
                 return false;
             }
 
@@ -325,7 +324,7 @@ mod mmr64b32 {
         }
     }
 
-    /// Iterator that yields (peak_index, &hash) pairs from lowest to highest peak index for CompactMmr64B32.
+    /// Iterator that yields (peak_index, &hash) pairs from lowest to highest peak index for Mmr64B32.
     struct CompactPeaksIter<'a> {
         /// Remaining bits to process (gets bits cleared as we iterate).
         remaining: u64,
@@ -374,7 +373,7 @@ mod tests {
 
     #[cfg(feature = "ssz")]
     use {
-        crate::{CompactMmr64B32, MerkleProofB32},
+        crate::{MerkleProofB32, Mmr64B32},
         ssz::{Decode, Encode},
         ssz_types::FixedBytes,
     };
@@ -631,9 +630,8 @@ mod tests {
             .iter()
             .map(|r| FixedBytes::<32>::from(*r))
             .collect();
-        let ssz_mmr = CompactMmr64B32 {
+        let ssz_mmr = Mmr64B32 {
             entries: mmr.entries,
-            cap_log2: mmr.cap_log2,
             roots: roots_vec.into(),
         };
 
@@ -641,28 +639,25 @@ mod tests {
         let encoded = ssz_mmr.as_ssz_bytes();
 
         // Decode from SSZ
-        let decoded = CompactMmr64B32::from_ssz_bytes(&encoded).expect("Failed to decode");
+        let decoded = Mmr64B32::from_ssz_bytes(&encoded).expect("Failed to decode");
 
         // Verify fields match
         assert_eq!(ssz_mmr.entries, decoded.entries);
-        assert_eq!(ssz_mmr.cap_log2, decoded.cap_log2);
         assert_eq!(ssz_mmr.roots, decoded.roots);
     }
 
     #[test]
     #[cfg(feature = "ssz")]
     fn test_empty_compact_mmr_ssz() {
-        let ssz_mmr = CompactMmr64B32 {
+        let ssz_mmr = Mmr64B32 {
             entries: 0,
-            cap_log2: 0,
             roots: vec![].try_into().expect("empty vec should work"),
         };
 
         let encoded = ssz_mmr.as_ssz_bytes();
-        let decoded = CompactMmr64B32::from_ssz_bytes(&encoded).expect("Failed to decode");
+        let decoded = Mmr64B32::from_ssz_bytes(&encoded).expect("Failed to decode");
 
         assert_eq!(ssz_mmr.entries, decoded.entries);
-        assert_eq!(ssz_mmr.cap_log2, decoded.cap_log2);
         assert_eq!(ssz_mmr.roots, decoded.roots);
     }
 
@@ -678,17 +673,15 @@ mod tests {
                 .iter()
                 .map(|r| FixedBytes::<32>::from(*r))
                 .collect();
-            let ssz_mmr = CompactMmr64B32 {
+            let ssz_mmr = Mmr64B32 {
                 entries: mmr.entries,
-                cap_log2: mmr.cap_log2,
                 roots: roots_vec.into(),
             };
 
             let encoded = ssz_mmr.as_ssz_bytes();
-            let decoded = CompactMmr64B32::from_ssz_bytes(&encoded).expect("Failed to decode");
+            let decoded = Mmr64B32::from_ssz_bytes(&encoded).expect("Failed to decode");
 
             assert_eq!(ssz_mmr.entries, decoded.entries);
-            assert_eq!(ssz_mmr.cap_log2, decoded.cap_log2);
             assert_eq!(ssz_mmr.roots.len(), decoded.roots.len());
             for (orig, dec) in ssz_mmr.roots.iter().zip(decoded.roots.iter()) {
                 assert_eq!(orig, dec);
@@ -710,11 +703,10 @@ mod tests {
         Mmr::<Sha256Hasher>::add_leaf(&mut mmr, hash3).expect("add leaf");
 
         // Convert to concrete
-        let concrete_mmr = CompactMmr64B32::from_generic(&mmr);
+        let concrete_mmr = Mmr64B32::from_generic(&mmr);
 
         // Verify fields match
         assert_eq!(concrete_mmr.entries, mmr.entries);
-        assert_eq!(concrete_mmr.cap_log2, mmr.cap_log2);
         assert_eq!(concrete_mmr.roots.len(), mmr.roots.len());
         for (concrete_root, generic_root) in concrete_mmr.roots.iter().zip(mmr.roots.iter()) {
             assert_eq!(concrete_root.0, *generic_root);
@@ -737,7 +729,7 @@ mod tests {
                 .unwrap();
 
         // Convert to concrete types
-        let concrete_mmr = CompactMmr64B32::from_generic(&mmr);
+        let concrete_mmr = Mmr64B32::from_generic(&mmr);
         let concrete_proof = MerkleProofB32::from_generic(&proof);
 
         // Verify the proof using concrete types

@@ -449,7 +449,7 @@ mod tests {
     #[cfg(feature = "ssz")]
     use {
         crate::{
-            MerkleProof, MerkleProofB32, RawMerkleProofB32, Sha256Hasher, ext::Mmr,
+            MerkleProof, MerkleProofB32, Mmr64B32, RawMerkleProofB32, Sha256Hasher, ext::Mmr,
             mmr::CompactMmr64,
         },
         sha2::{Digest, Sha256},
