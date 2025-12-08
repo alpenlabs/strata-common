@@ -76,7 +76,7 @@ pub use hasher::MerkleHasher as StrataMerkle;
 // Common re-exports for ergonomic access at the crate root.
 pub use hasher::{MerkleHash, MerkleHasher};
 pub use mmr::CompactMmr64;
-pub use proof::{MerkleProof, RawMerkleProof};
+pub use proof::{MerkleProof, ProofData, ProofDataMut, RawMerkleProof};
 pub use tree::BinaryMerkleTree;
 
 // Re-export SSZ-generated concrete types (32-byte hash versions)

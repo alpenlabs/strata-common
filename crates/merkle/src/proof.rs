@@ -35,6 +35,15 @@ pub trait ProofData {
     fn cohashes_len(&self) -> usize;
 }
 
+/// Trait for mutable proof data, allowing proof updates.
+///
+/// This trait extends `ProofData` with mutable access to cohashes,
+/// enabling generic proof update operations during leaf insertion.
+pub trait ProofDataMut: ProofData {
+    /// Provides mutable access to the cohashes vector for updating during leaf insertion.
+    fn cohashes_vec_mut(&mut self) -> &mut Vec<Self::Hash>;
+}
+
 /// Computes the root obtained by applying a proof to a leaf.
 ///
 /// This generic function works with any type implementing `ProofData`.
@@ -254,6 +263,28 @@ impl<H: MerkleHash> RawProofData for RawMerkleProof<H> {
     }
 }
 
+impl<H: MerkleHash> ProofData for RawMerkleProof<H> {
+    type Hash = H;
+
+    fn index(&self) -> u64 {
+        0 // RawMerkleProof doesn't have an index
+    }
+
+    fn cohashes_iter(&self) -> impl Iterator<Item = &Self::Hash> {
+        self.cohashes.iter()
+    }
+
+    fn cohashes_len(&self) -> usize {
+        self.cohashes.len()
+    }
+}
+
+impl<H: MerkleHash> ProofDataMut for RawMerkleProof<H> {
+    fn cohashes_vec_mut(&mut self) -> &mut Vec<Self::Hash> {
+        &mut self.cohashes
+    }
+}
+
 #[cfg(feature = "ssz")]
 mod proofb32 {
     use super::*;
@@ -336,6 +367,26 @@ mod proofb32 {
             self.cohashes.len()
         }
     }
+
+    impl ProofData for RawMerkleProofB32 {
+        type Hash = [u8; 32];
+
+        fn index(&self) -> u64 {
+            0 // RawMerkleProofB32 doesn't have an index
+        }
+
+        fn cohashes_iter(&self) -> impl Iterator<Item = &Self::Hash> {
+            self.cohashes.iter().map(|fb| &fb.0)
+        }
+
+        fn cohashes_len(&self) -> usize {
+            self.cohashes.len()
+        }
+    }
+
+    // Note: ProofDataMut cannot be implemented for RawMerkleProofB32 because
+    // VariableList<FixedBytes<32>, 64> doesn't directly expose a Vec<[u8; 32]>.
+    // Updates must go through the SSZ-specific API.
 
     impl MerkleProofB32 {
         /// Creates a concrete proof from a generic MerkleProof
@@ -449,7 +500,7 @@ mod tests {
     #[cfg(feature = "ssz")]
     use {
         crate::{
-            MerkleProof, MerkleProofB32, Mmr64B32, RawMerkleProofB32, Sha256Hasher, ext::Mmr,
+            MerkleProof, MerkleProofB32, RawMerkleProofB32, Sha256Hasher, ext::Mmr,
             mmr::CompactMmr64,
         },
         sha2::{Digest, Sha256},
