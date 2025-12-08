@@ -2,17 +2,17 @@
 //!
 //! # MMR (Merkle Mountain Range)
 //!
-//! The primary MMR implementation is [`MmrStateVec`] with the [`ext::Mmr`] extension trait.
+//! The primary MMR implementation is [`CompactMmr64`] with the [`ext::Mmr`] extension trait.
 //!
 //! ```rust,ignore
-//! use strata_merkle::{MmrStateVec, Sha256Hasher, ext::Mmr};
+//! use strata_merkle::{CompactMmr64, Sha256Hasher, ext::Mmr};
 //!
-//! let mut mmr = MmrStateVec::<[u8; 32]>::new_empty();
+//! let mut mmr = CompactMmr64::<[u8; 32]>::new(64);
 //! Mmr::<Sha256Hasher>::add_leaf(&mut mmr, leaf)?;
 //! Mmr::<Sha256Hasher>::verify(&mmr, &proof, &leaf);
 //! ```
 //!
-//! For SSZ-compatible types, use `CompactMmr64B32` which implements
+//! For SSZ-compatible types, use `Mmr64B32` which implements
 //! the [`MmrState`] trait and works with the same `Mmr` extension methods.
 //!
 //! # Modules
@@ -20,7 +20,6 @@
 //! - `hasher`: common hash and hasher traits/impls
 //! - `mmr`: [`CompactMmr64`] - compact MMR representation
 //! - `ext`: [`Mmr`](ext::Mmr) extension trait with MMR algorithms
-//! - `state`: [`MmrStateVec`] - the primary MMR state implementation
 //! - `traits`: [`MmrState`] trait for MMR state backends
 //! - `tree`: generic binary Merkle tree with proofs
 #![expect(
@@ -45,10 +44,8 @@ pub mod proof;
 pub mod tree;
 
 pub mod ext;
-pub mod state;
 pub mod traits;
 
-pub use state::MmrStateVec;
 pub use traits::MmrState;
 
 // Include SSZ-generated types
