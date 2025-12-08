@@ -1,3 +1,5 @@
+//! A compact container for an MMR (Merkle mountain range) state.
+
 use crate::hasher::MerkleHash;
 use crate::traits::MmrState;
 

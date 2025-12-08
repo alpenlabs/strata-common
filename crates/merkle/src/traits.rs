@@ -1,3 +1,5 @@
+//! Traits for MMR state.
+
 use crate::hasher::MerkleHash;
 
 /// Abstracts over an MMR accumulator's state.

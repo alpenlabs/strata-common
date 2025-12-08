@@ -435,7 +435,7 @@ where
 mod mmr64b32 {
     use super::*;
     use crate::*;
-    use ssz_types::FixedBytes;
+    use ssz_types::{FixedBytes, VariableList};
 
     type Hash32 = <Sha256Hasher as MerkleHasher>::Hash;
 
@@ -480,6 +480,145 @@ mod mmr64b32 {
         fn get_root_for_height(&self, height: usize) -> Option<&Self::Hash> {
             let root_index = (self.entries & ((1 << height) - 1)).count_ones() as usize;
             self.roots.get(root_index).map(|fb| &fb.0)
+        }
+    }
+
+    impl MmrState<Hash32> for CompactMmr64B32 {
+        fn max_num_peaks(&self) -> u8 {
+            self.cap_log2
+        }
+
+        fn num_entries(&self) -> u64 {
+            self.entries
+        }
+
+        fn num_present_peaks(&self) -> u8 {
+            self.entries.count_ones() as u8
+        }
+
+        fn get_peak(&self, i: u8) -> Option<&Hash32> {
+            let bit_mask = 1u64 << i;
+
+            // Check if this peak is set.
+            if (self.entries & bit_mask) == 0 {
+                return None;
+            }
+
+            // Count how many set bits are BELOW peak_idx.
+            let bits_below = (self.entries & (bit_mask - 1)).count_ones() as usize;
+
+            // Since roots is in reverse order (highest first, lowest last),
+            // the index is: len - 1 - bits_below
+            let packed_idx = self.roots.len().checked_sub(1)?.checked_sub(bits_below)?;
+            self.roots.get(packed_idx).map(|fb| &fb.0)
+        }
+
+        fn set_peak(&mut self, i: u8, val: Hash32) -> bool {
+            // Check if index is within bounds.
+            if i >= self.cap_log2 {
+                return false;
+            }
+
+            let bit_mask = 1u64 << i;
+            let is_currently_set = (self.entries & bit_mask) != 0;
+
+            // Convert VariableList to Vec for manipulation
+            let mut roots_vec: Vec<FixedBytes<32>> = self.roots.iter().cloned().collect();
+
+            if Hash32::is_zero(&val) {
+                // Unsetting the peak.
+                if !is_currently_set {
+                    return false; // Already unset.
+                }
+
+                // Find and remove from roots.
+                let bits_below = (self.entries & (bit_mask - 1)).count_ones() as usize;
+                let packed_idx = roots_vec.len() - 1 - bits_below;
+                if packed_idx < roots_vec.len() {
+                    roots_vec.remove(packed_idx);
+                    self.entries &= !bit_mask; // Clear the bit.
+                    self.roots = roots_vec.into();
+                    return true;
+                }
+
+                false
+            } else {
+                // Setting the peak.
+                let val_fb = FixedBytes::<32>::from(val);
+                if is_currently_set {
+                    // Update existing peak in place.
+                    let bits_below = (self.entries & (bit_mask - 1)).count_ones() as usize;
+                    let packed_idx = roots_vec.len() - 1 - bits_below;
+                    if let Some(fb) = roots_vec.get_mut(packed_idx) {
+                        *fb = val_fb;
+                        self.roots = roots_vec.into();
+                        return true;
+                    }
+
+                    false
+                } else {
+                    // Insert new peak at correct position (maintaining reverse order).
+                    // Count how many set bits are *above* index i to find insertion point.
+                    let bits_above = if i >= 63 {
+                        0 // No bits above index 63
+                    } else {
+                        (self.entries >> (i + 1)).count_ones() as usize
+                    };
+
+                    if bits_above <= roots_vec.len() {
+                        roots_vec.insert(bits_above, val_fb);
+                        self.entries |= bit_mask; // Set the bit
+                        self.roots = roots_vec.into();
+                        return true;
+                    }
+
+                    false
+                }
+            }
+        }
+
+        fn iter_peaks<'a>(&'a self) -> impl Iterator<Item = (u8, &'a Hash32)> + 'a {
+            CompactPeaksIter {
+                remaining: self.entries,
+                original: self.entries,
+                roots: &self.roots,
+            }
+        }
+    }
+
+    /// Iterator that yields (peak_index, &hash) pairs from lowest to highest peak index for CompactMmr64B32.
+    struct CompactPeaksIter<'a> {
+        /// Remaining bits to process (gets bits cleared as we iterate).
+        remaining: u64,
+
+        /// Original entries value (needed to compute packed index).
+        original: u64,
+
+        /// Reference to the roots array.
+        roots: &'a VariableList<FixedBytes<32>, 64>,
+    }
+
+    impl<'a> Iterator for CompactPeaksIter<'a> {
+        type Item = (u8, &'a Hash32);
+
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.remaining == 0 {
+                return None;
+            }
+
+            // Find the index of the lowest set bit.
+            let peak_idx = self.remaining.trailing_zeros() as u8;
+
+            // Clear the lowest set bit.
+            self.remaining &= self.remaining - 1;
+
+            // Compute the packed index using bit manipulation.
+            // Count how many set bits are below peak_idx in the original value.
+            let bit_mask = 1u64 << peak_idx;
+            let bits_below = (self.original & (bit_mask - 1)).count_ones() as usize;
+            let packed_idx = self.roots.len() - 1 - bits_below;
+
+            self.roots.get(packed_idx).map(|fb| (peak_idx, &fb.0))
         }
     }
 
@@ -566,6 +705,80 @@ mod mmr64b32 {
             let generic_mmr: MerkleMr64<Sha256Hasher> = generic_compact.into();
             // Finally convert to concrete
             Self::from_generic(&generic_mmr)
+        }
+    }
+
+    impl MmrState<Hash32> for MerkleMr64B32 {
+        fn max_num_peaks(&self) -> u8 {
+            self.peaks.len() as u8
+        }
+
+        fn num_entries(&self) -> u64 {
+            self.num
+        }
+
+        fn num_present_peaks(&self) -> u8 {
+            self.num.count_ones() as u8
+        }
+
+        fn get_peak(&self, i: u8) -> Option<&Hash32> {
+            let i_usize = i as usize;
+            if i_usize >= self.peaks.len() {
+                return None;
+            }
+
+            let peak = &self.peaks[i_usize];
+            let hash = &peak.0;
+
+            // Check if this peak is set (bit is set in num and hash is not zero)
+            if (self.num >> i) & 1 == 1 && !Hash32::is_zero(hash) {
+                Some(hash)
+            } else {
+                None
+            }
+        }
+
+        fn set_peak(&mut self, i: u8, val: Hash32) -> bool {
+            let i_usize = i as usize;
+            if i_usize >= self.peaks.len() {
+                return false;
+            }
+
+            let bit_mask = 1u64 << i;
+            let was_set = (self.num & bit_mask) != 0;
+
+            if Hash32::is_zero(&val) {
+                // Unsetting the peak.
+                if was_set {
+                    self.peaks[i_usize] = FixedBytes::<32>::zero();
+                    self.num &= !bit_mask; // Clear the bit
+                    true
+                } else {
+                    false // Already unset
+                }
+            } else {
+                // Setting the peak.
+                let val_fb = FixedBytes::<32>::from(val);
+                let was_zero = Hash32::is_zero(&self.peaks[i_usize].0);
+                self.peaks[i_usize] = val_fb;
+                if !was_set {
+                    self.num |= bit_mask; // Set the bit
+                }
+                was_set && !was_zero // Return true if we overwrote a non-zero value
+            }
+        }
+
+        fn iter_peaks<'a>(&'a self) -> impl Iterator<Item = (u8, &'a Hash32)> + 'a {
+            self.peaks.iter().enumerate().filter_map(|(i, fb)| {
+                let hash = &fb.0;
+                let i_u8 = i as u8;
+                // Only include peaks that are set (bit is set in num and hash is not zero)
+                if (self.num >> i_u8) & 1 == 1 && !Hash32::is_zero(hash) {
+                    Some((i_u8, hash))
+                } else {
+                    None
+                }
+            })
         }
     }
 }
