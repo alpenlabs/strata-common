@@ -4,49 +4,7 @@ use std::marker::PhantomData;
 
 use crate::error::MerkleError;
 use crate::hasher::{MerkleHash, MerkleHasher};
-use crate::proof::{MerkleProof, ProofData, RawMerkleProof, verify_with_root};
-
-/// Trait for compact MMR data.
-///
-/// This trait is implemented by both `CompactMmr64<H>` and `CompactMmr64B32`,
-/// allowing generic algorithms to work with either representation.
-pub trait CompactMmrData {
-    /// The hash type used in this MMR.
-    type Hash: MerkleHash;
-
-    /// Returns the number of entries in the MMR.
-    fn entries(&self) -> u64;
-
-    /// Returns the capacity log2.
-    fn cap_log2(&self) -> u8;
-
-    /// Returns an iterator over the roots.
-    fn roots_iter(&self) -> impl Iterator<Item = &Self::Hash>;
-
-    /// Gets the root for verifying a proof at the given height.
-    ///
-    /// The height corresponds to the number of cohashes in the proof.
-    /// This directly computes and returns the required root without
-    /// materializing all roots.
-    fn get_root_for_height(&self, height: usize) -> Option<&Self::Hash>;
-}
-
-/// Verifies a proof for a leaf against this MMR.
-///
-/// This generic function works with any types implementing `CompactMmrData` and `ProofData`.
-pub fn verify<C, P, MH>(mmr: &C, proof: &P, leaf: &C::Hash) -> bool
-where
-    C: CompactMmrData,
-    P: ProofData<Hash = C::Hash>,
-    MH: MerkleHasher<Hash = C::Hash>,
-{
-    let height = proof.cohashes_len();
-    let root = match mmr.get_root_for_height(height) {
-        Some(r) => r,
-        None => return false,
-    };
-    verify_with_root::<P, MH>(proof, root, leaf)
-}
+use crate::proof::{MerkleProof, RawMerkleProof};
 
 /// Compact representation of the MMR that can hold upto 2**64 elements.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -67,28 +25,13 @@ impl<H: MerkleHash> CompactMmr64<H> {
     where
         MH: MerkleHasher<Hash = H>,
     {
-        verify::<Self, MerkleProof<H>, MH>(self, proof, leaf)
-    }
-}
-
-impl<H: MerkleHash> CompactMmrData for CompactMmr64<H> {
-    type Hash = H;
-
-    fn entries(&self) -> u64 {
-        self.entries
-    }
-
-    fn cap_log2(&self) -> u8 {
-        self.cap_log2
-    }
-
-    fn roots_iter(&self) -> impl Iterator<Item = &Self::Hash> {
-        self.roots.iter()
-    }
-
-    fn get_root_for_height(&self, height: usize) -> Option<&Self::Hash> {
+        let height = proof.cohashes().len();
         let root_index = (self.entries & ((1 << height) - 1)).count_ones() as usize;
-        self.roots.get(root_index)
+        let root = match self.roots.get(root_index) {
+            Some(r) => r,
+            None => return false,
+        };
+        proof.verify_with_root::<MH>(root, leaf)
     }
 }
 
@@ -434,7 +377,7 @@ where
 #[cfg(feature = "ssz")]
 mod mmr64b32 {
     use super::*;
-    use crate::*;
+    use crate::{new_mmr::Mmr, *};
     use ssz_types::{FixedBytes, VariableList};
 
     type Hash32 = <Sha256Hasher as MerkleHasher>::Hash;
@@ -458,28 +401,7 @@ mod mmr64b32 {
         ///
         /// This method uses Sha256Hasher as the merkle hasher implementation.
         pub fn verify(&self, proof: &MerkleProofB32, leaf: &[u8; 32]) -> bool {
-            verify::<Self, MerkleProofB32, Sha256Hasher>(self, proof, leaf)
-        }
-    }
-
-    impl CompactMmrData for CompactMmr64B32 {
-        type Hash = [u8; 32];
-
-        fn entries(&self) -> u64 {
-            self.entries
-        }
-
-        fn cap_log2(&self) -> u8 {
-            self.cap_log2
-        }
-
-        fn roots_iter(&self) -> impl Iterator<Item = &Self::Hash> {
-            self.roots.iter().map(|fb| &fb.0)
-        }
-
-        fn get_root_for_height(&self, height: usize) -> Option<&Self::Hash> {
-            let root_index = (self.entries & ((1 << height) - 1)).count_ones() as usize;
-            self.roots.get(root_index).map(|fb| &fb.0)
+            Mmr::<Sha256Hasher>::verify(self, proof, leaf)
         }
     }
 

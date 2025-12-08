@@ -3,7 +3,7 @@
 
 use crate::error::MerkleError;
 use crate::hasher::MerkleHasher;
-use crate::proof::{MerkleProof, RawMerkleProof};
+use crate::proof::{MerkleProof, ProofData, RawMerkleProof};
 use crate::traits::MmrState;
 
 /// Extension trait that provides MMR algorithms over any [`MmrState`] implementation.
@@ -95,13 +95,16 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
     }
 
     /// Verifies a proof for a leaf against the current MMR state.
-    fn verify(&self, proof: &MerkleProof<MH::Hash>, leaf: &MH::Hash) -> bool {
-        let height = proof.cohashes().len();
+    ///
+    /// This method accepts any proof type implementing [`ProofData`], including
+    /// both `MerkleProof<H>` and SSZ-specific types like `MerkleProofB32`.
+    fn verify<P: ProofData<Hash = MH::Hash>>(&self, proof: &P, leaf: &MH::Hash) -> bool {
+        let height = proof.cohashes_len();
         let root = match self.get_peak(height as u8) {
             Some(r) => r,
             None => return false,
         };
-        proof.verify_with_root::<MH>(root, leaf)
+        crate::proof::verify_with_root::<P, MH>(proof, root, leaf)
     }
 
     /// Adds a new leaf, returning an updated version of the proof passed.
