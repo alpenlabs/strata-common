@@ -12,7 +12,7 @@
 //! Mmr::<Sha256Hasher>::verify(&mmr, &proof, &leaf);
 //! ```
 //!
-//! For SSZ-compatible types, use [`CompactMmr64B32`] which implements
+//! For SSZ-compatible types, use `CompactMmr64B32` which implements
 //! the [`MmrState`] trait and works with the same `Mmr` extension methods.
 //!
 //! # Modules
