@@ -3,7 +3,7 @@
 
 use crate::error::MerkleError;
 use crate::hasher::MerkleHasher;
-use crate::proof::{MerkleProof, ProofData, RawMerkleProof};
+use crate::proof::{MerkleProof, ProofData, RawMerkleProof, verify_with_root};
 use crate::traits::MmrState;
 
 /// Extension trait that provides MMR algorithms over any [`MmrState`] implementation.
@@ -13,11 +13,66 @@ use crate::traits::MmrState;
 /// work with any state backend implementing [`MmrState`].
 pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
     /// Returns if the MMR is empty.
+    fn is_empty(&self) -> bool;
+
+    /// Returns the maximum capacity of the MMR based on `max_num_peaks`.
+    fn max_capacity(&self) -> u64;
+
+    /// Checks if we can insert a new element. Returns error if at capacity.
+    fn check_capacity(&self) -> Result<(), MerkleError>;
+
+    /// Adds a new leaf to the MMR.
+    fn add_leaf(&mut self, leaf: MH::Hash) -> Result<(), MerkleError>;
+
+    /// If the MMR has a power-of-2 number of elements, extracts the single
+    /// populated root that commits to all of them.
+    fn get_single_root(&self) -> Result<MH::Hash, MerkleError>;
+
+    /// Verifies a proof for a leaf against the current MMR state.
+    ///
+    /// This method accepts any proof type implementing [`ProofData`], including
+    /// both `MerkleProof<H>` and SSZ-specific types like `MerkleProofB32`.
+    fn verify<P: ProofData<Hash = MH::Hash>>(&self, proof: &P, leaf: &MH::Hash) -> bool;
+
+    /// Adds a new leaf, returning an updated version of the proof passed.
+    ///
+    /// If the proof passed does not match the accumulator, then the returned
+    /// proof will be nonsensical.
+    fn add_leaf_updating_proof(
+        &mut self,
+        next: MH::Hash,
+        proof: &MerkleProof<MH::Hash>,
+    ) -> Result<MerkleProof<MH::Hash>, MerkleError>;
+
+    /// Adds a leaf to the accumulator, updating the proofs in a provided list
+    /// of proofs in-place, and returning a proof to the new leaf.
+    fn add_leaf_updating_proof_list(
+        &mut self,
+        next: MH::Hash,
+        proof_list: &mut [MerkleProof<MH::Hash>],
+    ) -> Result<MerkleProof<MH::Hash>, MerkleError>;
+
+    /// Helper to update a single proof during leaf insertion.
+    fn update_single_proof<MH2: MerkleHasher<Hash = MH::Hash>>(
+        proof: &mut RawMerkleProof<MH::Hash>,
+        proof_index: u64,
+        leaf_parent_tree: u64,
+        current_height: usize,
+        prev_node: MH::Hash,
+        current_node: MH::Hash,
+    );
+}
+
+/// Blanket implementation of [`Mmr`] for any type implementing [`MmrState`].
+impl<MH, S> Mmr<MH> for S
+where
+    MH: MerkleHasher,
+    S: MmrState<MH::Hash>,
+{
     fn is_empty(&self) -> bool {
         self.num_entries() == 0
     }
 
-    /// Returns the maximum capacity of the MMR based on `max_num_peaks`.
     fn max_capacity(&self) -> u64 {
         let peaks = self.max_num_peaks();
         if peaks == 0 {
@@ -29,17 +84,15 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
         }
     }
 
-    /// Checks if we can insert a new element. Returns error if at capacity.
     fn check_capacity(&self) -> Result<(), MerkleError> {
-        if self.num_entries() == self.max_capacity() {
+        if self.num_entries() == <S as Mmr<MH>>::max_capacity(self) {
             return Err(MerkleError::MaxCapacity);
         }
         Ok(())
     }
 
-    /// Adds a new leaf to the MMR.
     fn add_leaf(&mut self, leaf: MH::Hash) -> Result<(), MerkleError> {
-        self.check_capacity()?;
+        <S as Mmr<MH>>::check_capacity(self)?;
 
         let num = self.num_entries();
 
@@ -75,8 +128,6 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
         Ok(())
     }
 
-    /// If the MMR has a power-of-2 number of elements, extracts the single
-    /// populated root that commits to all of them.
     fn get_single_root(&self) -> Result<MH::Hash, MerkleError> {
         let num = self.num_entries();
 
@@ -94,34 +145,26 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
             .ok_or(MerkleError::NoElements)
     }
 
-    /// Verifies a proof for a leaf against the current MMR state.
-    ///
-    /// This method accepts any proof type implementing [`ProofData`], including
-    /// both `MerkleProof<H>` and SSZ-specific types like `MerkleProofB32`.
     fn verify<P: ProofData<Hash = MH::Hash>>(&self, proof: &P, leaf: &MH::Hash) -> bool {
         let height = proof.cohashes_len();
         let root = match self.get_peak(height as u8) {
             Some(r) => r,
             None => return false,
         };
-        crate::proof::verify_with_root::<P, MH>(proof, root, leaf)
+        verify_with_root::<P, MH>(proof, root, leaf)
     }
 
-    /// Adds a new leaf, returning an updated version of the proof passed.
-    ///
-    /// If the proof passed does not match the accumulator, then the returned
-    /// proof will be nonsensical.
     fn add_leaf_updating_proof(
         &mut self,
         next: MH::Hash,
         proof: &MerkleProof<MH::Hash>,
     ) -> Result<MerkleProof<MH::Hash>, MerkleError> {
-        self.check_capacity()?;
+        <S as Mmr<MH>>::check_capacity(self)?;
 
         let num = self.num_entries();
 
         if num == 0 {
-            self.add_leaf(next)?;
+            <S as Mmr<MH>>::add_leaf(self, next)?;
             return Ok(MerkleProof::new_zero());
         }
 
@@ -142,7 +185,7 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
             let leaf_parent_tree = new_leaf_index >> (current_height + 1);
 
             let proof_index = updated_proof.index();
-            Self::update_single_proof::<MH>(
+            <S as Mmr<MH>>::update_single_proof::<MH>(
                 updated_proof.inner_mut(),
                 proof_index,
                 leaf_parent_tree,
@@ -163,19 +206,17 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
         Ok(updated_proof)
     }
 
-    /// Adds a leaf to the accumulator, updating the proofs in a provided list
-    /// of proofs in-place, and returning a proof to the new leaf.
     fn add_leaf_updating_proof_list(
         &mut self,
         next: MH::Hash,
         proof_list: &mut [MerkleProof<MH::Hash>],
     ) -> Result<MerkleProof<MH::Hash>, MerkleError> {
-        self.check_capacity()?;
+        <S as Mmr<MH>>::check_capacity(self)?;
 
         let num = self.num_entries();
 
         if num == 0 {
-            self.add_leaf(next)?;
+            <S as Mmr<MH>>::add_leaf(self, next)?;
             return Ok(MerkleProof::new_zero());
         }
 
@@ -201,7 +242,7 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
             // Update all existing proofs.
             for proof in proof_list.iter_mut() {
                 let index = proof.index();
-                Self::update_single_proof::<MH>(
+                <S as Mmr<MH>>::update_single_proof::<MH>(
                     proof.inner_mut(),
                     index,
                     leaf_parent_tree,
@@ -212,7 +253,7 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
             }
 
             // Update the new proof.
-            Self::update_single_proof::<MH>(
+            <S as Mmr<MH>>::update_single_proof::<MH>(
                 new_proof.inner_mut(),
                 new_proof_index,
                 leaf_parent_tree,
@@ -233,7 +274,6 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
         Ok(new_proof)
     }
 
-    /// Helper to update a single proof during leaf insertion.
     fn update_single_proof<MH2: MerkleHasher<Hash = MH::Hash>>(
         proof: &mut RawMerkleProof<MH::Hash>,
         proof_index: u64,
@@ -258,14 +298,6 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
             }
         }
     }
-}
-
-/// Blanket implementation of [`Mmr`] for any type implementing [`MmrState`].
-impl<MH, S> Mmr<MH> for S
-where
-    MH: MerkleHasher,
-    S: MmrState<MH::Hash>,
-{
 }
 
 #[cfg(test)]
