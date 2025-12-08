@@ -22,17 +22,14 @@ pub struct CompactMmr64<H: MerkleHash> {
 
 impl<H: MerkleHash> CompactMmr64<H> {
     /// Verifies a single proof for a leaf.
+    ///
+    /// This method delegates to the unified [`Mmr::verify`](crate::new_mmr::Mmr::verify)
+    /// trait method.
     pub fn verify<MH>(&self, proof: &MerkleProof<H>, leaf: &H) -> bool
     where
         MH: MerkleHasher<Hash = H>,
     {
-        let height = proof.cohashes().len();
-        let root_index = (self.entries & ((1 << height) - 1)).count_ones() as usize;
-        let root = match self.roots.get(root_index) {
-            Some(r) => r,
-            None => return false,
-        };
-        proof.verify_with_root::<MH>(root, leaf)
+        crate::new_mmr::Mmr::<MH>::verify(self, proof, leaf)
     }
 
     /// Given a peak index, gets the index in the `roots` field
@@ -47,12 +44,10 @@ impl<H: MerkleHash> CompactMmr64<H> {
         }
 
         // Count how many set bits are BELOW peak_idx.
-        // Mask off bits at and above peak_idx, then count remaining set bits.
+        // Roots are stored in forward order (lowest height first), so the
+        // index equals the number of peaks below this one.
         let bits_below = (self.entries & (bit_mask - 1)).count_ones() as usize;
-
-        // Since roots is in reverse order (highest first, lowest last),
-        // the index is: len - 1 - bits_below
-        self.roots.len().checked_sub(1)?.checked_sub(bits_below)
+        Some(bits_below)
     }
 }
 
@@ -91,11 +86,12 @@ impl<H: MerkleHash> MmrState<H> for CompactMmr64<H> {
 
             // Find and remove from roots.
             if let Some(packed_idx) = self.get_packed_index(i)
-                && packed_idx < self.roots.len() {
-                    self.roots.remove(packed_idx);
-                    self.entries &= !bit_mask; // Clear the bit.
-                    return true;
-                }
+                && packed_idx < self.roots.len()
+            {
+                self.roots.remove(packed_idx);
+                self.entries &= !bit_mask; // Clear the bit.
+                return true;
+            }
 
             false
         } else {
@@ -103,23 +99,20 @@ impl<H: MerkleHash> MmrState<H> for CompactMmr64<H> {
             if is_currently_set {
                 // Update existing peak in place.
                 if let Some(packed_idx) = self.get_packed_index(i)
-                    && let Some(root) = self.roots.get_mut(packed_idx) {
-                        *root = val;
-                        return true;
-                    }
+                    && let Some(root) = self.roots.get_mut(packed_idx)
+                {
+                    *root = val;
+                    return true;
+                }
 
                 false
             } else {
-                // Insert new peak at correct position (maintaining reverse order).
-                // Count how many set bits are *above* index i to find insertion point.
-                let bits_above = if i >= 63 {
-                    0 // No bits above index 63
-                } else {
-                    (self.entries >> (i + 1)).count_ones() as usize
-                };
+                // Insert new peak at correct position (maintaining forward order).
+                // Count how many set bits are *below* index i to find insertion point.
+                let bits_below = (self.entries & ((1u64 << i) - 1)).count_ones() as usize;
 
-                if bits_above <= self.roots.len() {
-                    self.roots.insert(bits_above, val);
+                if bits_below <= self.roots.len() {
+                    self.roots.insert(bits_below, val);
                     self.entries |= bit_mask; // Set the bit
                     return true;
                 }
@@ -165,12 +158,12 @@ impl<'a, H> Iterator for CompactMmr64PeaksIter<'a, H> {
         self.remaining &= self.remaining - 1;
 
         // Compute the packed index using bit manipulation.
-        // Count how many set bits are below peak_idx in the original value.
+        // Roots are stored in forward order (lowest height first), so the
+        // index equals the number of peaks below this one.
         let bit_mask = 1u64 << peak_idx;
         let bits_below = (self.original & (bit_mask - 1)).count_ones() as usize;
-        let packed_idx = self.roots.len().checked_sub(1)?.checked_sub(bits_below)?;
 
-        self.roots.get(packed_idx).map(|root| (peak_idx, root))
+        self.roots.get(bits_below).map(|root| (peak_idx, root))
     }
 }
 
@@ -452,9 +445,11 @@ where
     }
 
     /// Verifies a single proof for a leaf against the current MMR state.
+    ///
+    /// This method delegates to the unified [`Mmr::verify`](crate::new_mmr::Mmr::verify)
+    /// trait method.
     pub fn verify(&self, proof: &MerkleProof<MH::Hash>, leaf: &MH::Hash) -> bool {
-        let root = &self.peaks[proof.cohashes().len()];
-        proof.verify_with_root::<MH>(root, leaf)
+        crate::new_mmr::Mmr::<MH>::verify(self, proof, leaf)
     }
 
     #[allow(dead_code, clippy::allow_attributes, reason = "used for testing")]
@@ -609,7 +604,8 @@ mod mmr64b32 {
 
         /// Verifies a single proof for a leaf.
         ///
-        /// This method uses Sha256Hasher as the merkle hasher implementation.
+        /// This method delegates to the unified [`Mmr::verify`](crate::new_mmr::Mmr::verify)
+        /// trait method using Sha256Hasher as the merkle hasher implementation.
         pub fn verify(&self, proof: &MerkleProofB32, leaf: &[u8; 32]) -> bool {
             Mmr::<Sha256Hasher>::verify(self, proof, leaf)
         }
@@ -637,12 +633,10 @@ mod mmr64b32 {
             }
 
             // Count how many set bits are BELOW peak_idx.
+            // Roots are stored in forward order (lowest height first), so the
+            // index equals the number of peaks below this one.
             let bits_below = (self.entries & (bit_mask - 1)).count_ones() as usize;
-
-            // Since roots is in reverse order (highest first, lowest last),
-            // the index is: len - 1 - bits_below
-            let packed_idx = self.roots.len().checked_sub(1)?.checked_sub(bits_below)?;
-            self.roots.get(packed_idx).map(|fb| &fb.0)
+            self.roots.get(bits_below).map(|fb| &fb.0)
         }
 
         fn set_peak(&mut self, i: u8, val: Hash32) -> bool {
@@ -664,10 +658,10 @@ mod mmr64b32 {
                 }
 
                 // Find and remove from roots.
+                // Roots are stored in forward order (lowest height first).
                 let bits_below = (self.entries & (bit_mask - 1)).count_ones() as usize;
-                let packed_idx = roots_vec.len() - 1 - bits_below;
-                if packed_idx < roots_vec.len() {
-                    roots_vec.remove(packed_idx);
+                if bits_below < roots_vec.len() {
+                    roots_vec.remove(bits_below);
                     self.entries &= !bit_mask; // Clear the bit.
                     self.roots = roots_vec.into();
                     return true;
@@ -679,9 +673,9 @@ mod mmr64b32 {
                 let val_fb = FixedBytes::<32>::from(val);
                 if is_currently_set {
                     // Update existing peak in place.
+                    // Roots are stored in forward order (lowest height first).
                     let bits_below = (self.entries & (bit_mask - 1)).count_ones() as usize;
-                    let packed_idx = roots_vec.len() - 1 - bits_below;
-                    if let Some(fb) = roots_vec.get_mut(packed_idx) {
+                    if let Some(fb) = roots_vec.get_mut(bits_below) {
                         *fb = val_fb;
                         self.roots = roots_vec.into();
                         return true;
@@ -689,16 +683,12 @@ mod mmr64b32 {
 
                     false
                 } else {
-                    // Insert new peak at correct position (maintaining reverse order).
-                    // Count how many set bits are *above* index i to find insertion point.
-                    let bits_above = if i >= 63 {
-                        0 // No bits above index 63
-                    } else {
-                        (self.entries >> (i + 1)).count_ones() as usize
-                    };
+                    // Insert new peak at correct position (maintaining forward order).
+                    // Count how many set bits are *below* index i to find insertion point.
+                    let bits_below = (self.entries & ((1u64 << i) - 1)).count_ones() as usize;
 
-                    if bits_above <= roots_vec.len() {
-                        roots_vec.insert(bits_above, val_fb);
+                    if bits_below <= roots_vec.len() {
+                        roots_vec.insert(bits_below, val_fb);
                         self.entries |= bit_mask; // Set the bit
                         self.roots = roots_vec.into();
                         return true;
@@ -745,12 +735,12 @@ mod mmr64b32 {
             self.remaining &= self.remaining - 1;
 
             // Compute the packed index using bit manipulation.
-            // Count how many set bits are below peak_idx in the original value.
+            // Roots are stored in forward order (lowest height first), so the
+            // index equals the number of peaks below this one.
             let bit_mask = 1u64 << peak_idx;
             let bits_below = (self.original & (bit_mask - 1)).count_ones() as usize;
-            let packed_idx = self.roots.len() - 1 - bits_below;
 
-            self.roots.get(packed_idx).map(|fb| (peak_idx, &fb.0))
+            self.roots.get(bits_below).map(|fb| (peak_idx, &fb.0))
         }
     }
 
