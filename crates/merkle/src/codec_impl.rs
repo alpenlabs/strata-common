@@ -83,8 +83,9 @@ where
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // Tests use MerkleMr64 for roundtrip testing
 mod tests {
-    use crate::MerkleMr64;
+    use crate::mmr::MerkleMr64;
 
     use super::*;
     use proptest::prelude::*;

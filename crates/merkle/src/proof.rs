@@ -445,10 +445,11 @@ mod proofb32 {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // Tests use MerkleMr64 for proof generation
 mod tests {
     #[cfg(feature = "ssz")]
     use {
-        crate::{MerkleMr64, MerkleProof, MerkleProofB32, RawMerkleProofB32, Sha256Hasher},
+        crate::{MerkleProof, MerkleProofB32, RawMerkleProofB32, Sha256Hasher, mmr::MerkleMr64},
         sha2::{Digest, Sha256},
         ssz::{Decode, Encode},
         ssz_types::FixedBytes,

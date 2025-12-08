@@ -168,6 +168,15 @@ impl<'a, H> Iterator for CompactMmr64PeaksIter<'a, H> {
 }
 
 /// Merkle mountain range that can hold up to 2**64 elements.
+///
+/// **Deprecated**: This type is provided for compatibility and benchmarking.
+/// New code should use [`NewMmrState`](crate::NewMmrState) with the
+/// [`Mmr`](crate::new_mmr::Mmr) extension trait instead, which provides
+/// a more efficient implementation with the same functionality.
+#[deprecated(
+    since = "0.2.0",
+    note = "Use NewMmrState with the Mmr extension trait instead. See crate::new_mmr::Mmr."
+)]
 #[derive(Clone, Debug)]
 pub struct MerkleMr64<MH: MerkleHasher + Clone> {
     /// Total number of elements inserted into MMR.
@@ -181,6 +190,7 @@ pub struct MerkleMr64<MH: MerkleHasher + Clone> {
     _pd: PhantomData<MH>,
 }
 
+#[allow(deprecated)] // Implementation uses its own deprecated fields
 impl<MH> MerkleMr64<MH>
 where
     MH: MerkleHasher + Clone,
@@ -469,6 +479,7 @@ where
     }
 }
 
+#[allow(deprecated)] // Implementation uses its own deprecated fields
 impl<MH> MmrState<MH::Hash> for MerkleMr64<MH>
 where
     MH: MerkleHasher + Clone,
@@ -540,6 +551,7 @@ where
     }
 }
 
+#[allow(deprecated)] // Conversion implementation uses deprecated type
 impl<MH> From<CompactMmr64<MH::Hash>> for MerkleMr64<MH>
 where
     MH: MerkleHasher + Clone,
@@ -562,6 +574,7 @@ where
     }
 }
 
+#[allow(deprecated)] // Conversion implementation uses deprecated type
 impl<MH> From<MerkleMr64<MH>> for CompactMmr64<MH::Hash>
 where
     MH: MerkleHasher + Clone,
@@ -580,6 +593,7 @@ where
 }
 
 #[cfg(feature = "ssz")]
+#[allow(deprecated)] // Uses MerkleMr64 for conversions until MerkleMr64B32 is refactored
 mod mmr64b32 {
     use super::*;
     use crate::{new_mmr::Mmr, *};
@@ -905,6 +919,7 @@ mod mmr64b32 {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // Tests use MerkleMr64 for differential testing
 mod tests {
     use sha2::{Digest, Sha256};
 

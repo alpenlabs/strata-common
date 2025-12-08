@@ -269,6 +269,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // Tests use MerkleMr64 for differential testing
 mod tests {
     use sha2::{Digest, Sha256};
 

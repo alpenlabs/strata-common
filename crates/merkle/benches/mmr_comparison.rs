@@ -1,6 +1,7 @@
 //! Benchmark comparing old and new MMR implementations.
 #![allow(missing_docs)]
 #![allow(unused_crate_dependencies)]
+#![allow(deprecated)] // Uses MerkleMr64 for comparison benchmarks
 
 // stupid linter issue
 use criterion as _;

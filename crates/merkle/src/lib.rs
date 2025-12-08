@@ -1,8 +1,27 @@
 //! Merkle primitives and data structures.
 //!
-//! Modules:
+//! # MMR (Merkle Mountain Range)
+//!
+//! The primary MMR implementation is [`NewMmrState`] with the [`new_mmr::Mmr`] extension trait.
+//!
+//! ```rust,ignore
+//! use strata_merkle::{NewMmrState, Sha256Hasher, new_mmr::Mmr};
+//!
+//! let mut mmr = NewMmrState::<[u8; 32]>::new_empty();
+//! Mmr::<Sha256Hasher>::add_leaf(&mut mmr, leaf)?;
+//! Mmr::<Sha256Hasher>::verify(&mmr, &proof, &leaf);
+//! ```
+//!
+//! For SSZ-compatible types, use [`CompactMmr64B32`] or [`MerkleMr64B32`] which implement
+//! the [`MmrState`] trait and work with the same `Mmr` extension methods.
+//!
+//! # Modules
+//!
 //! - `hasher`: common hash and hasher traits/impls
-//! - `mmr`: Merkle Mountain Range accumulator and proofs
+//! - `mmr`: MMR types (includes legacy [`mmr::MerkleMr64`] for compatibility)
+//! - `new_mmr`: [`Mmr`](new_mmr::Mmr) extension trait with MMR algorithms
+//! - `new_state`: [`NewMmrState`] - the primary MMR state implementation
+//! - `traits`: [`MmrState`] trait for MMR state backends
 //! - `tree`: generic binary Merkle tree with proofs
 #![expect(
     clippy::declare_interior_mutable_const,
@@ -59,7 +78,7 @@ pub use hasher::MerkleHasher as StrataMerkle;
 
 // Common re-exports for ergonomic access at the crate root.
 pub use hasher::{MerkleHash, MerkleHasher};
-pub use mmr::{CompactMmr64, MerkleMr64};
+pub use mmr::CompactMmr64;
 pub use proof::{MerkleProof, RawMerkleProof};
 pub use tree::BinaryMerkleTree;
 
