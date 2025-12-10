@@ -85,7 +85,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ext::Mmr;
+    use crate::Mmr;
     use proptest::prelude::*;
     use sha2::Sha256;
     use strata_codec::{decode_buf_exact, encode_to_vec};

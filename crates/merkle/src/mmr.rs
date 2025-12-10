@@ -38,13 +38,13 @@ impl<H: MerkleHash> CompactMmr64<H> {
 
     /// Verifies a single proof for a leaf.
     ///
-    /// This method delegates to the unified [`Mmr::verify`](crate::ext::Mmr::verify)
+    /// This method delegates to the unified [`Mmr::verify`](crate::Mmr::verify)
     /// trait method.
     pub fn verify<MH>(&self, proof: &MerkleProof<H>, leaf: &H) -> bool
     where
         MH: MerkleHasher<Hash = H>,
     {
-        crate::ext::Mmr::<MH>::verify(self, proof, leaf)
+        crate::Mmr::<MH>::verify(self, proof, leaf)
     }
 
     /// Given a peak index, gets the index in the `roots` field
@@ -185,7 +185,7 @@ impl<'a, H> Iterator for CompactMmr64PeaksIter<'a, H> {
 #[cfg(feature = "ssz")]
 mod mmr64b32 {
     use super::*;
-    use crate::{Sha256Hasher, ext::Mmr};
+    use crate::{Mmr, Sha256Hasher};
     use ssz_types::{FixedBytes, VariableList};
 
     type Hash32 = <Sha256Hasher as MerkleHasher>::Hash;
@@ -220,7 +220,7 @@ mod mmr64b32 {
 
         /// Verifies a single proof for a leaf.
         ///
-        /// This method delegates to the unified [`Mmr::verify`](crate::ext::Mmr::verify)
+        /// This method delegates to the unified [`Mmr::verify`](crate::Mmr::verify)
         /// trait method using Sha256Hasher as the merkle hasher implementation.
         pub fn verify(&self, proof: &crate::MerkleProofB32, leaf: &[u8; 32]) -> bool {
             Mmr::<Sha256Hasher>::verify(self, proof, leaf)
@@ -366,8 +366,8 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::CompactMmr64;
+    use crate::Mmr;
     use crate::Sha256Hasher;
-    use crate::ext::Mmr;
     use crate::proof::MerkleProof;
     use crate::traits::MmrState;
 

@@ -2,10 +2,10 @@
 //!
 //! # MMR (Merkle Mountain Range)
 //!
-//! The primary MMR implementation is [`CompactMmr64`] with the [`ext::Mmr`] extension trait.
+//! The primary MMR implementation is [`CompactMmr64`] with the [`Mmr`] extension trait.
 //!
 //! ```rust,ignore
-//! use strata_merkle::{CompactMmr64, Sha256Hasher, ext::Mmr};
+//! use strata_merkle::{CompactMmr64, Sha256Hasher, Mmr};
 //!
 //! let mut mmr = CompactMmr64::<[u8; 32]>::new(64);
 //! Mmr::<Sha256Hasher>::add_leaf(&mut mmr, leaf)?;
@@ -19,8 +19,6 @@
 //!
 //! - `hasher`: common hash and hasher traits/impls
 //! - `mmr`: [`CompactMmr64`] - compact MMR representation
-//! - `ext`: [`Mmr`](ext::Mmr) extension trait with MMR algorithms
-//! - `traits`: [`MmrState`] trait for MMR state backends
 //! - `tree`: generic binary Merkle tree with proofs
 #![expect(
     clippy::declare_interior_mutable_const,
@@ -43,9 +41,10 @@ pub mod mmr;
 pub mod proof;
 pub mod tree;
 
-pub mod ext;
-pub mod traits;
+mod ext;
+mod traits;
 
+pub use ext::Mmr;
 pub use traits::MmrState;
 
 // Include SSZ-generated types

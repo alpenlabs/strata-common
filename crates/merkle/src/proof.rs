@@ -344,6 +344,36 @@ mod proofb32 {
             &mut self.cohashes
         }
 
+        /// Gets a cohash at the specified index.
+        pub fn get(&self, index: usize) -> Option<&[u8; 32]> {
+            self.cohashes.get(index).map(|fb| &fb.0)
+        }
+
+        /// Sets the cohash at the specified index. Returns `true` if successful.
+        pub fn set(&mut self, index: usize, value: [u8; 32]) -> bool {
+            if let Some(fb) = self.cohashes.get_mut(index) {
+                fb.0 = value;
+                true
+            } else {
+                false
+            }
+        }
+
+        /// Pushes a new cohash to the end. Returns `true` if successful (within capacity).
+        pub fn push(&mut self, value: [u8; 32]) -> bool {
+            self.cohashes.push(FixedBytes::<32>::from(value)).is_ok()
+        }
+
+        /// Returns the number of cohashes.
+        pub fn len(&self) -> usize {
+            self.cohashes.len()
+        }
+
+        /// Returns `true` if there are no cohashes.
+        pub fn is_empty(&self) -> bool {
+            self.cohashes.is_empty()
+        }
+
         /// Takes an index that this merkle proof is allegedly for and constructs a
         /// full proof using the cohash path we have.
         ///
@@ -383,10 +413,6 @@ mod proofb32 {
             self.cohashes.len()
         }
     }
-
-    // Note: ProofDataMut cannot be implemented for RawMerkleProofB32 because
-    // VariableList<FixedBytes<32>, 64> doesn't directly expose a Vec<[u8; 32]>.
-    // Updates must go through the SSZ-specific API.
 
     impl MerkleProofB32 {
         /// Creates a concrete proof from a generic MerkleProof
@@ -500,8 +526,7 @@ mod tests {
     #[cfg(feature = "ssz")]
     use {
         crate::{
-            MerkleProof, MerkleProofB32, RawMerkleProofB32, Sha256Hasher, ext::Mmr,
-            mmr::CompactMmr64,
+            MerkleProof, MerkleProofB32, Mmr, RawMerkleProofB32, Sha256Hasher, mmr::CompactMmr64,
         },
         sha2::{Digest, Sha256},
         ssz::{Decode, Encode},
