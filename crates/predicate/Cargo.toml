@@ -15,6 +15,7 @@ serde = { workspace = true, optional = true }
 signature = "2.2"
 ssz.workspace = true
 ssz_derive.workspace = true
+ssz_primitives.workspace = true
 ssz_types.workspace = true
 thiserror.workspace = true
 tree_hash.workspace = true
