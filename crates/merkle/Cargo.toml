@@ -13,6 +13,7 @@ serde = { workspace = true, optional = true, features = ["derive"] }
 sha2.workspace = true
 ssz = { workspace = true, optional = true }
 ssz_derive = { workspace = true, optional = true }
+ssz_primitives = { workspace = true, optional = true }
 ssz_types = { workspace = true, optional = true }
 strata-codec = { workspace = true, optional = true }
 thiserror.workspace = true
@@ -33,6 +34,7 @@ serde = ["dep:serde"]
 ssz = [
   "dep:ssz",
   "dep:ssz_derive",
+  "dep:ssz_primitives",
   "dep:ssz_types",
   "dep:tree_hash",
   "dep:tree_hash_derive",
