@@ -84,9 +84,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::MerkleMr64;
-
     use super::*;
+    use crate::Mmr;
     use proptest::prelude::*;
     use sha2::Sha256;
     use strata_codec::{decode_buf_exact, encode_to_vec};
@@ -128,16 +127,15 @@ mod tests {
 
         #[test]
         fn roundtrip_compact_mmr(num_leaves in 1usize..=64) {
-            let mut mmr: MerkleMr64<Hasher> = MerkleMr64::new(8);
+            let mut mmr = CompactMmr64::<H>::new(8);
             let leaves = make_hashes(num_leaves);
             for h in leaves.iter() {
-                mmr.add_leaf(*h).expect("add leaf");
+                Mmr::<Hasher>::add_leaf(&mut mmr, *h).expect("add leaf");
             }
-            let compact: CompactMmr64<[u8; 32]> = mmr.into();
 
-            let bytes = encode_to_vec(&compact).expect("serialize compact");
+            let bytes = encode_to_vec(&mmr).expect("serialize compact");
             let de: CompactMmr64<H> = decode_buf_exact(&bytes).expect("deserialize compact");
-            prop_assert_eq!(compact, de);
+            prop_assert_eq!(mmr, de);
         }
     }
 }

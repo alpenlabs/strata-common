@@ -1,8 +1,24 @@
 //! Merkle primitives and data structures.
 //!
-//! Modules:
+//! # MMR (Merkle Mountain Range)
+//!
+//! The primary MMR implementation is [`CompactMmr64`] with the [`Mmr`] extension trait.
+//!
+//! ```rust,ignore
+//! use strata_merkle::{CompactMmr64, Sha256Hasher, Mmr};
+//!
+//! let mut mmr = CompactMmr64::<[u8; 32]>::new(64);
+//! Mmr::<Sha256Hasher>::add_leaf(&mut mmr, leaf)?;
+//! Mmr::<Sha256Hasher>::verify(&mmr, &proof, &leaf);
+//! ```
+//!
+//! For SSZ-compatible types, use `Mmr64B32` which implements
+//! the [`MmrState`] trait and works with the same `Mmr` extension methods.
+//!
+//! # Modules
+//!
 //! - `hasher`: common hash and hasher traits/impls
-//! - `mmr`: Merkle Mountain Range accumulator and proofs
+//! - `mmr`: [`CompactMmr64`] - compact MMR representation
 //! - `tree`: generic binary Merkle tree with proofs
 #![expect(
     clippy::declare_interior_mutable_const,
@@ -13,12 +29,23 @@
     reason = "Borrowing interior mutable constants is required for MMR operations"
 )]
 
+// stupid linter issue
+#[cfg(test)]
+use criterion as _;
+
 #[cfg(feature = "codec")]
 mod codec_impl;
 pub mod error;
 pub mod hasher;
 pub mod mmr;
 pub mod proof;
+pub mod tree;
+
+mod ext;
+mod traits;
+
+pub use ext::Mmr;
+pub use traits::MmrState;
 
 // Include SSZ-generated types
 #[cfg(feature = "ssz")]
@@ -32,8 +59,6 @@ pub mod proof;
 mod ssz_generated {
     include!(concat!(env!("OUT_DIR"), "/generated_ssz.rs"));
 }
-
-pub mod tree;
 
 use hasher::{DigestMerkleHasher, DigestMerkleHasherNoPrefix};
 use sha2::Sha256;
@@ -49,8 +74,8 @@ pub use hasher::MerkleHasher as StrataMerkle;
 
 // Common re-exports for ergonomic access at the crate root.
 pub use hasher::{MerkleHash, MerkleHasher};
-pub use mmr::{CompactMmr64, MerkleMr64};
-pub use proof::{MerkleProof, RawMerkleProof};
+pub use mmr::CompactMmr64;
+pub use proof::{MerkleProof, ProofData, ProofDataMut, RawMerkleProof};
 pub use tree::BinaryMerkleTree;
 
 // Re-export SSZ-generated concrete types (32-byte hash versions)

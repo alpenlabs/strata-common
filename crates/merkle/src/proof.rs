@@ -35,6 +35,15 @@ pub trait ProofData {
     fn cohashes_len(&self) -> usize;
 }
 
+/// Trait for mutable proof data, allowing proof updates.
+///
+/// This trait extends `ProofData` with mutable access to cohashes,
+/// enabling generic proof update operations during leaf insertion.
+pub trait ProofDataMut: ProofData {
+    /// Provides mutable access to the cohashes vector for updating during leaf insertion.
+    fn cohashes_vec_mut(&mut self) -> &mut Vec<Self::Hash>;
+}
+
 /// Computes the root obtained by applying a proof to a leaf.
 ///
 /// This generic function works with any type implementing `ProofData`.
@@ -254,6 +263,28 @@ impl<H: MerkleHash> RawProofData for RawMerkleProof<H> {
     }
 }
 
+impl<H: MerkleHash> ProofData for RawMerkleProof<H> {
+    type Hash = H;
+
+    fn index(&self) -> u64 {
+        0 // RawMerkleProof doesn't have an index
+    }
+
+    fn cohashes_iter(&self) -> impl Iterator<Item = &Self::Hash> {
+        self.cohashes.iter()
+    }
+
+    fn cohashes_len(&self) -> usize {
+        self.cohashes.len()
+    }
+}
+
+impl<H: MerkleHash> ProofDataMut for RawMerkleProof<H> {
+    fn cohashes_vec_mut(&mut self) -> &mut Vec<Self::Hash> {
+        &mut self.cohashes
+    }
+}
+
 #[cfg(feature = "ssz")]
 mod proofb32 {
     use super::*;
@@ -313,6 +344,36 @@ mod proofb32 {
             &mut self.cohashes
         }
 
+        /// Gets a cohash at the specified index.
+        pub fn get(&self, index: usize) -> Option<&[u8; 32]> {
+            self.cohashes.get(index).map(|fb| &fb.0)
+        }
+
+        /// Sets the cohash at the specified index. Returns `true` if successful.
+        pub fn set(&mut self, index: usize, value: [u8; 32]) -> bool {
+            if let Some(fb) = self.cohashes.get_mut(index) {
+                fb.0 = value;
+                true
+            } else {
+                false
+            }
+        }
+
+        /// Pushes a new cohash to the end. Returns `true` if successful (within capacity).
+        pub fn push(&mut self, value: [u8; 32]) -> bool {
+            self.cohashes.push(FixedBytes::<32>::from(value)).is_ok()
+        }
+
+        /// Returns the number of cohashes.
+        pub fn len(&self) -> usize {
+            self.cohashes.len()
+        }
+
+        /// Returns `true` if there are no cohashes.
+        pub fn is_empty(&self) -> bool {
+            self.cohashes.is_empty()
+        }
+
         /// Takes an index that this merkle proof is allegedly for and constructs a
         /// full proof using the cohash path we have.
         ///
@@ -327,6 +388,22 @@ mod proofb32 {
 
     impl RawProofData for RawMerkleProofB32 {
         type Hash = [u8; 32];
+
+        fn cohashes_iter(&self) -> impl Iterator<Item = &Self::Hash> {
+            self.cohashes.iter().map(|fb| &fb.0)
+        }
+
+        fn cohashes_len(&self) -> usize {
+            self.cohashes.len()
+        }
+    }
+
+    impl ProofData for RawMerkleProofB32 {
+        type Hash = [u8; 32];
+
+        fn index(&self) -> u64 {
+            0 // RawMerkleProofB32 doesn't have an index
+        }
 
         fn cohashes_iter(&self) -> impl Iterator<Item = &Self::Hash> {
             self.cohashes.iter().map(|fb| &fb.0)
@@ -448,7 +525,9 @@ mod proofb32 {
 mod tests {
     #[cfg(feature = "ssz")]
     use {
-        crate::{MerkleMr64, MerkleProof, MerkleProofB32, RawMerkleProofB32, Sha256Hasher},
+        crate::{
+            MerkleProof, MerkleProofB32, Mmr, RawMerkleProofB32, Sha256Hasher, mmr::CompactMmr64,
+        },
         sha2::{Digest, Sha256},
         ssz::{Decode, Encode},
         ssz_types::FixedBytes,
@@ -499,20 +578,20 @@ mod tests {
     // SSZ serialization tests
     #[cfg(feature = "ssz")]
     fn generate_proof_for_test() -> (MerkleProof<Hash32>, Hash32) {
-        let mut mmr: MerkleMr64<Sha256Hasher> = MerkleMr64::new(14);
+        let mut mmr = CompactMmr64::<Hash32>::new(64);
         let hash1: [u8; 32] = Sha256::digest(b"test1").into();
         let hash2: [u8; 32] = Sha256::digest(b"test2").into();
         let hash3: [u8; 32] = Sha256::digest(b"test3").into();
 
         // Add first leaf
         let mut proof_list = Vec::new();
-        mmr.add_leaf_updating_proof_list(hash1, &mut proof_list)
+        Mmr::<Sha256Hasher>::add_leaf_updating_proof_list(&mut mmr, hash1, &mut proof_list)
             .unwrap();
         // Add second leaf
-        let proof2 = mmr
-            .add_leaf_updating_proof_list(hash2, &mut proof_list)
-            .unwrap();
-        mmr.add_leaf_updating_proof_list(hash3, &mut proof_list)
+        let proof2 =
+            Mmr::<Sha256Hasher>::add_leaf_updating_proof_list(&mut mmr, hash2, &mut proof_list)
+                .unwrap();
+        Mmr::<Sha256Hasher>::add_leaf_updating_proof_list(&mut mmr, hash3, &mut proof_list)
             .unwrap();
 
         (proof2, hash2)
