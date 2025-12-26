@@ -1,9 +1,14 @@
 //! Blocking worker task.
 
+use std::time::Instant;
+
 use tokio::sync::watch;
 use tracing::*;
 
-use crate::{Response, ServiceState, SyncService, SyncServiceInput};
+use crate::{
+    instrumentation::{OperationResult, ServiceInstrumentation, ShutdownReason},
+    Response, ServiceState, SyncService, SyncServiceInput,
+};
 
 pub(crate) fn worker_task<S: SyncService, I>(
     mut state: S::State,
@@ -14,14 +19,30 @@ pub(crate) fn worker_task<S: SyncService, I>(
 where
     I: SyncServiceInput<Msg = S::Msg>,
 {
-    let service = state.name().to_owned();
+    let service_name = state.name().to_string();
+    let instrumentation = ServiceInstrumentation::new(&service_name);
+
+    // Create parent lifecycle span wrapping entire service lifetime
+    let lifecycle_span = instrumentation.create_lifecycle_span(&service_name, "sync");
+    let _lifecycle_guard = lifecycle_span.enter();
+
+    info!(service.name = %service_name, "service starting");
 
     // Perform startup logic.  If this errors we propagate it immediately and
     // crash the task.
     {
-        let launch_span = debug_span!("onlaunch", %service);
+        let launch_span = info_span!("service.launch", service.name = %service_name);
         let _g = launch_span.enter();
-        S::on_launch(&mut state)?;
+        let start = Instant::now();
+
+        let launch_result = S::on_launch(&mut state);
+        let duration = start.elapsed();
+        let result = OperationResult::from(&launch_result);
+
+        instrumentation.record_launch(duration, result);
+
+        launch_result?;
+        info!(service.name = %service_name, duration_ms = duration.as_millis(), "service launch completed");
     }
 
     // Process each message in a loop.  We do a shutdown check after each
@@ -30,19 +51,36 @@ where
     while let Some(input) = inp.recv_next()? {
         // Check after getting a new input.
         if shutdown_guard.should_shutdown() {
-            debug!("got shutdown notification");
+            info!(service.name = %service_name, "shutdown signal received");
             break;
         }
 
-        let input_span = debug_span!("handlemsg", %service, ?input);
-        let _g = input_span.enter();
+        let msg_span = info_span!(
+            "service.process_message",
+            service.name = %service_name
+        );
+        let _g = msg_span.enter();
+        let start = Instant::now();
 
         // Process the input.
-        let res = match S::process_input(&mut state, &input) {
+        let res = S::process_input(&mut state, &input);
+
+        let duration = start.elapsed();
+        let result = OperationResult::from(&res);
+
+        // Record metrics
+        instrumentation.record_message(duration, result);
+
+        // Handle processing result
+        let res = match res {
             Ok(res) => res,
             Err(e) => {
-                // TODO support optional retry
-                error!(?input, %e, "failed to process message");
+                error!(
+                    service.name = %service_name,
+                    duration_ms = duration.as_millis(),
+                    %e,
+                    "failed to process message"
+                );
                 err = Some(e);
                 break;
             }
@@ -50,7 +88,7 @@ where
 
         // Also check after processing input before trying to get a new one.
         if shutdown_guard.should_shutdown() {
-            debug!("got shutdown notification");
+            info!(service.name = %service_name, "shutdown signal received");
             break;
         }
 
@@ -64,13 +102,48 @@ where
     }
 
     // Perform shutdown handling.
-    handle_shutdown::<S>(&mut state, err.as_ref());
+    let shutdown_reason = if err.is_some() {
+        ShutdownReason::Error
+    } else {
+        ShutdownReason::Normal
+    };
+
+    handle_shutdown::<S>(&mut state, err.as_ref(), &instrumentation, shutdown_reason);
+
+    info!(service.name = %service_name, "service stopped");
 
     Ok(())
 }
 
-fn handle_shutdown<S: SyncService>(state: &mut S::State, err: Option<&anyhow::Error>) {
-    if let Err(e) = S::before_shutdown(state, err) {
-        error!(%e, "unhandled error while shutting down");
+fn handle_shutdown<S: SyncService>(
+    state: &mut S::State,
+    err: Option<&anyhow::Error>,
+    instrumentation: &ServiceInstrumentation,
+    shutdown_reason: ShutdownReason,
+) {
+    let service_name = state.name().to_string();
+    let shutdown_span = info_span!("service.shutdown", service.name = %service_name);
+    let _g = shutdown_span.enter();
+    let start = Instant::now();
+
+    let shutdown_result = S::before_shutdown(state, err);
+
+    let duration = start.elapsed();
+
+    // Record shutdown metrics
+    instrumentation.record_shutdown(duration, shutdown_reason);
+
+    if let Err(e) = shutdown_result {
+        error!(
+            service.name = %service_name,
+            %e,
+            "unhandled error while shutting down"
+        );
+    } else {
+        info!(
+            service.name = %service_name,
+            duration_ms = duration.as_millis(),
+            "service shutdown completed"
+        );
     }
 }
