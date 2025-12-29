@@ -89,7 +89,7 @@ where
 
     // Process messages in a loop
     while let Some(input) = inp.recv_next().await? {
-        let msg_span = info_span!(
+        let msg_span = debug_span!(
             "service.process_message",
             service.name = %service_name
         );
@@ -110,6 +110,7 @@ where
             Err(e) => {
                 error!(
                     service.name = %service_name,
+                    ?input,
                     duration_ms = duration.as_millis(),
                     %e,
                     "failed to process message"

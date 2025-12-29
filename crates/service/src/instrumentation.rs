@@ -130,15 +130,17 @@ impl ServiceInstrumentation {
     /// This uses the global OpenTelemetry provider to obtain meters and
     /// pre-allocates the service name attribute for efficient metric recording.
     ///
+    /// If the OpenTelemetry provider is not initialized, this function will
+    /// return a no-op instrumentation that safely does nothing.
+    ///
     /// # Arguments
     ///
     /// * `service_name` - Name of the service (from `ServiceState::name()`)
     ///
-    /// # Panics
+    /// # Note
     ///
-    /// This function may panic if the global OpenTelemetry provider is not properly
-    /// initialized. Ensure `opentelemetry::global::set_meter_provider` is called
-    /// at application startup.
+    /// This function never panics. If OpenTelemetry is not properly configured,
+    /// it returns a no-op implementation that safely ignores all metric calls.
     pub fn new(service_name: &str) -> Self {
         let meter = global::meter("strata-service");
 
@@ -331,5 +333,95 @@ mod tests {
         assert_eq!(ShutdownReason::Normal.as_str(), "normal");
         assert_eq!(ShutdownReason::Error.as_str(), "error");
         assert_eq!(ShutdownReason::Signal.as_str(), "signal");
+    }
+
+    #[test]
+    fn test_instrumentation_new_without_provider() {
+        // Should not panic even if OpenTelemetry provider is not initialized
+        // OpenTelemetry returns a no-op meter by default
+        let instrumentation = ServiceInstrumentation::new("test_service");
+
+        // Verify we can access the service name attribute
+        assert_eq!(instrumentation.service_name_attr.key.as_str(), "service.name");
+    }
+
+    #[test]
+    fn test_instrumentation_record_message() {
+        let instrumentation = ServiceInstrumentation::new("test_service");
+
+        // Should not panic when recording metrics (no-op if provider not initialized)
+        instrumentation.record_message(Duration::from_millis(100), OperationResult::Success);
+        instrumentation.record_message(Duration::from_millis(200), OperationResult::Error);
+    }
+
+    #[test]
+    fn test_instrumentation_record_launch() {
+        let instrumentation = ServiceInstrumentation::new("test_service");
+
+        // Should not panic when recording launch metrics
+        instrumentation.record_launch(Duration::from_millis(50), OperationResult::Success);
+        instrumentation.record_launch(Duration::from_millis(100), OperationResult::Error);
+    }
+
+    #[test]
+    fn test_instrumentation_record_shutdown() {
+        let instrumentation = ServiceInstrumentation::new("test_service");
+
+        // Should not panic when recording shutdown metrics
+        instrumentation.record_shutdown(Duration::from_millis(10), ShutdownReason::Normal);
+        instrumentation.record_shutdown(Duration::from_millis(20), ShutdownReason::Error);
+        instrumentation.record_shutdown(Duration::from_millis(15), ShutdownReason::Signal);
+    }
+
+    #[test]
+    fn test_lifecycle_span_creation() {
+        let instrumentation = ServiceInstrumentation::new("test_service");
+
+        // Should be able to create lifecycle spans without panicking
+        // Note: metadata() may return None if no tracing subscriber is initialized
+        let _async_span = instrumentation.create_lifecycle_span("test_service", "async");
+        let _sync_span = instrumentation.create_lifecycle_span("test_service", "sync");
+
+        // If this test completes without panicking, span creation works
+    }
+
+    #[test]
+    fn test_instrumentation_debug_impl() {
+        let instrumentation = ServiceInstrumentation::new("test_service");
+
+        // Verify Debug implementation doesn't panic
+        let debug_str = format!("{:?}", instrumentation);
+        assert!(debug_str.contains("ServiceInstrumentation"));
+        assert!(debug_str.contains("service_name_attr"));
+    }
+
+    #[test]
+    fn test_multiple_instrumentation_instances() {
+        // Should be able to create multiple instrumentation instances
+        let inst1 = ServiceInstrumentation::new("service1");
+        let inst2 = ServiceInstrumentation::new("service2");
+
+        // Record metrics on both without panicking
+        inst1.record_message(Duration::from_millis(10), OperationResult::Success);
+        inst2.record_message(Duration::from_millis(20), OperationResult::Success);
+
+        // Verify service names are different
+        assert_eq!(inst1.service_name_attr.value.as_str(), "service1");
+        assert_eq!(inst2.service_name_attr.value.as_str(), "service2");
+    }
+
+    #[test]
+    fn test_pre_allocated_service_name_attr() {
+        let instrumentation = ServiceInstrumentation::new("my_test_service");
+
+        // Verify the service name attribute is pre-allocated correctly
+        assert_eq!(
+            instrumentation.service_name_attr.key.as_str(),
+            "service.name"
+        );
+        assert_eq!(
+            instrumentation.service_name_attr.value.as_str(),
+            "my_test_service"
+        );
     }
 }
