@@ -241,6 +241,36 @@ impl ServiceInstrumentation {
     }
 }
 
+/// Common logic for recording shutdown metrics and logging results.
+///
+/// This is called by both async and sync handle_shutdown functions after
+/// executing the service's before_shutdown hook.
+pub(crate) fn record_shutdown_result(
+    service_name: &str,
+    shutdown_result: anyhow::Result<()>,
+    duration: Duration,
+    instrumentation: &ServiceInstrumentation,
+    shutdown_reason: ShutdownReason,
+) {
+    // Record metrics
+    instrumentation.record_shutdown(duration, shutdown_reason);
+
+    // Log result
+    if let Err(e) = shutdown_result {
+        tracing::error!(
+            service.name = %service_name,
+            %e,
+            "unhandled error while shutting down"
+        );
+    } else {
+        tracing::info!(
+            service.name = %service_name,
+            duration_ms = duration.as_millis(),
+            "service shutdown completed"
+        );
+    }
+}
+
 impl std::fmt::Debug for ServiceInstrumentation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ServiceInstrumentation")

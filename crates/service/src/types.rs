@@ -39,7 +39,6 @@ pub trait ServiceState: Sync + Send + 'static {
     /// Span prefix for OpenTelemetry tracing.
     ///
     /// This is used to create semantic span names like "asm.lifecycle", "csm.lifecycle", etc.
-    /// Default implementation returns "service" for backward compatibility.
     fn span_prefix(&self) -> &str {
         "service"
     }
