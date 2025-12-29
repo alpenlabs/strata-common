@@ -117,6 +117,7 @@ where
                     %e,
                     "failed to process message"
                 );
+                // TODO support optional retry
                 return Err(e);
             }
         };

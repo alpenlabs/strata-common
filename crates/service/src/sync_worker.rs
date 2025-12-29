@@ -83,6 +83,7 @@ where
                     %e,
                     "failed to process message"
                 );
+                // TODO support optional retry
                 err = Some(e);
                 break;
             }
