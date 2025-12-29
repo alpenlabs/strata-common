@@ -6,19 +6,10 @@
 //! - Service lifecycle metrics (launches, shutdowns)
 //! - Distributed tracing with proper span hierarchy
 //!
-//! ## Design
-//!
 //! All services automatically get:
 //! 1. Parent span wrapping entire service lifecycle
 //! 2. Child spans for launch, message processing, shutdown
 //! 3. Automatic metrics collection (counters and histograms)
-//!
-//! ## Naming Conventions
-//!
-//! Following OpenTelemetry Semantic Conventions:
-//! - Span names: `{service_name}.{operation}` (e.g., `asm_worker.process_message`)
-//! - Metric names: `service.{noun}.{unit}` (e.g., `service.messages.processed`)
-//! - Attributes: snake_case (e.g., `service.name`, `operation.result`)
 
 use std::time::Duration;
 
@@ -94,16 +85,10 @@ impl ShutdownReason {
 /// This struct encapsulates all OpenTelemetry instrumentation for a service,
 /// including both tracing and metrics. It's automatically created in worker
 /// tasks and used to record service lifecycle events.
-///
-/// Note: Tracing spans are created using the `tracing` crate, which integrates
-/// with OpenTelemetry through the tracing-opentelemetry layer. Metrics are
-/// created directly using the OpenTelemetry API.
 pub struct ServiceInstrumentation {
     /// Pre-allocated service name attribute for reuse across metric recordings.
-    /// This avoids allocating a new string on every metric call.
     service_name_attr: KeyValue,
 
-    // Counters
     /// Counter for total messages processed.
     messages_processed: Counter<u64>,
 
@@ -113,7 +98,6 @@ pub struct ServiceInstrumentation {
     /// Counter for total service shutdowns.
     shutdowns_total: Counter<u64>,
 
-    // Histograms
     /// Histogram for message processing duration.
     message_duration: Histogram<f64>,
 
@@ -127,20 +111,8 @@ pub struct ServiceInstrumentation {
 impl ServiceInstrumentation {
     /// Creates a new service instrumentation context for a specific service.
     ///
-    /// This uses the global OpenTelemetry provider to obtain meters and
-    /// pre-allocates the service name attribute for efficient metric recording.
-    ///
     /// If the OpenTelemetry provider is not initialized, this function will
     /// return a no-op instrumentation that safely does nothing.
-    ///
-    /// # Arguments
-    ///
-    /// * `service_name` - Name of the service (from `ServiceState::name()`)
-    ///
-    /// # Note
-    ///
-    /// This function never panics. If OpenTelemetry is not properly configured,
-    /// it returns a no-op implementation that safely ignores all metric calls.
     pub fn new(service_name: &str) -> Self {
         let meter = global::meter("strata-service");
 
@@ -210,6 +182,7 @@ impl ServiceInstrumentation {
     ///
     /// # Arguments
     ///
+    /// * `span_prefix` - Domain-specific prefix (e.g., "asm", "csm", "chain")
     /// * `service_name` - Name of the service (from `ServiceState::name()`)
     /// * `service_type` - Type of service ("async" or "sync")
     ///
@@ -219,26 +192,21 @@ impl ServiceInstrumentation {
     /// service lifetime.
     pub fn create_lifecycle_span(
         &self,
+        span_prefix: &str,
         service_name: &str,
         service_type: &'static str,
     ) -> TracingSpan {
+        let span_name = format!("{}.lifecycle", span_prefix);
         tracing::info_span!(
-            "service.lifecycle",
+            target: "strata_service",
+            parent: None,
+            "{}", span_name,
             service.name = %service_name,
             service.type = %service_type,
         )
     }
 
     /// Records a message processing operation.
-    ///
-    /// This increments the messages processed counter and records the duration
-    /// histogram. The service name is pre-allocated in the struct to avoid
-    /// allocations on every call.
-    ///
-    /// # Arguments
-    ///
-    /// * `duration` - Time taken to process the message
-    /// * `result` - Whether the processing succeeded or failed
     pub fn record_message(&self, duration: Duration, result: OperationResult) {
         let attrs = &[
             self.service_name_attr.clone(),
@@ -251,14 +219,6 @@ impl ServiceInstrumentation {
     }
 
     /// Records a service launch operation.
-    ///
-    /// This increments the launches counter and records the duration histogram.
-    /// The service name is pre-allocated in the struct to avoid allocations.
-    ///
-    /// # Arguments
-    ///
-    /// * `duration` - Time taken to launch the service
-    /// * `result` - Whether the launch succeeded or failed
     pub fn record_launch(&self, duration: Duration, result: OperationResult) {
         let attrs = &[
             self.service_name_attr.clone(),
@@ -270,14 +230,6 @@ impl ServiceInstrumentation {
     }
 
     /// Records a service shutdown operation.
-    ///
-    /// This increments the shutdowns counter and records the duration histogram.
-    /// The service name is pre-allocated in the struct to avoid allocations.
-    ///
-    /// # Arguments
-    ///
-    /// * `duration` - Time taken to shut down the service
-    /// * `reason` - Reason for shutdown (normal, error, signal)
     pub fn record_shutdown(&self, duration: Duration, reason: ShutdownReason) {
         let attrs = &[
             self.service_name_attr.clone(),

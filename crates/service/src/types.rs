@@ -35,6 +35,14 @@ pub trait ServiceState: Sync + Send + 'static {
     ///
     /// This SHOULD NOT change after the service worker has been started.
     fn name(&self) -> &str;
+
+    /// Span prefix for OpenTelemetry tracing.
+    ///
+    /// This is used to create semantic span names like "asm.lifecycle", "csm.lifecycle", etc.
+    /// Default implementation returns "service" for backward compatibility.
+    fn span_prefix(&self) -> &str {
+        "service"
+    }
 }
 
 /// Trait for service messages, which we want to treat like simple dumb data

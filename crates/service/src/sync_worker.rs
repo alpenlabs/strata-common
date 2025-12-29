@@ -20,10 +20,11 @@ where
     I: SyncServiceInput<Msg = S::Msg>,
 {
     let service_name = state.name().to_string();
+    let span_prefix = state.span_prefix().to_string();
     let instrumentation = ServiceInstrumentation::new(&service_name);
 
     // Create parent lifecycle span wrapping entire service lifetime
-    let lifecycle_span = instrumentation.create_lifecycle_span(&service_name, "sync");
+    let lifecycle_span = instrumentation.create_lifecycle_span(&span_prefix, &service_name, "sync");
     let _lifecycle_guard = lifecycle_span.enter();
 
     info!(service.name = %service_name, "service starting");
@@ -31,7 +32,7 @@ where
     // Perform startup logic.  If this errors we propagate it immediately and
     // crash the task.
     {
-        let launch_span = info_span!("service.launch", service.name = %service_name);
+        let launch_span = info_span!("{}.launch", span_prefix, service.name = %service_name);
         let _g = launch_span.enter();
         let start = Instant::now();
 
@@ -56,7 +57,7 @@ where
         }
 
         let msg_span = debug_span!(
-            "service.process_message",
+            "{}.process_message", span_prefix,
             service.name = %service_name
         );
         let _g = msg_span.enter();
@@ -109,21 +110,27 @@ where
         ShutdownReason::Normal
     };
 
-    handle_shutdown::<S>(&mut state, err.as_ref(), &instrumentation, shutdown_reason);
+    handle_shutdown::<S>(&mut state, err.as_ref(), &instrumentation, shutdown_reason, &span_prefix);
 
     info!(service.name = %service_name, "service stopped");
 
     Ok(())
 }
 
+/// Handles service shutdown cleanup and instrumentation.
+///
+/// Executes the service's shutdown logic, measures cleanup duration, and records
+/// shutdown metrics. This runs on every service exit (normal shutdown, error, or signal).
+/// Unclean exits (SIGKILL, panic, OOM) may skip this handler entirely.
 fn handle_shutdown<S: SyncService>(
     state: &mut S::State,
     err: Option<&anyhow::Error>,
     instrumentation: &ServiceInstrumentation,
     shutdown_reason: ShutdownReason,
+    span_prefix: &str,
 ) {
     let service_name = state.name().to_string();
-    let shutdown_span = info_span!("service.shutdown", service.name = %service_name);
+    let shutdown_span = info_span!("{}.shutdown", span_prefix, service.name = %service_name);
     let _g = shutdown_span.enter();
     let start = Instant::now();
 
