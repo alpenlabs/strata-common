@@ -214,8 +214,7 @@ impl ServiceInstrumentation {
         ];
 
         self.messages_processed.add(1, attrs);
-        self.message_duration
-            .record(duration.as_secs_f64(), attrs);
+        self.message_duration.record(duration.as_secs_f64(), attrs);
     }
 
     /// Records a service launch operation.
@@ -324,7 +323,10 @@ mod tests {
         let instrumentation = ServiceInstrumentation::new("test_service");
 
         // Verify we can access the service name attribute
-        assert_eq!(instrumentation.service_name_attr.key.as_str(), "service.name");
+        assert_eq!(
+            instrumentation.service_name_attr.key.as_str(),
+            "service.name"
+        );
     }
 
     #[test]
@@ -361,8 +363,10 @@ mod tests {
 
         // Should be able to create lifecycle spans without panicking
         // Note: metadata() may return None if no tracing subscriber is initialized
-        let _async_span = instrumentation.create_lifecycle_span("test_service", "async");
-        let _sync_span = instrumentation.create_lifecycle_span("test_service", "sync");
+        let _async_span =
+            instrumentation.create_lifecycle_span("test_service", "test_service", "async");
+        let _sync_span =
+            instrumentation.create_lifecycle_span("test_service", "test_service", "sync");
 
         // If this test completes without panicking, span creation works
     }

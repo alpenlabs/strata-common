@@ -7,7 +7,9 @@ use tokio::sync::watch;
 use tracing::*;
 
 use crate::{
-    instrumentation::{record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason},
+    instrumentation::{
+        record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason,
+    },
     AsyncService, AsyncServiceInput, Response, ServiceState,
 };
 
@@ -26,7 +28,8 @@ where
     let instrumentation = ServiceInstrumentation::new(&service_name);
 
     // Create parent lifecycle span wrapping entire service lifetime
-    let lifecycle_span = instrumentation.create_lifecycle_span(&span_prefix, &service_name, "async");
+    let lifecycle_span =
+        instrumentation.create_lifecycle_span(&span_prefix, &service_name, "async");
     let _lifecycle_guard = lifecycle_span.enter();
 
     info!(service.name = %service_name, "service starting");
@@ -51,7 +54,14 @@ where
     let err = {
         let mut exit_fut = Box::pin(shutdown_guard.wait_for_shutdown().fuse());
         let mut wkr_fut = Box::pin(
-            worker_task_inner::<S, I>(&mut state, &mut inp, &status_tx, &instrumentation, &span_prefix).fuse(),
+            worker_task_inner::<S, I>(
+                &mut state,
+                &mut inp,
+                &status_tx,
+                &instrumentation,
+                &span_prefix,
+            )
+            .fuse(),
         );
 
         futures::select! {
@@ -70,7 +80,14 @@ where
         ShutdownReason::Normal
     };
 
-    handle_shutdown::<S>(&mut state, err.as_ref(), &instrumentation, shutdown_reason, &span_prefix).await;
+    handle_shutdown::<S>(
+        &mut state,
+        err.as_ref(),
+        &instrumentation,
+        shutdown_reason,
+        &span_prefix,
+    )
+    .await;
 
     info!(service.name = %service_name, "service stopped");
 
@@ -156,5 +173,11 @@ async fn handle_shutdown<S: AsyncService>(
 
     let duration = start.elapsed();
 
-    record_shutdown_result(&service_name, shutdown_result, duration, instrumentation, shutdown_reason);
+    record_shutdown_result(
+        &service_name,
+        shutdown_result,
+        duration,
+        instrumentation,
+        shutdown_reason,
+    );
 }

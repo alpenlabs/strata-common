@@ -6,7 +6,9 @@ use tokio::sync::watch;
 use tracing::*;
 
 use crate::{
-    instrumentation::{record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason},
+    instrumentation::{
+        record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason,
+    },
     Response, ServiceState, SyncService, SyncServiceInput,
 };
 
@@ -111,7 +113,13 @@ where
         ShutdownReason::Normal
     };
 
-    handle_shutdown::<S>(&mut state, err.as_ref(), &instrumentation, shutdown_reason, &span_prefix);
+    handle_shutdown::<S>(
+        &mut state,
+        err.as_ref(),
+        &instrumentation,
+        shutdown_reason,
+        &span_prefix,
+    );
 
     info!(service.name = %service_name, "service stopped");
 
@@ -139,5 +147,11 @@ fn handle_shutdown<S: SyncService>(
 
     let duration = start.elapsed();
 
-    record_shutdown_result(&service_name, shutdown_result, duration, instrumentation, shutdown_reason);
+    record_shutdown_result(
+        &service_name,
+        shutdown_result,
+        duration,
+        instrumentation,
+        shutdown_reason,
+    );
 }
