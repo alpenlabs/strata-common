@@ -982,6 +982,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
+name = "opentelemetry"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "570074cc999d1a58184080966e5bd3bf3a9a4af650c3b05047c2621e7405cd17"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+ "js-sys",
+ "once_cell",
+ "pin-project-lite",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "p3-baby-bear"
 version = "0.2.3-succinct"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1841,6 +1855,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
  "futures",
+ "opentelemetry",
  "serde",
  "serde_json",
  "strata-tasks",
