@@ -567,7 +567,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -827,7 +827,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1422,7 +1422,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1587,8 +1587,8 @@ dependencies = [
 
 [[package]]
 name = "sizzle-parser"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "thiserror 2.0.17",
 ]
@@ -1680,18 +1680,19 @@ dependencies = [
 
 [[package]]
 name = "ssz"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "itertools 0.13.0",
  "smallvec",
  "ssz_primitives",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
 name = "ssz_codegen"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -1709,8 +1710,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_derive"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "darling",
  "quote",
@@ -1719,8 +1720,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_primitives"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "hex",
  "rand 0.8.5",
@@ -1729,11 +1730,12 @@ dependencies = [
 
 [[package]]
 name = "ssz_types"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "ssz",
  "ssz_primitives",
+ "thiserror 2.0.17",
  "tree_hash",
 ]
 
@@ -1923,7 +1925,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2108,20 +2110,21 @@ dependencies = [
 
 [[package]]
 name = "tree_hash"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "digest",
  "sha2",
  "smallvec",
  "ssz",
  "ssz_primitives",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
 name = "tree_hash_derive"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "darling",
  "quote",
@@ -2253,7 +2256,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
