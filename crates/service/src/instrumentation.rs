@@ -39,6 +39,24 @@ impl OperationResult {
     }
 }
 
+impl std::fmt::Display for OperationResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for OperationResult {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "success" => Ok(Self::Success),
+            "error" => Ok(Self::Error),
+            _ => Err(format!("Invalid OperationResult: '{}'", s)),
+        }
+    }
+}
+
 impl From<bool> for OperationResult {
     fn from(success: bool) -> Self {
         if success {
@@ -80,6 +98,25 @@ impl ShutdownReason {
     }
 }
 
+impl std::fmt::Display for ShutdownReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for ShutdownReason {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "normal" => Ok(Self::Normal),
+            "error" => Ok(Self::Error),
+            "signal" => Ok(Self::Signal),
+            _ => Err(format!("Invalid ShutdownReason: '{}'", s)),
+        }
+    }
+}
+
 /// Service instrumentation context.
 ///
 /// This struct encapsulates all OpenTelemetry instrumentation for a service,
@@ -87,7 +124,7 @@ impl ShutdownReason {
 /// tasks and used to record service lifecycle events.
 pub struct ServiceInstrumentation {
     /// Pre-allocated service name attribute for reuse across metric recordings.
-    service_name_attr: KeyValue,
+    service_name: KeyValue,
 
     /// Counter for total messages processed.
     messages_processed: Counter<u64>,
@@ -113,11 +150,11 @@ impl ServiceInstrumentation {
     ///
     /// If the OpenTelemetry provider is not initialized, this function will
     /// return a no-op instrumentation that safely does nothing.
-    pub fn new(service_name: &str) -> Self {
+    pub fn new(service_name_str: &str) -> Self {
         let meter = global::meter("strata-service");
 
         // Pre-allocate service name attribute to avoid allocations on every metric call
-        let service_name_attr = KeyValue::new("service.name", service_name.to_string());
+        let service_name = KeyValue::new("service.name", service_name_str.to_string());
 
         // Create counters
         let messages_processed = meter
@@ -164,7 +201,7 @@ impl ServiceInstrumentation {
             .init();
 
         Self {
-            service_name_attr,
+            service_name,
             messages_processed,
             launches_total,
             shutdowns_total,
@@ -209,7 +246,7 @@ impl ServiceInstrumentation {
     /// Records a message processing operation.
     pub fn record_message(&self, duration: Duration, result: OperationResult) {
         let attrs = &[
-            self.service_name_attr.clone(),
+            self.service_name.clone(),
             KeyValue::new("operation.result", result.as_str()),
         ];
 
@@ -220,7 +257,7 @@ impl ServiceInstrumentation {
     /// Records a service launch operation.
     pub fn record_launch(&self, duration: Duration, result: OperationResult) {
         let attrs = &[
-            self.service_name_attr.clone(),
+            self.service_name.clone(),
             KeyValue::new("operation.result", result.as_str()),
         ];
 
@@ -231,7 +268,7 @@ impl ServiceInstrumentation {
     /// Records a service shutdown operation.
     pub fn record_shutdown(&self, duration: Duration, reason: ShutdownReason) {
         let attrs = &[
-            self.service_name_attr.clone(),
+            self.service_name.clone(),
             KeyValue::new("shutdown.reason", reason.as_str()),
         ];
 
@@ -273,7 +310,7 @@ pub(crate) fn record_shutdown_result(
 impl std::fmt::Debug for ServiceInstrumentation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ServiceInstrumentation")
-            .field("service_name_attr", &self.service_name_attr)
+            .field("service_name", &self.service_name)
             .field("messages_processed", &"<counter>")
             .field("launches_total", &"<counter>")
             .field("shutdowns_total", &"<counter>")
@@ -323,10 +360,7 @@ mod tests {
         let instrumentation = ServiceInstrumentation::new("test_service");
 
         // Verify we can access the service name attribute
-        assert_eq!(
-            instrumentation.service_name_attr.key.as_str(),
-            "service.name"
-        );
+        assert_eq!(instrumentation.service_name.key.as_str(), "service.name");
     }
 
     #[test]
@@ -378,7 +412,7 @@ mod tests {
         // Verify Debug implementation doesn't panic
         let debug_str = format!("{:?}", instrumentation);
         assert!(debug_str.contains("ServiceInstrumentation"));
-        assert!(debug_str.contains("service_name_attr"));
+        assert!(debug_str.contains("service_name"));
     }
 
     #[test]
@@ -392,21 +426,18 @@ mod tests {
         inst2.record_message(Duration::from_millis(20), OperationResult::Success);
 
         // Verify service names are different
-        assert_eq!(inst1.service_name_attr.value.as_str(), "service1");
-        assert_eq!(inst2.service_name_attr.value.as_str(), "service2");
+        assert_eq!(inst1.service_name.value.as_str(), "service1");
+        assert_eq!(inst2.service_name.value.as_str(), "service2");
     }
 
     #[test]
-    fn test_pre_allocated_service_name_attr() {
+    fn test_pre_allocated_service_name() {
         let instrumentation = ServiceInstrumentation::new("my_test_service");
 
         // Verify the service name attribute is pre-allocated correctly
+        assert_eq!(instrumentation.service_name.key.as_str(), "service.name");
         assert_eq!(
-            instrumentation.service_name_attr.key.as_str(),
-            "service.name"
-        );
-        assert_eq!(
-            instrumentation.service_name_attr.value.as_str(),
+            instrumentation.service_name.value.as_str(),
             "my_test_service"
         );
     }
