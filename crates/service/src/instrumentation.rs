@@ -117,6 +117,142 @@ impl std::str::FromStr for ShutdownReason {
     }
 }
 
+/// Histogram bucket configuration for service metrics.
+///
+/// Defines the bucket boundaries for latency histograms. Buckets are not configurable
+/// by default to keep the API simple and ensure consistent cross-service metrics.
+#[derive(Clone, Debug)]
+pub struct HistogramBuckets {
+    /// Bucket boundaries for message processing duration (in seconds).
+    pub message: Vec<f64>,
+    /// Bucket boundaries for service launch duration (in seconds).
+    pub launch: Vec<f64>,
+    /// Bucket boundaries for service shutdown duration (in seconds).
+    pub shutdown: Vec<f64>,
+}
+
+impl Default for HistogramBuckets {
+    fn default() -> Self {
+        Self {
+            // Message processing: 1ms to 60s range covers quick operations to slow tasks
+            message: vec![0.001, 0.01, 0.1, 1.0, 10.0, 60.0],
+            // Launch: 10ms to 10s range covers initialization, connection setup, warmup
+            launch: vec![0.01, 0.1, 1.0, 5.0, 10.0],
+            // Shutdown: 1ms to 5s range covers cleanup, flush, graceful termination
+            shutdown: vec![0.001, 0.01, 0.1, 1.0, 5.0],
+        }
+    }
+}
+
+/// Builder for creating `ServiceInstrumentation` with custom configuration.
+///
+/// Use this when you need to customize histogram buckets for services with
+/// non-standard latency profiles.
+#[derive(Debug)]
+pub struct InstrumentationBuilder {
+    service_name: String,
+    buckets: HistogramBuckets,
+}
+
+impl InstrumentationBuilder {
+    /// Creates a new builder with default histogram buckets.
+    pub fn new(service_name: impl Into<String>) -> Self {
+        Self {
+            service_name: service_name.into(),
+            buckets: HistogramBuckets::default(),
+        }
+    }
+
+    /// Sets custom bucket boundaries for message processing duration histogram.
+    ///
+    /// # Arguments
+    ///
+    /// * `buckets` - Bucket boundaries in seconds, must be in ascending order
+    pub fn message_buckets(mut self, buckets: Vec<f64>) -> Self {
+        self.buckets.message = buckets;
+        self
+    }
+
+    /// Sets custom bucket boundaries for service launch duration histogram.
+    ///
+    /// # Arguments
+    ///
+    /// * `buckets` - Bucket boundaries in seconds, must be in ascending order
+    pub fn launch_buckets(mut self, buckets: Vec<f64>) -> Self {
+        self.buckets.launch = buckets;
+        self
+    }
+
+    /// Sets custom bucket boundaries for service shutdown duration histogram.
+    ///
+    /// # Arguments
+    ///
+    /// * `buckets` - Bucket boundaries in seconds, must be in ascending order
+    pub fn shutdown_buckets(mut self, buckets: Vec<f64>) -> Self {
+        self.buckets.shutdown = buckets;
+        self
+    }
+
+    /// Builds the `ServiceInstrumentation` with the configured buckets.
+    pub fn build(self) -> ServiceInstrumentation {
+        let meter = global::meter("strata-service");
+
+        // Pre-allocate service name attribute to avoid allocations on every metric call
+        let service_name = KeyValue::new("service.name", self.service_name);
+
+        // Create counters
+        let messages_processed = meter
+            .u64_counter("service.messages.processed")
+            .with_description("Total number of messages processed by the service")
+            .with_unit("messages")
+            .init();
+
+        let launches_total = meter
+            .u64_counter("service.launches.total")
+            .with_description("Total number of service launches")
+            .with_unit("launches")
+            .init();
+
+        let shutdowns_total = meter
+            .u64_counter("service.shutdowns.total")
+            .with_description("Total number of service shutdowns")
+            .with_unit("shutdowns")
+            .init();
+
+        // Create histograms with configured buckets
+        let message_duration = meter
+            .f64_histogram("service.message.duration")
+            .with_description("Duration of message processing")
+            .with_unit("s")
+            .with_boundaries(self.buckets.message)
+            .init();
+
+        let launch_duration = meter
+            .f64_histogram("service.launch.duration")
+            .with_description("Duration of service launch phase")
+            .with_unit("s")
+            .with_boundaries(self.buckets.launch)
+            .init();
+
+        let shutdown_duration = meter
+            .f64_histogram("service.shutdown.duration")
+            .with_description("Duration of service shutdown phase")
+            .with_unit("s")
+            .with_boundaries(self.buckets.shutdown)
+            .init();
+
+        ServiceInstrumentation {
+            service_name,
+            messages_processed,
+            launches_total,
+            shutdowns_total,
+            message_duration,
+            launch_duration,
+            shutdown_duration,
+        }
+    }
+}
+
 /// Service instrumentation context.
 ///
 /// This struct encapsulates all OpenTelemetry instrumentation for a service,
@@ -146,69 +282,35 @@ pub struct ServiceInstrumentation {
 }
 
 impl ServiceInstrumentation {
-    /// Creates a new service instrumentation context for a specific service.
+    /// Creates a new service instrumentation context with default histogram buckets.
     ///
     /// If the OpenTelemetry provider is not initialized, this function will
     /// return a no-op instrumentation that safely does nothing.
-    pub fn new(service_name_str: &str) -> Self {
-        let meter = global::meter("strata-service");
+    ///
+    /// For custom histogram buckets, use [`ServiceInstrumentation::builder()`].
+    pub fn new(service_name: &str) -> Self {
+        InstrumentationBuilder::new(service_name).build()
+    }
 
-        // Pre-allocate service name attribute to avoid allocations on every metric call
-        let service_name = KeyValue::new("service.name", service_name_str.to_string());
-
-        // Create counters
-        let messages_processed = meter
-            .u64_counter("service.messages.processed")
-            .with_description("Total number of messages processed by the service")
-            .with_unit("messages")
-            .init();
-
-        let launches_total = meter
-            .u64_counter("service.launches.total")
-            .with_description("Total number of service launches")
-            .with_unit("launches")
-            .init();
-
-        let shutdowns_total = meter
-            .u64_counter("service.shutdowns.total")
-            .with_description("Total number of service shutdowns")
-            .with_unit("shutdowns")
-            .init();
-
-        // Create histograms with reasonable buckets optimized for typical latencies
-        // Message processing: 1ms to 60s range (0.001, 0.01, 0.1, 1, 10, 60)
-        let message_duration = meter
-            .f64_histogram("service.message.duration")
-            .with_description("Duration of message processing")
-            .with_unit("s")
-            .with_boundaries(vec![0.001, 0.01, 0.1, 1.0, 10.0, 60.0])
-            .init();
-
-        // Launch: typically sub-second to a few seconds (0.01, 0.1, 1, 5, 10)
-        let launch_duration = meter
-            .f64_histogram("service.launch.duration")
-            .with_description("Duration of service launch phase")
-            .with_unit("s")
-            .with_boundaries(vec![0.01, 0.1, 1.0, 5.0, 10.0])
-            .init();
-
-        // Shutdown: typically very fast (0.001, 0.01, 0.1, 1, 5)
-        let shutdown_duration = meter
-            .f64_histogram("service.shutdown.duration")
-            .with_description("Duration of service shutdown phase")
-            .with_unit("s")
-            .with_boundaries(vec![0.001, 0.01, 0.1, 1.0, 5.0])
-            .init();
-
-        Self {
-            service_name,
-            messages_processed,
-            launches_total,
-            shutdowns_total,
-            message_duration,
-            launch_duration,
-            shutdown_duration,
-        }
+    /// Creates a builder for configuring custom histogram buckets.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use strata_service::instrumentation::ServiceInstrumentation;
+    ///
+    /// // Fast service with sub-millisecond latencies
+    /// let fast_inst = ServiceInstrumentation::builder("cache")
+    ///     .message_buckets(vec![0.0001, 0.001, 0.01, 0.1])
+    ///     .build();
+    ///
+    /// // Slow service with multi-second latencies
+    /// let slow_inst = ServiceInstrumentation::builder("batch_processor")
+    ///     .message_buckets(vec![1.0, 10.0, 60.0, 300.0])
+    ///     .build();
+    /// ```
+    pub fn builder(service_name: impl Into<String>) -> InstrumentationBuilder {
+        InstrumentationBuilder::new(service_name)
     }
 
     /// Creates a lifecycle span wrapping the entire service lifetime.

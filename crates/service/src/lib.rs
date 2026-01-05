@@ -102,6 +102,9 @@ pub use adapters::*;
 pub use builder::ServiceBuilder;
 pub use command::{CommandCompletionSender, CommandHandle};
 pub use errors::ServiceError;
-pub use instrumentation::{OperationResult, ServiceInstrumentation, ShutdownReason};
+pub use instrumentation::{
+    HistogramBuckets, InstrumentationBuilder, OperationResult, ServiceInstrumentation,
+    ShutdownReason,
+};
 pub use status::{AnyStatus, GenericStatusMonitor, ServiceMonitor, StatusMonitor};
 pub use types::*;
