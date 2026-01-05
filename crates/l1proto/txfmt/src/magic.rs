@@ -1,53 +1,45 @@
 use std::fmt;
+use std::str;
 
-/// Magic bytes identifier (4-byte ASCII string).
+/// Length of magic bytes in bytes.
+pub const MAGIC_BYTES_LEN: usize = 4;
+
+/// Magic bytes identifier ([`MAGIC_BYTES_LEN`]-byte ASCII string).
 ///
-/// This type wraps a 4-byte array and provides convenient conversion to/from
+/// This type wraps a [`MAGIC_BYTES_LEN`]-byte array and provides convenient conversion to/from
 /// ASCII strings for readability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct MagicBytes([u8; 4]);
+pub struct MagicBytes([u8; MAGIC_BYTES_LEN]);
 
 impl MagicBytes {
-    /// Creates a new `MagicBytes` from a 4-byte array.
-    pub const fn new(bytes: [u8; 4]) -> Self {
+    /// Creates a new `MagicBytes` from a [`MAGIC_BYTES_LEN`]-byte array.
+    pub const fn new(bytes: [u8; MAGIC_BYTES_LEN]) -> Self {
         Self(bytes)
     }
 
-    /// Creates a new `MagicBytes` from a 4-character ASCII string.
-    ///
-    /// Returns `None` if the input is not exactly 4 ASCII characters.
-    pub fn from_str(s: &str) -> Option<Self> {
-        if s.len() != 4 || !s.is_ascii() {
-            return None;
-        }
-        let mut bytes = [0u8; 4];
-        bytes.copy_from_slice(s.as_bytes());
-        Some(Self(bytes))
-    }
-
     /// Returns the magic bytes as a byte slice.
-    pub const fn as_bytes(&self) -> &[u8; 4] {
+    pub const fn as_bytes(&self) -> &[u8; MAGIC_BYTES_LEN] {
         &self.0
     }
 
     /// Returns the magic bytes as a string slice if valid ASCII.
     pub fn as_str(&self) -> Option<&str> {
-        std::str::from_utf8(&self.0).ok()
+        str::from_utf8(&self.0).ok()
     }
 
     /// Converts to the inner byte array.
-    pub const fn into_inner(self) -> [u8; 4] {
+    pub const fn into_inner(self) -> [u8; MAGIC_BYTES_LEN] {
         self.0
     }
 }
 
-impl From<[u8; 4]> for MagicBytes {
-    fn from(bytes: [u8; 4]) -> Self {
+impl From<[u8; MAGIC_BYTES_LEN]> for MagicBytes {
+    fn from(bytes: [u8; MAGIC_BYTES_LEN]) -> Self {
         Self(bytes)
     }
 }
 
-impl From<MagicBytes> for [u8; 4] {
+impl From<MagicBytes> for [u8; MAGIC_BYTES_LEN] {
     fn from(magic: MagicBytes) -> Self {
         magic.0
     }
@@ -68,25 +60,65 @@ impl fmt::Display for MagicBytes {
     }
 }
 
+impl str::FromStr for MagicBytes {
+    type Err = InvalidMagicBytes;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() != MAGIC_BYTES_LEN {
+            return Err(InvalidMagicBytes::InvalidLength);
+        }
+        if !s.is_ascii() {
+            return Err(InvalidMagicBytes::NotAscii);
+        }
+        let mut bytes = [0u8; MAGIC_BYTES_LEN];
+        bytes.copy_from_slice(s.as_bytes());
+        Ok(Self(bytes))
+    }
+}
+
+/// Error type for invalid magic bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InvalidMagicBytes {
+    /// The input string is not exactly [`MAGIC_BYTES_LEN`] bytes long.
+    InvalidLength,
+    /// The input string contains non-ASCII characters.
+    NotAscii,
+}
+
+impl fmt::Display for InvalidMagicBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidLength => write!(
+                f,
+                "magic bytes must be exactly {} characters",
+                MAGIC_BYTES_LEN
+            ),
+            Self::NotAscii => write!(f, "magic bytes must be ASCII"),
+        }
+    }
+}
+
+impl std::error::Error for InvalidMagicBytes {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_from_str() {
-        let magic = MagicBytes::from_str("STRA").unwrap();
+        let magic: MagicBytes = "STRA".parse().unwrap();
         assert_eq!(magic.as_bytes(), b"STRA");
     }
 
     #[test]
     fn test_from_str_invalid_length() {
-        assert!(MagicBytes::from_str("STR").is_none());
-        assert!(MagicBytes::from_str("STRAT").is_none());
+        assert!("STR".parse::<MagicBytes>().is_err());
+        assert!("STRAT".parse::<MagicBytes>().is_err());
     }
 
     #[test]
     fn test_from_str_non_ascii() {
-        assert!(MagicBytes::from_str("STR🔥").is_none());
+        assert!("STR🔥".parse::<MagicBytes>().is_err());
     }
 
     #[test]

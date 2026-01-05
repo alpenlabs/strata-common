@@ -6,6 +6,6 @@ mod tag;
 mod types;
 
 pub use error::{TxFmtError, TxFmtResult};
-pub use magic::MagicBytes;
+pub use magic::{MAGIC_BYTES_LEN, MagicBytes};
 pub use tag::{ParseConfig, TagData, TagDataRef, extract_tx_magic_and_tag};
 pub use types::{SubprotocolId, TxType};
