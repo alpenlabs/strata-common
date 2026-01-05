@@ -1,7 +1,7 @@
 use bitcoin::script::PushBytesError;
 use thiserror::Error;
 
-use crate::types::MagicBytes;
+use crate::MagicBytes;
 
 /// Errors for decoding tx format types.
 #[derive(Debug, Error)]
