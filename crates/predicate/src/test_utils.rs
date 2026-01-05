@@ -9,6 +9,7 @@ use crate::{MAX_CONDITION_LEN, PredicateKey, errors::PredicateError, type_ids::P
 use proptest::prelude::*;
 
 /// Asserts that a result contains a `PredicateParsingFailed` error for the given predicate type.
+#[allow(dead_code)]
 pub(crate) fn assert_predicate_parsing_failed(
     result: Result<(), PredicateError>,
     expected_type: PredicateTypeId,
@@ -23,6 +24,7 @@ pub(crate) fn assert_predicate_parsing_failed(
 }
 
 /// Asserts that a result contains a `WitnessParsingFailed` error for the given predicate type.
+#[allow(dead_code)]
 pub(crate) fn assert_witness_parsing_failed(
     result: Result<(), PredicateError>,
     expected_type: PredicateTypeId,
@@ -37,6 +39,7 @@ pub(crate) fn assert_witness_parsing_failed(
 }
 
 /// Asserts that a result contains a `VerificationFailed` error for the given predicate type.
+#[allow(dead_code)]
 pub(crate) fn assert_verification_failed(
     result: Result<(), PredicateError>,
     expected_type: PredicateTypeId,

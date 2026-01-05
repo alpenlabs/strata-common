@@ -25,6 +25,15 @@ pub enum PredicateError {
     #[error("unknown predicate type name: {0}")]
     UnknownPredicateTypeName(String),
 
+    /// Predicate type not supported (feature not enabled).
+    #[error("predicate type {id} is not supported: {reason}")]
+    UnsupportedPredicateType {
+        /// The unsupported predicate type.
+        id: PredicateTypeId,
+        /// The reason (typically which feature flag to enable).
+        reason: String,
+    },
+
     // === Parsing Errors ===
     /// Predicate condition parsing failed.
     #[error("condition parsing failed for type {id}: {reason}")]
