@@ -4,10 +4,10 @@ use std::str;
 /// Length of magic bytes in bytes.
 pub const MAGIC_BYTES_LEN: usize = 4;
 
-/// Magic bytes identifier ([`MAGIC_BYTES_LEN`]-byte ASCII string).
+/// Magic bytes identifier ([`MAGIC_BYTES_LEN`]-byte sequence).
 ///
 /// This type wraps a [`MAGIC_BYTES_LEN`]-byte array and provides convenient conversion to/from
-/// ASCII strings for readability.
+/// strings for readability when the bytes are valid UTF-8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MagicBytes([u8; MAGIC_BYTES_LEN]);
 
@@ -22,7 +22,7 @@ impl MagicBytes {
         &self.0
     }
 
-    /// Returns the magic bytes as a string slice if valid ASCII.
+    /// Returns the magic bytes as a string slice if valid UTF-8.
     pub fn as_str(&self) -> Option<&str> {
         str::from_utf8(&self.0).ok()
     }
@@ -64,14 +64,15 @@ impl str::FromStr for MagicBytes {
     type Err = InvalidMagicBytes;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() != MAGIC_BYTES_LEN {
-            return Err(InvalidMagicBytes::InvalidLength);
-        }
-        if !s.is_ascii() {
-            return Err(InvalidMagicBytes::NotAscii);
+        let src = s.as_bytes();
+        if src.len() != MAGIC_BYTES_LEN {
+            return Err(InvalidMagicBytes::InvalidLength {
+                expected: MAGIC_BYTES_LEN,
+                found: src.len(),
+            });
         }
         let mut bytes = [0u8; MAGIC_BYTES_LEN];
-        bytes.copy_from_slice(s.as_bytes());
+        bytes.copy_from_slice(src);
         Ok(Self(bytes))
     }
 }
@@ -80,20 +81,17 @@ impl str::FromStr for MagicBytes {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InvalidMagicBytes {
     /// The input string is not exactly [`MAGIC_BYTES_LEN`] bytes long.
-    InvalidLength,
-    /// The input string contains non-ASCII characters.
-    NotAscii,
+    InvalidLength { expected: usize, found: usize },
 }
 
 impl fmt::Display for InvalidMagicBytes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidLength => write!(
+            Self::InvalidLength { expected, found } => write!(
                 f,
-                "magic bytes must be exactly {} characters",
-                MAGIC_BYTES_LEN
+                "magic bytes must be exactly {} bytes, found {}",
+                expected, found
             ),
-            Self::NotAscii => write!(f, "magic bytes must be ASCII"),
         }
     }
 }
@@ -104,6 +102,17 @@ impl std::error::Error for InvalidMagicBytes {}
 mod tests {
     use super::*;
 
+    fn assert_invalid_length(input: &str) {
+        let err = input.parse::<MagicBytes>().unwrap_err();
+        assert_eq!(
+            err,
+            InvalidMagicBytes::InvalidLength {
+                expected: MAGIC_BYTES_LEN,
+                found: input.as_bytes().len(),
+            },
+        );
+    }
+
     #[test]
     fn test_from_str() {
         let magic: MagicBytes = "STRA".parse().unwrap();
@@ -112,13 +121,15 @@ mod tests {
 
     #[test]
     fn test_from_str_invalid_length() {
-        assert!("STR".parse::<MagicBytes>().is_err());
-        assert!("STRAT".parse::<MagicBytes>().is_err());
+        assert_invalid_length("STR");
+        assert_invalid_length("STRAT");
+        assert_invalid_length("STR🔥");
     }
 
     #[test]
-    fn test_from_str_non_ascii() {
-        assert!("STR🔥".parse::<MagicBytes>().is_err());
+    fn test_from_str_utf8_multibyte() {
+        let magic: MagicBytes = "🔥".parse().unwrap();
+        assert_eq!(magic.as_bytes(), &[0xF0, 0x9F, 0x94, 0xA5]);
     }
 
     #[test]
