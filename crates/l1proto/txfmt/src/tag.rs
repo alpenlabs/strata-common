@@ -15,7 +15,8 @@ use bitcoin::{
 };
 
 use crate::error::{TxFmtError, TxFmtResult};
-use crate::types::{MagicBytes, SubprotocolId, TxType};
+use crate::magic::MagicBytes;
+use crate::types::{SubprotocolId, TxType};
 
 /// Minimum length of a valid header tag.
 const MIN_TAG_LEN: usize = 6;
@@ -226,7 +227,7 @@ impl ParseConfig {
         }
 
         let mut buf = Vec::with_capacity(MIN_TAG_LEN + td.aux_data.len());
-        buf.extend_from_slice(&self.magic_bytes);
+        buf.extend_from_slice(self.magic_bytes.as_ref());
         buf.push(td.subproto_id);
         buf.push(td.tx_type);
         buf.extend_from_slice(td.aux_data);
@@ -301,7 +302,7 @@ fn extract_magic_and_tag_from_buf<'t>(buf: &'t [u8]) -> TxFmtResult<(MagicBytes,
     }
 
     Ok((
-        magic,
+        magic.into(),
         TagDataRef {
             subproto_id,
             tx_type,
@@ -325,7 +326,7 @@ mod test {
 
     fn parse_script<'t>(script: &'t ScriptBuf) -> TxFmtResult<TagDataRef<'t>> {
         let config = ParseConfig {
-            magic_bytes: *MAGIC_BYTES,
+            magic_bytes: (*MAGIC_BYTES).into(),
         };
 
         config.try_parse_script(script)
@@ -398,7 +399,7 @@ mod test {
         };
 
         let (magic_bytes, tag) = extract_tx_magic_and_tag(&tx).expect("test: should parse");
-        assert_eq!(magic_bytes, *MAGIC_BYTES);
+        assert_eq!(magic_bytes, (*MAGIC_BYTES).into());
         assert_eq!(tag.subproto_id(), subproto_id);
         assert_eq!(tag.tx_type(), tx_type);
         assert_eq!(tag.aux_data(), aux_data);
@@ -463,7 +464,7 @@ mod test {
         let exp_subproto_id = 3;
         let exp_tag = TagDataRef::new(exp_subproto_id, 1, &aux_data).unwrap();
 
-        let config = ParseConfig::new(*MAGIC_BYTES);
+        let config = ParseConfig::new((*MAGIC_BYTES).into());
         let script = config.encode_script_buf(&exp_tag).unwrap();
 
         let tag = parse_script(&script).unwrap();
@@ -474,7 +475,7 @@ mod test {
 
     #[test]
     fn test_to_op_return_script_success() {
-        let config = ParseConfig::new(*MAGIC_BYTES);
+        let config = ParseConfig::new((*MAGIC_BYTES).into());
 
         // Check from aux size 0 to upto the maximum possible size i.e. 74.
         for size in 0..=MAX_AUX_LEN {
@@ -497,7 +498,7 @@ mod test {
 
     #[test]
     fn test_to_op_return_script_size_limit_exceeded() {
-        let config = ParseConfig::new(*MAGIC_BYTES);
+        let config = ParseConfig::new((*MAGIC_BYTES).into());
 
         // Create aux_data that will exceed 80 byte limit
         let oversized_aux_data = vec![0xFF; 79]; // 79 + 2 = 81 bytes > 80
@@ -515,7 +516,7 @@ mod test {
 
     #[test]
     fn test_to_op_return_script_different_subproto_ids() {
-        let config = ParseConfig::new(*MAGIC_BYTES);
+        let config = ParseConfig::new((*MAGIC_BYTES).into());
 
         let aux_data = b"test";
         let tx_type = 50;
@@ -536,7 +537,7 @@ mod test {
 
     #[test]
     fn test_to_op_return_script_various_tx_types() {
-        let config = ParseConfig::new(*MAGIC_BYTES);
+        let config = ParseConfig::new((*MAGIC_BYTES).into());
         let aux_data = b"data";
 
         // Test with different transaction types

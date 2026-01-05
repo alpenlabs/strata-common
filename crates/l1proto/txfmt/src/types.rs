@@ -1,6 +1,3 @@
-/// Buffer containing magic bytes.
-pub type MagicBytes = [u8; 4];
-
 /// Type describing the subprotocol ID of a tx.
 pub type SubprotocolId = u8;
 
