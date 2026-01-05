@@ -1,5 +1,8 @@
 use std::fmt;
 use std::str;
+use std::str::FromStr;
+
+use thiserror::Error;
 
 /// Length of magic bytes in bytes.
 pub const MAGIC_BYTES_LEN: usize = 4;
@@ -60,7 +63,7 @@ impl fmt::Display for MagicBytes {
     }
 }
 
-impl str::FromStr for MagicBytes {
+impl FromStr for MagicBytes {
     type Err = InvalidMagicBytes;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -78,25 +81,12 @@ impl str::FromStr for MagicBytes {
 }
 
 /// Error type for invalid magic bytes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum InvalidMagicBytes {
-    /// The input string is not exactly [`MAGIC_BYTES_LEN`] bytes long.
+    /// The input string is not exactly `expected` bytes long.
+    #[error("magic bytes must be exactly {expected} bytes, found {found}")]
     InvalidLength { expected: usize, found: usize },
 }
-
-impl fmt::Display for InvalidMagicBytes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidLength { expected, found } => write!(
-                f,
-                "magic bytes must be exactly {} bytes, found {}",
-                expected, found
-            ),
-        }
-    }
-}
-
-impl std::error::Error for InvalidMagicBytes {}
 
 #[cfg(test)]
 mod tests {
@@ -108,7 +98,7 @@ mod tests {
             err,
             InvalidMagicBytes::InvalidLength {
                 expected: MAGIC_BYTES_LEN,
-                found: input.as_bytes().len(),
+                found: input.len(),
             },
         );
     }
