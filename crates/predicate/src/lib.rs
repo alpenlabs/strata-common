@@ -116,11 +116,11 @@ mod borsh;
 mod arbitrary;
 
 // Suppress unused dev-dependency warnings when verify features are disabled
-#[cfg(all(test, not(feature = "verify-schnorr")))]
+#[cfg(all(test, not(feature = "schnorr")))]
 use rand as _;
-#[cfg(all(test, not(feature = "verify-sp1-groth16")))]
+#[cfg(all(test, not(feature = "sp1-groth16")))]
 use sp1_verifier as _;
-#[cfg(all(test, not(feature = "verify-sp1-groth16")))]
+#[cfg(all(test, not(feature = "sp1-groth16")))]
 use zkaleido as _;
 
 #[allow(unreachable_pub, missing_docs, reason = "generated code")]

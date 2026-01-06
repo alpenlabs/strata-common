@@ -1,11 +1,11 @@
 use crate::errors::PredicateError;
 use crate::type_ids::PredicateTypeId;
-#[cfg(any(feature = "verify-schnorr", feature = "verify-sp1-groth16"))]
+#[cfg(any(feature = "schnorr", feature = "sp1-groth16"))]
 use crate::verifier::PredicateVerifier;
 
-#[cfg(feature = "verify-schnorr")]
+#[cfg(feature = "schnorr")]
 use super::SchnorrVerifier;
-#[cfg(feature = "verify-sp1-groth16")]
+#[cfg(feature = "sp1-groth16")]
 use super::Sp1Groth16Verifier;
 
 /// Enum representing all supported verifier types and their implementations.
@@ -20,10 +20,10 @@ pub(crate) enum VerifierType {
     /// Always accept verifier (for testing and placeholders).
     AlwaysAccept,
     /// Schnorr BIP-340 signature verifier.
-    #[cfg(feature = "verify-schnorr")]
+    #[cfg(feature = "schnorr")]
     Schnorr(SchnorrVerifier),
     /// SP1 Groth16 zero-knowledge proof verifier.
-    #[cfg(feature = "verify-sp1-groth16")]
+    #[cfg(feature = "sp1-groth16")]
     Sp1Groth16(Sp1Groth16Verifier),
 }
 
@@ -34,21 +34,19 @@ impl TryFrom<PredicateTypeId> for VerifierType {
         match predicate_type_id {
             PredicateTypeId::NeverAccept => Ok(VerifierType::NeverAccept),
             PredicateTypeId::AlwaysAccept => Ok(VerifierType::AlwaysAccept),
-            #[cfg(feature = "verify-schnorr")]
+            #[cfg(feature = "schnorr")]
             PredicateTypeId::Bip340Schnorr => Ok(VerifierType::Schnorr(SchnorrVerifier)),
-            #[cfg(not(feature = "verify-schnorr"))]
+            #[cfg(not(feature = "schnorr"))]
             PredicateTypeId::Bip340Schnorr => Err(PredicateError::UnsupportedPredicateType {
                 id: PredicateTypeId::Bip340Schnorr,
-                reason: "enable the 'verify-schnorr' feature to verify Schnorr signatures"
-                    .to_string(),
+                reason: "enable the 'schnorr' feature to verify Schnorr signatures".to_string(),
             }),
-            #[cfg(feature = "verify-sp1-groth16")]
+            #[cfg(feature = "sp1-groth16")]
             PredicateTypeId::Sp1Groth16 => Ok(VerifierType::Sp1Groth16(Sp1Groth16Verifier)),
-            #[cfg(not(feature = "verify-sp1-groth16"))]
+            #[cfg(not(feature = "sp1-groth16"))]
             PredicateTypeId::Sp1Groth16 => Err(PredicateError::UnsupportedPredicateType {
                 id: PredicateTypeId::Sp1Groth16,
-                reason: "enable the 'verify-sp1-groth16' feature to verify SP1 Groth16 proofs"
-                    .to_string(),
+                reason: "enable the 'sp1-groth16' feature to verify SP1 Groth16 proofs".to_string(),
             }),
         }
     }
@@ -85,9 +83,9 @@ impl VerifierType {
                 let _ = (condition, claim, witness);
                 Ok(())
             }
-            #[cfg(feature = "verify-schnorr")]
+            #[cfg(feature = "schnorr")]
             VerifierType::Schnorr(schnorr) => schnorr.verify(condition, claim, witness),
-            #[cfg(feature = "verify-sp1-groth16")]
+            #[cfg(feature = "sp1-groth16")]
             VerifierType::Sp1Groth16(sp1) => sp1.verify(condition, claim, witness),
         }
     }

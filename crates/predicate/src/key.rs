@@ -235,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "verify-schnorr"))]
+    #[cfg(not(feature = "schnorr"))]
     fn test_unsupported_schnorr_gives_helpful_error() {
         let predkey = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32]);
         let claim = b"test claim";
@@ -253,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "verify-sp1-groth16"))]
+    #[cfg(not(feature = "sp1-groth16"))]
     fn test_unsupported_sp1_gives_helpful_error() {
         let predkey = PredicateKey::new(PredicateTypeId::Sp1Groth16, vec![0u8; 32]);
         let claim = b"test claim";
