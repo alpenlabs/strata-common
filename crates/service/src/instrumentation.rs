@@ -11,7 +11,7 @@
 //! 2. Child spans for launch, message processing, shutdown
 //! 3. Automatic metrics collection (counters and histograms)
 
-use std::time::Duration;
+use std::{fmt::Display, str::FromStr, time::Duration};
 
 use opentelemetry::{
     global,
@@ -39,13 +39,13 @@ impl OperationResult {
     }
 }
 
-impl std::fmt::Display for OperationResult {
+impl Display for OperationResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for OperationResult {
+impl FromStr for OperationResult {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -98,13 +98,13 @@ impl ShutdownReason {
     }
 }
 
-impl std::fmt::Display for ShutdownReason {
+impl Display for ShutdownReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for ShutdownReason {
+impl FromStr for ShutdownReason {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
