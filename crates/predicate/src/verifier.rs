@@ -13,6 +13,7 @@ use crate::errors::PredicateResult;
 /// This trait defines the interface for predicate implementations as specified in
 /// SPS-predicate-fmt. Each predicate type (Always Accept, BIP-340 Schnorr, SP1 Groth16, etc.)
 /// implements this trait to provide parsing and verification capabilities.
+#[allow(dead_code)]
 pub(crate) trait PredicateVerifier {
     /// The predicate condition type for this implementation.
     /// This can be a structured type that parses the raw condition bytes.

@@ -155,7 +155,7 @@ impl<'b> PredicateKeyBuf<'b> {
     /// * `Ok(())` if verification succeeds
     /// * `Err(PredicateError)` if verification fails or an error occurs
     pub fn verify_claim_witness(&self, claim: &[u8], witness: &[u8]) -> PredicateResult<()> {
-        let verifier = VerifierType::from(self.id);
+        let verifier = VerifierType::try_from(self.id)?;
         verifier.verify_claim_witness(self.condition(), claim, witness)
     }
 }
@@ -232,5 +232,41 @@ mod tests {
     fn test_missing_type_prefix() {
         let result = PredicateKeyBuf::try_from(&[][..]);
         assert!(matches!(result, Err(PredicateError::MissingPredicateType)));
+    }
+
+    #[test]
+    #[cfg(not(feature = "schnorr"))]
+    fn test_unsupported_schnorr_gives_helpful_error() {
+        let predkey = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32]);
+        let claim = b"test claim";
+        let witness = b"test witness";
+
+        let result = predkey.verify_claim_witness(claim, witness);
+
+        match result {
+            Err(PredicateError::UnsupportedPredicateType { id, reason }) => {
+                assert_eq!(id, PredicateTypeId::Bip340Schnorr);
+                assert!(reason.contains("verify-schnorr"));
+            }
+            _ => panic!("Expected UnsupportedPredicateType error, got: {result:?}"),
+        }
+    }
+
+    #[test]
+    #[cfg(not(feature = "sp1-groth16"))]
+    fn test_unsupported_sp1_gives_helpful_error() {
+        let predkey = PredicateKey::new(PredicateTypeId::Sp1Groth16, vec![0u8; 32]);
+        let claim = b"test claim";
+        let witness = b"test witness";
+
+        let result = predkey.verify_claim_witness(claim, witness);
+
+        match result {
+            Err(PredicateError::UnsupportedPredicateType { id, reason }) => {
+                assert_eq!(id, PredicateTypeId::Sp1Groth16);
+                assert!(reason.contains("verify-sp1-groth16"));
+            }
+            _ => panic!("Expected UnsupportedPredicateType error, got: {result:?}"),
+        }
     }
 }

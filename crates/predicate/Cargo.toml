@@ -7,12 +7,6 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-arbitrary = { workspace = true, optional = true, features = ["derive"] }
-borsh = { workspace = true, optional = true }
-hex = { workspace = true, optional = true }
-k256 = { version = "0.13.4", features = ["schnorr"] }
-serde = { workspace = true, optional = true }
-signature = "2.2"
 ssz.workspace = true
 ssz_derive.workspace = true
 ssz_primitives.workspace = true
@@ -20,7 +14,14 @@ ssz_types.workspace = true
 thiserror.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc18" }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc18", optional = true }
+
+arbitrary = { workspace = true, optional = true, features = ["derive"] }
+borsh = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+k256 = { version = "0.13.4", features = ["schnorr"], optional = true }
+serde = { workspace = true, optional = true }
+signature = { version = "2.2", optional = true }
 
 [build-dependencies]
 ssz_codegen.workspace = true
@@ -39,3 +40,6 @@ default = ["serde", "borsh"]
 serde = ["dep:serde", "dep:hex"]
 borsh = ["dep:borsh"]
 arbitrary = ["dep:arbitrary"]
+schnorr = ["dep:k256", "dep:signature"]
+sp1-groth16 = ["dep:zkaleido-sp1-groth16-verifier"]
+all = ["schnorr", "sp1-groth16"]

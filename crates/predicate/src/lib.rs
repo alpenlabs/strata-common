@@ -38,7 +38,7 @@
 //! ### Basic Verification
 //!
 //! ```rust
-//! use strata_predicate::{PredicateKey, verify_claim_witness, PredicateTypeId};
+//! use strata_predicate::{PredicateKey, PredicateTypeId};
 //!
 //! // Create a predicate key (always accept type for testing)
 //! let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test_condition".to_vec());
@@ -49,7 +49,7 @@
 //!
 //! // Verify using the global function
 //! let predicate_bytes = predkey.as_buf_ref().to_bytes();
-//! verify_claim_witness(&predicate_bytes, claim, witness).unwrap();
+//! strata_predicate::verify_claim_witness(&predicate_bytes, claim, witness).unwrap();
 //!
 //! // Or verify using the predicate key method
 //! predkey.verify_claim_witness(claim, witness).unwrap();
@@ -68,13 +68,26 @@
 //!
 //! - **Schnorr BIP-340** ([`PredicateTypeId::Bip340Schnorr`] = 10):
 //!   Schnorr signature verification using BIP-340 standard. Expects 32-byte x-only public keys.
+//!   *Requires the `verify-schnorr` feature.*
 //!
 //! - **SP1 Groth16 Verifier** ([`PredicateTypeId::Sp1Groth16`] = 20):
 //!   Zero-knowledge proof verification for SP1-generated Groth16 proofs.
+//!   *Requires the `verify-sp1-groth16` feature.*
 //!
 //! ## Feature Flags
 //!
-//! - `serde`: Enables Serialize/Deserialize implementations for [`PredicateKey`]
+//! ### Serialization
+//! - `serde`: Enables Serialize/Deserialize implementations (default)
+//! - `borsh`: Enables Borsh serialization support (default)
+//!
+//! ### Verification
+//! - `verify-schnorr`: Enables Schnorr BIP-340 signature verification
+//! - `verify-sp1-groth16`: Enables SP1 Groth16 zero-knowledge proof verification
+//! - `verify-all`: Enables all verification backends (convenience feature)
+//!
+//! **Note**: The base [`verify_claim_witness`] function is always available and works with
+//! `AlwaysAccept` and `NeverAccept` predicates without any features. Specific verifier features
+//! are only needed for cryptographic verification.
 //!
 //! ## Public API
 //!
@@ -101,6 +114,14 @@ mod borsh;
 
 #[cfg(feature = "arbitrary")]
 mod arbitrary;
+
+// Suppress unused dev-dependency warnings when verify features are disabled
+#[cfg(all(test, not(feature = "schnorr")))]
+use rand as _;
+#[cfg(all(test, not(feature = "sp1-groth16")))]
+use sp1_verifier as _;
+#[cfg(all(test, not(feature = "sp1-groth16")))]
+use zkaleido as _;
 
 #[allow(unreachable_pub, missing_docs, reason = "generated code")]
 mod ssz_generated {
