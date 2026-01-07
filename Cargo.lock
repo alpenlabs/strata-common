@@ -1715,7 +1715,7 @@ dependencies = [
  "syn",
  "toml",
  "tree_hash",
- "tree_hash_derive 0.12.0 (git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.0)",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -1810,7 +1810,7 @@ dependencies = [
  "strata-codec",
  "thiserror 2.0.17",
  "tree_hash",
- "tree_hash_derive 0.12.0 (git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.2)",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -1842,7 +1842,7 @@ dependencies = [
  "ssz_types",
  "thiserror 2.0.17",
  "tree_hash",
- "tree_hash_derive 0.12.0 (git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.2)",
+ "tree_hash_derive",
  "zkaleido",
  "zkaleido-sp1-groth16-verifier",
 ]
@@ -2130,16 +2130,6 @@ dependencies = [
  "ssz",
  "ssz_primitives",
  "thiserror 2.0.17",
-]
-
-[[package]]
-name = "tree_hash_derive"
-version = "0.12.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.2#b1bbc429259c5575223ebfa1f979464a2f20dacf"
-dependencies = [
- "darling",
- "quote",
- "syn",
 ]
 
 [[package]]
