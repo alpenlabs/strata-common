@@ -25,8 +25,14 @@ pub trait Service: Sync + Send + 'static {
     /// The status type derived from the state.
     type Status: ServiceStatus;
 
+    /// The context for the service
+    type Context: Send + Sync + 'static;
+
     /// Gets the status from the current state.
     fn get_status(s: &Self::State) -> Self::Status;
+
+    /// The name of the service.
+    fn name() -> &'static str;
 }
 
 /// Trait for service states which exposes common properties.
@@ -69,12 +75,16 @@ impl<T: Any + Clone + Debug + Sync + Send + Serialize + 'static> ServiceStatus f
 /// Trait for async service impls to define their per-input logic.
 pub trait AsyncService: Service {
     /// Called in the worker task after launching.
-    fn on_launch(_state: &mut Self::State) -> impl Future<Output = anyhow::Result<()>> + Send {
+    fn on_launch(
+        _ctx: &Self::Context,
+        _state: &mut Self::State,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
         async { Ok(()) }
     }
 
     /// Called for each input.
     fn process_input(
+        _ctx: &Self::Context,
         _state: &mut Self::State,
         _input: &Self::Msg,
     ) -> impl Future<Output = anyhow::Result<Response>> + Send {
@@ -85,6 +95,7 @@ pub trait AsyncService: Service {
     ///
     /// Passed an error, if shutting down due to input handling error.
     fn before_shutdown(
+        _ctx: &Self::Context,
         _state: &mut Self::State,
         _err: Option<&anyhow::Error>,
     ) -> impl Future<Output = anyhow::Result<()>> + Send {
@@ -95,12 +106,16 @@ pub trait AsyncService: Service {
 /// Trait for blocking service impls to define their per-input logic.
 pub trait SyncService: Service {
     /// Called in the worker thread after launching.
-    fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
+    fn on_launch(_ctx: &Self::Context, _state: &mut Self::State) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Called for each input.
-    fn process_input(_state: &mut Self::State, _input: &Self::Msg) -> anyhow::Result<Response> {
+    fn process_input(
+        _ctx: &Self::Context,
+        _state: &mut Self::State,
+        _input: &Self::Msg,
+    ) -> anyhow::Result<Response> {
         Ok(Response::Continue)
     }
 
@@ -108,6 +123,7 @@ pub trait SyncService: Service {
     ///
     /// Passed an error, if shutting down due to input handling error.
     fn before_shutdown(
+        _ctx: &Self::Context,
         _state: &mut Self::State,
         _err: Option<&anyhow::Error>,
     ) -> anyhow::Result<()> {

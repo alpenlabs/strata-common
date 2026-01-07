@@ -459,16 +459,22 @@ mod tests {
         type State = TestMonitoredState;
         type Msg = u32;
         type Status = TestStatus;
+        type Context = ();
 
         fn get_status(state: &Self::State) -> Self::Status {
             TestStatus {
                 counter: state.counter,
             }
         }
+
+        fn name() -> &'static str {
+            "test"
+        }
     }
 
     impl AsyncService for TestMonitoredService {
         async fn process_input(
+            _ctx: &Self::Context,
             state: &mut Self::State,
             input: &Self::Msg,
         ) -> anyhow::Result<Response> {
@@ -502,6 +508,7 @@ mod tests {
         type State = TestListenerState;
         type Msg = TestStatus;
         type Status = TestListenerStatus;
+        type Context = ();
 
         fn get_status(state: &Self::State) -> Self::Status {
             TestListenerStatus {
@@ -509,10 +516,15 @@ mod tests {
                 updates: state.updates,
             }
         }
+
+        fn name() -> &'static str {
+            "test"
+        }
     }
 
     impl AsyncService for TestListenerService {
         async fn process_input(
+            _ctx: &Self::Context,
             state: &mut Self::State,
             input: &Self::Msg,
         ) -> anyhow::Result<Response> {

@@ -14,6 +14,7 @@ use crate::{
 pub struct ServiceBuilder<S: Service, I> {
     state: Option<S::State>,
     inp: Option<I>,
+    context: Option<S::Context>,
 }
 
 impl<S: Service, I> ServiceBuilder<S, I> {
@@ -25,6 +26,12 @@ impl<S: Service, I> ServiceBuilder<S, I> {
     /// Sets the service's state.
     pub fn with_state(mut self, s: S::State) -> Self {
         self.state = Some(s);
+        self
+    }
+
+    /// Initializes new builder with a context
+    pub fn with_context(mut self, ctx: S::Context) -> ServiceBuilder<S, I> {
+        self.context = Some(ctx);
         self
     }
 
@@ -58,11 +65,13 @@ where
         // TODO convert to fallible results?
         let state = self.state.expect("service/builder: missing state");
         let inp = self.inp.expect("service/builder: missing input");
+        let ctx = self.context.expect("service/builder: missing context");
 
         let init_status = S::get_status(&state);
         let (status_tx, status_rx) = watch::channel(init_status);
 
-        let worker_fut_cls = move |g| async_worker::worker_task::<S, I>(state, inp, status_tx, g);
+        let worker_fut_cls =
+            move |g| async_worker::worker_task::<S, I>(ctx, state, inp, status_tx, g);
         texec.spawn_critical_async_with_shutdown(name, worker_fut_cls);
 
         Ok(ServiceMonitor::new(status_rx))
@@ -82,11 +91,12 @@ where
         // TODO convert to fallible results?
         let state = self.state.expect("service/builder: missing state");
         let inp = self.inp.expect("service/builder: missing input");
+        let ctx = self.context.expect("service/builder: missing context");
 
         let init_status = S::get_status(&state);
         let (status_tx, status_rx) = watch::channel(init_status);
 
-        let worker_cls = move |g| sync_worker::worker_task::<S, I>(state, inp, status_tx, g);
+        let worker_cls = move |g| sync_worker::worker_task::<S, I>(ctx, state, inp, status_tx, g);
         texec.spawn_critical(name, worker_cls);
 
         Ok(ServiceMonitor::new(status_rx))
@@ -125,6 +135,7 @@ impl<S: Service, I> Default for ServiceBuilder<S, I> {
         Self {
             state: None,
             inp: None,
+            context: None,
         }
     }
 }

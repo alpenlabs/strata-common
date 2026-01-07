@@ -13,6 +13,7 @@ use crate::{
 };
 
 pub(crate) fn worker_task<S: SyncService, I>(
+    ctx: S::Context,
     mut state: S::State,
     mut inp: I,
     status_tx: watch::Sender<S::Status>,
@@ -38,7 +39,7 @@ where
         let _g = launch_span.enter();
         let start = Instant::now();
 
-        let launch_result = S::on_launch(&mut state);
+        let launch_result = S::on_launch(&ctx, &mut state);
         let duration = start.elapsed();
         let result = OperationResult::from(&launch_result);
 
@@ -66,7 +67,7 @@ where
         let start = Instant::now();
 
         // Process the input.
-        let res = S::process_input(&mut state, &input);
+        let res = S::process_input(&ctx, &mut state, &input);
 
         let duration = start.elapsed();
         let result = OperationResult::from(&res);
@@ -114,6 +115,7 @@ where
     };
 
     handle_shutdown::<S>(
+        &ctx,
         &mut state,
         err.as_ref(),
         &instrumentation,
@@ -132,6 +134,7 @@ where
 /// shutdown metrics. This runs on every service exit (normal shutdown, error, or signal).
 /// Unclean exits (SIGKILL, panic, OOM) may skip this handler entirely.
 fn handle_shutdown<S: SyncService>(
+    ctx: &S::Context,
     state: &mut S::State,
     err: Option<&anyhow::Error>,
     instrumentation: &ServiceInstrumentation,
@@ -143,7 +146,7 @@ fn handle_shutdown<S: SyncService>(
     let _g = shutdown_span.enter();
     let start = Instant::now();
 
-    let shutdown_result = S::before_shutdown(state, err);
+    let shutdown_result = S::before_shutdown(ctx, state, err);
 
     let duration = start.elapsed();
 
