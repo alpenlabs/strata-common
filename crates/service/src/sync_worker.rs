@@ -23,7 +23,7 @@ where
     I: SyncServiceInput<Msg = S::Msg>,
 {
     let service_name = state.name().to_string();
-    let span_prefix = state.span_prefix().to_string();
+    let span_prefix = S::span_prefix().to_string();
     let instrumentation = ServiceInstrumentation::new(&service_name);
 
     // Create parent lifecycle span wrapping entire service lifetime

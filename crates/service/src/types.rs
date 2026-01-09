@@ -31,8 +31,15 @@ pub trait Service: Sync + Send + 'static {
     /// Gets the status from the current state.
     fn get_status(s: &Self::State) -> Self::Status;
 
-    /// The name of the service.
+    /// The name of the service. Not supposed to change for a service.
     fn name() -> &'static str;
+
+    /// Span prefix for OpenTelemetry tracing.
+    ///
+    /// This is used to create semantic span names like "asm.lifecycle", "csm.lifecycle", etc.
+    fn span_prefix() -> &'static str {
+        Self::name()
+    }
 }
 
 /// Trait for service states which exposes common properties.
