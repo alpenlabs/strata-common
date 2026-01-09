@@ -449,11 +449,7 @@ mod tests {
         counter: u32,
     }
 
-    impl ServiceState for TestMonitoredState {
-        fn name(&self) -> &str {
-            "test_monitored"
-        }
-    }
+    impl ServiceState for TestMonitoredState {}
 
     impl Service for TestMonitoredService {
         type State = TestMonitoredState;
@@ -498,11 +494,7 @@ mod tests {
         updates: usize,
     }
 
-    impl ServiceState for TestListenerState {
-        fn name(&self) -> &str {
-            "test_listener"
-        }
-    }
+    impl ServiceState for TestListenerState {}
 
     impl Service for TestListenerService {
         type State = TestListenerState;
