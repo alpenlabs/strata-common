@@ -449,26 +449,28 @@ mod tests {
         counter: u32,
     }
 
-    impl ServiceState for TestMonitoredState {
-        fn name(&self) -> &str {
-            "test_monitored"
-        }
-    }
+    impl ServiceState for TestMonitoredState {}
 
     impl Service for TestMonitoredService {
         type State = TestMonitoredState;
         type Msg = u32;
         type Status = TestStatus;
+        type Context = ();
 
         fn get_status(state: &Self::State) -> Self::Status {
             TestStatus {
                 counter: state.counter,
             }
         }
+
+        fn name() -> &'static str {
+            "test"
+        }
     }
 
     impl AsyncService for TestMonitoredService {
         async fn process_input(
+            _ctx: &Self::Context,
             state: &mut Self::State,
             input: &Self::Msg,
         ) -> anyhow::Result<Response> {
@@ -492,16 +494,13 @@ mod tests {
         updates: usize,
     }
 
-    impl ServiceState for TestListenerState {
-        fn name(&self) -> &str {
-            "test_listener"
-        }
-    }
+    impl ServiceState for TestListenerState {}
 
     impl Service for TestListenerService {
         type State = TestListenerState;
         type Msg = TestStatus;
         type Status = TestListenerStatus;
+        type Context = ();
 
         fn get_status(state: &Self::State) -> Self::Status {
             TestListenerStatus {
@@ -509,10 +508,15 @@ mod tests {
                 updates: state.updates,
             }
         }
+
+        fn name() -> &'static str {
+            "test"
+        }
     }
 
     impl AsyncService for TestListenerService {
         async fn process_input(
+            _ctx: &Self::Context,
             state: &mut Self::State,
             input: &Self::Msg,
         ) -> anyhow::Result<Response> {
@@ -536,6 +540,7 @@ mod tests {
         let monitored_monitor = ServiceBuilder::<TestMonitoredService, _>::new()
             .with_state(monitored_state)
             .with_input(monitored_input)
+            .with_context(())
             .launch_async("test_monitored", &texec)
             .await
             .expect("test: launch monitored service");
@@ -551,6 +556,7 @@ mod tests {
         let listener_monitor = ServiceBuilder::<TestListenerService, _>::new()
             .with_state(listener_state)
             .with_input(listener_input)
+            .with_context(())
             .launch_async("test_listener", &texec)
             .await
             .expect("test: launch listener service");

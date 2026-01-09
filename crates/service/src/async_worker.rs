@@ -10,11 +10,12 @@ use crate::{
     instrumentation::{
         record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason,
     },
-    AsyncService, AsyncServiceInput, Response, ServiceState,
+    AsyncService, AsyncServiceInput, Response,
 };
 
 /// Async worker task.
 pub(crate) async fn worker_task<S: AsyncService, I>(
+    ctx: S::Context,
     mut state: S::State,
     mut inp: I,
     status_tx: watch::Sender<S::Status>,
@@ -23,8 +24,8 @@ pub(crate) async fn worker_task<S: AsyncService, I>(
 where
     I: AsyncServiceInput<Msg = S::Msg>,
 {
-    let service_name = state.name().to_string();
-    let span_prefix = state.span_prefix().to_string();
+    let service_name = S::name().to_string();
+    let span_prefix = S::span_prefix().to_string();
     let instrumentation = ServiceInstrumentation::new(&service_name);
 
     // Create parent lifecycle span wrapping entire service lifetime
@@ -40,7 +41,7 @@ where
         let launch_span = info_span!("{}.launch", span_prefix, service.name = %service_name);
         let start = Instant::now();
 
-        let launch_result = S::on_launch(&mut state).instrument(launch_span).await;
+        let launch_result = S::on_launch(&ctx, &mut state).instrument(launch_span).await;
         let duration = start.elapsed();
         let result = OperationResult::from(&launch_result);
 
@@ -55,6 +56,7 @@ where
         let mut exit_fut = Box::pin(shutdown_guard.wait_for_shutdown().fuse());
         let mut wkr_fut = Box::pin(
             worker_task_inner::<S, I>(
+                &ctx,
                 &mut state,
                 &mut inp,
                 &status_tx,
@@ -81,6 +83,7 @@ where
     };
 
     handle_shutdown::<S>(
+        &ctx,
         &mut state,
         err.as_ref(),
         &instrumentation,
@@ -95,6 +98,7 @@ where
 }
 
 async fn worker_task_inner<S: AsyncService, I>(
+    ctx: &S::Context,
     state: &mut S::State,
     inp: &mut I,
     status_tx: &watch::Sender<S::Status>,
@@ -104,7 +108,7 @@ async fn worker_task_inner<S: AsyncService, I>(
 where
     I: AsyncServiceInput<Msg = S::Msg>,
 {
-    let service_name = state.name().to_string();
+    let service_name = S::name().to_string();
 
     // Process messages in a loop
     while let Some(input) = inp.recv_next().await? {
@@ -115,7 +119,9 @@ where
         let start = Instant::now();
 
         // Process the input.
-        let res = S::process_input(state, &input).instrument(msg_span).await;
+        let res = S::process_input(ctx, state, &input)
+            .instrument(msg_span)
+            .await;
 
         let duration = start.elapsed();
         let result = OperationResult::from(&res);
@@ -157,17 +163,18 @@ where
 /// shutdown metrics. This runs on every service exit (normal shutdown, error, or signal).
 /// Unclean exits (SIGKILL, panic, OOM) may skip this handler entirely.
 async fn handle_shutdown<S: AsyncService>(
+    ctx: &S::Context,
     state: &mut S::State,
     err: Option<&anyhow::Error>,
     instrumentation: &ServiceInstrumentation,
     shutdown_reason: ShutdownReason,
     span_prefix: &str,
 ) {
-    let service_name = state.name().to_string();
+    let service_name = S::name().to_string();
     let shutdown_span = info_span!("{}.shutdown", span_prefix, service.name = %service_name);
     let start = Instant::now();
 
-    let shutdown_result = S::before_shutdown(state, err)
+    let shutdown_result = S::before_shutdown(ctx, state, err)
         .instrument(shutdown_span)
         .await;
 

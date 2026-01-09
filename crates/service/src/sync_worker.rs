@@ -9,10 +9,11 @@ use crate::{
     instrumentation::{
         record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason,
     },
-    Response, ServiceState, SyncService, SyncServiceInput,
+    Response, SyncService, SyncServiceInput,
 };
 
 pub(crate) fn worker_task<S: SyncService, I>(
+    ctx: S::Context,
     mut state: S::State,
     mut inp: I,
     status_tx: watch::Sender<S::Status>,
@@ -21,8 +22,8 @@ pub(crate) fn worker_task<S: SyncService, I>(
 where
     I: SyncServiceInput<Msg = S::Msg>,
 {
-    let service_name = state.name().to_string();
-    let span_prefix = state.span_prefix().to_string();
+    let service_name = S::name().to_string();
+    let span_prefix = S::span_prefix().to_string();
     let instrumentation = ServiceInstrumentation::new(&service_name);
 
     // Create parent lifecycle span wrapping entire service lifetime
@@ -38,7 +39,7 @@ where
         let _g = launch_span.enter();
         let start = Instant::now();
 
-        let launch_result = S::on_launch(&mut state);
+        let launch_result = S::on_launch(&ctx, &mut state);
         let duration = start.elapsed();
         let result = OperationResult::from(&launch_result);
 
@@ -66,7 +67,7 @@ where
         let start = Instant::now();
 
         // Process the input.
-        let res = S::process_input(&mut state, &input);
+        let res = S::process_input(&ctx, &mut state, &input);
 
         let duration = start.elapsed();
         let result = OperationResult::from(&res);
@@ -114,6 +115,7 @@ where
     };
 
     handle_shutdown::<S>(
+        &ctx,
         &mut state,
         err.as_ref(),
         &instrumentation,
@@ -132,18 +134,19 @@ where
 /// shutdown metrics. This runs on every service exit (normal shutdown, error, or signal).
 /// Unclean exits (SIGKILL, panic, OOM) may skip this handler entirely.
 fn handle_shutdown<S: SyncService>(
+    ctx: &S::Context,
     state: &mut S::State,
     err: Option<&anyhow::Error>,
     instrumentation: &ServiceInstrumentation,
     shutdown_reason: ShutdownReason,
     span_prefix: &str,
 ) {
-    let service_name = state.name().to_string();
+    let service_name = S::name().to_string();
     let shutdown_span = info_span!("{}.shutdown", span_prefix, service.name = %service_name);
     let _g = shutdown_span.enter();
     let start = Instant::now();
 
-    let shutdown_result = S::before_shutdown(state, err);
+    let shutdown_result = S::before_shutdown(ctx, state, err);
 
     let duration = start.elapsed();
 

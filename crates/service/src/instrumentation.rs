@@ -322,7 +322,7 @@ impl ServiceInstrumentation {
     /// # Arguments
     ///
     /// * `span_prefix` - Domain-specific prefix (e.g., "asm", "csm", "chain")
-    /// * `service_name` - Name of the service (from `ServiceState::name()`)
+    /// * `service_name` - Name of the service (from `Service::name()`)
     /// * `service_type` - Type of service ("async" or "sync")
     ///
     /// # Returns
