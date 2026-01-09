@@ -17,6 +17,17 @@ pub struct ServiceBuilder<S: Service, I> {
     context: Option<S::Context>,
 }
 
+impl<S: Service<Context = ()>, I> ServiceBuilder<S, I> {
+    /// Constructs a service builder with unit context
+    pub fn new_with_unit_context() -> Self {
+        Self {
+            state: None,
+            inp: None,
+            context: Some(()),
+        }
+    }
+}
+
 impl<S: Service, I> ServiceBuilder<S, I> {
     /// Constructs an uninitialized service builder.
     pub fn new() -> Self {

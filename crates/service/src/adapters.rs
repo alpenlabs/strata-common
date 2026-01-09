@@ -540,6 +540,7 @@ mod tests {
         let monitored_monitor = ServiceBuilder::<TestMonitoredService, _>::new()
             .with_state(monitored_state)
             .with_input(monitored_input)
+            .with_context(())
             .launch_async("test_monitored", &texec)
             .await
             .expect("test: launch monitored service");
@@ -555,6 +556,7 @@ mod tests {
         let listener_monitor = ServiceBuilder::<TestListenerService, _>::new()
             .with_state(listener_state)
             .with_input(listener_input)
+            .with_context(())
             .launch_async("test_listener", &texec)
             .await
             .expect("test: launch listener service");
