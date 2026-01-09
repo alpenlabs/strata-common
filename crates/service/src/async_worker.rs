@@ -10,7 +10,7 @@ use crate::{
     instrumentation::{
         record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason,
     },
-    AsyncService, AsyncServiceInput, Response, ServiceState,
+    AsyncService, AsyncServiceInput, Response,
 };
 
 /// Async worker task.
@@ -24,7 +24,7 @@ pub(crate) async fn worker_task<S: AsyncService, I>(
 where
     I: AsyncServiceInput<Msg = S::Msg>,
 {
-    let service_name = state.name().to_string();
+    let service_name = S::name().to_string();
     let span_prefix = S::span_prefix().to_string();
     let instrumentation = ServiceInstrumentation::new(&service_name);
 
@@ -108,7 +108,7 @@ async fn worker_task_inner<S: AsyncService, I>(
 where
     I: AsyncServiceInput<Msg = S::Msg>,
 {
-    let service_name = state.name().to_string();
+    let service_name = S::name().to_string();
 
     // Process messages in a loop
     while let Some(input) = inp.recv_next().await? {
@@ -170,7 +170,7 @@ async fn handle_shutdown<S: AsyncService>(
     shutdown_reason: ShutdownReason,
     span_prefix: &str,
 ) {
-    let service_name = state.name().to_string();
+    let service_name = S::name().to_string();
     let shutdown_span = info_span!("{}.shutdown", span_prefix, service.name = %service_name);
     let start = Instant::now();
 

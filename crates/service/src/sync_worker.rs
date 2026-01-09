@@ -9,7 +9,7 @@ use crate::{
     instrumentation::{
         record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason,
     },
-    Response, ServiceState, SyncService, SyncServiceInput,
+    Response, SyncService, SyncServiceInput,
 };
 
 pub(crate) fn worker_task<S: SyncService, I>(
@@ -22,7 +22,7 @@ pub(crate) fn worker_task<S: SyncService, I>(
 where
     I: SyncServiceInput<Msg = S::Msg>,
 {
-    let service_name = state.name().to_string();
+    let service_name = S::name().to_string();
     let span_prefix = S::span_prefix().to_string();
     let instrumentation = ServiceInstrumentation::new(&service_name);
 
@@ -141,7 +141,7 @@ fn handle_shutdown<S: SyncService>(
     shutdown_reason: ShutdownReason,
     span_prefix: &str,
 ) {
-    let service_name = state.name().to_string();
+    let service_name = S::name().to_string();
     let shutdown_span = info_span!("{}.shutdown", span_prefix, service.name = %service_name);
     let _g = shutdown_span.enter();
     let start = Instant::now();
