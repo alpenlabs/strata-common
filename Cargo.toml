@@ -26,13 +26,13 @@ strata-service = { path = "crates/services" }
 strata-tasks = { path = "crates/tasks" }
 
 # SSZ dependencies
-ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.2" }
-ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.2" }
-ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.2" }
-ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.2" }
-ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.2" }
-tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.2" }
-tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.2" }
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", branch = "fix/diamond-dependency-order" }
+ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", branch = "fix/diamond-dependency-order" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", branch = "fix/diamond-dependency-order" }
+ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", branch = "fix/diamond-dependency-order" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", branch = "fix/diamond-dependency-order" }
+tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", branch = "fix/diamond-dependency-order" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", branch = "fix/diamond-dependency-order" }
 
 # External dependencies
 anyhow = "1"
