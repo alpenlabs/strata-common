@@ -23,14 +23,14 @@ pub const MAX_ENVELOPE_PAYLOAD_SIZE: usize = 395_000;
 ///
 /// This builder helps create scripts containing envelope data that can be placed
 /// in a transaction input's script_sig. The envelope container includes:
-/// - A pubkey and CHECKSIGVERIFY for spendability
+/// - A pubkey and CHECKSIG for spendability
 /// - One or more envelope payloads
 ///
 /// # Structure
 ///
 /// ```text
 /// <pubkey>
-/// CHECKSIGVERIFY
+/// CHECKSIG
 /// OP_FALSE OP_IF <payload_0> OP_ENDIF
 /// OP_FALSE OP_IF <payload_1> OP_ENDIF
 /// ...
@@ -130,13 +130,14 @@ impl EnvelopeScriptBuilder {
 
     /// Builds the envelope container script.
     ///
-    /// Creates a script with the pubkey, CHECKSIGVERIFY, and all envelope payloads.
+    /// Creates a script with the pubkey, CHECKSIG, and all envelope payloads.
     ///
     /// # Errors
     ///
     /// Returns [`EnvelopeBuildError::PayloadTooSmall`] if total payload size < 126 bytes.
+    /// If the minimum size constraint doesn't apply to your use case, use
+    /// [`build_without_min_check`](Self::build_without_min_check) instead.
     pub fn build(self) -> Result<ScriptBuf, EnvelopeBuildError> {
-        // Validate envelope payload sizes
         if self.total_payload_size < MIN_ENVELOPE_PAYLOAD_SIZE {
             return Err(EnvelopeBuildError::PayloadTooSmall {
                 total_size: self.total_payload_size,
@@ -144,6 +145,19 @@ impl EnvelopeScriptBuilder {
             });
         }
 
+        Ok(self.builder.into_script())
+    }
+
+    /// Builds the envelope container script without enforcing the minimum payload size.
+    ///
+    /// This method bypasses the 126-byte minimum payload size check that [`build`](Self::build)
+    /// enforces. Use this when:
+    ///
+    /// - Your use case doesn't involve SPS-50 tagging
+    /// - You need envelope structure for small payloads regardless of efficiency
+    ///
+    /// Note that the SPS-50 aux field is generally more efficient for payloads under 126 bytes.
+    pub fn build_without_min_check(self) -> Result<ScriptBuf, EnvelopeBuildError> {
         Ok(self.builder.into_script())
     }
 }
@@ -548,5 +562,36 @@ mod tests {
             ),
             "Should fail when batch envelopes exceed maximum total size"
         );
+    }
+
+    #[test]
+    fn test_build_without_min_check() {
+        let pubkey = vec![0x02; 33];
+        let small_payload = vec![1; 50];
+
+        // build() should fail with PayloadTooSmall
+        let result = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+            .unwrap()
+            .add_envelope(&small_payload)
+            .unwrap()
+            .build();
+
+        assert!(matches!(
+            result,
+            Err(EnvelopeBuildError::PayloadTooSmall {
+                total_size: 50,
+                min: 126
+            })
+        ));
+
+        // build_without_min_check() should succeed for the same payload
+        let script = EnvelopeScriptBuilder::with_pubkey(&pubkey)
+            .unwrap()
+            .add_envelope(&small_payload)
+            .unwrap()
+            .build_without_min_check()
+            .unwrap();
+
+        assert!(!script.is_empty());
     }
 }
