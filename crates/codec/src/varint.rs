@@ -23,12 +23,12 @@ pub type VarintInner = u32;
 pub struct Varint(VarintInner);
 
 impl Varint {
-    fn new_unchecked(v: VarintInner) -> Self {
+    const fn new_unchecked(v: VarintInner) -> Self {
         Self(v)
     }
 
     /// Construct a new instance.
-    pub fn new(v: VarintInner) -> Option<Self> {
+    pub const fn new(v: VarintInner) -> Option<Self> {
         if v > VARINT_MAX {
             return None;
         }
@@ -36,7 +36,7 @@ impl Varint {
     }
 
     /// Constructs a new instance from a usize.
-    pub fn new_usize(v: usize) -> Option<Self> {
+    pub const fn new_usize(v: usize) -> Option<Self> {
         // This is implemented as a separate function from `new` just we don't
         // have to trust LLVM will optimize out the bounds checks.
         if v > VARINT_MAX as usize {
@@ -47,12 +47,12 @@ impl Varint {
     }
 
     /// Converts to inner value.
-    pub fn inner(self) -> VarintInner {
+    pub const fn inner(self) -> VarintInner {
         self.0
     }
 
     /// Gets the "width type" of the varint.
-    pub fn width(&self) -> VarintWidth {
+    pub const fn width(&self) -> VarintWidth {
         if self.0 < 128 {
             VarintWidth::U8
         } else if self.0 < 16384 {
@@ -63,7 +63,7 @@ impl Varint {
     }
 
     /// Convenience function for returning the encoded length in bytes.
-    pub fn byte_len(&self) -> usize {
+    pub const fn byte_len(&self) -> usize {
         self.width().byte_len()
     }
 
@@ -159,7 +159,7 @@ pub enum VarintWidth {
 
 impl VarintWidth {
     /// Returns the number of bytes to encode the varint.
-    pub fn byte_len(&self) -> usize {
+    pub const fn byte_len(&self) -> usize {
         match self {
             VarintWidth::U8 => 1,
             VarintWidth::U16 => 2,
