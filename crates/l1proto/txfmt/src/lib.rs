@@ -2,6 +2,8 @@
 
 mod error;
 mod magic;
+#[cfg(feature = "serde")]
+mod serde;
 mod tag;
 mod types;
 
