@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bitcoin.workspace = true
+borsh = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
 
@@ -16,5 +17,6 @@ serde_json.workspace = true
 workspace = true
 
 [features]
-default = ["serde"]
+default = ["serde", "borsh"]
 serde = ["dep:serde"]
+borsh = ["dep:borsh"]

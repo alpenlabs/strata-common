@@ -1,5 +1,7 @@
 //! This crate contains all the types and logic related to encoding and parsing SPS-50 headers.
 
+#[cfg(feature = "borsh")]
+mod borsh;
 mod error;
 mod magic;
 #[cfg(feature = "serde")]
