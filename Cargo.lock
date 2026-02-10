@@ -1789,7 +1789,12 @@ dependencies = [
 name = "strata-l1-txfmt"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
+ "bincode",
  "bitcoin",
+ "borsh",
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
 ]
 

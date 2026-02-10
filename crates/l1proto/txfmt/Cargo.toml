@@ -4,8 +4,21 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+arbitrary = { workspace = true, optional = true }
 bitcoin.workspace = true
+borsh = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
 thiserror.workspace = true
+
+[dev-dependencies]
+bincode.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+default = ["arbitrary", "borsh", "serde"]
+arbitrary = ["dep:arbitrary"]
+borsh = ["dep:borsh"]
+serde = ["dep:serde"]
