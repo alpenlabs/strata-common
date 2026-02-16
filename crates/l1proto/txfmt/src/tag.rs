@@ -133,6 +133,15 @@ impl TagData {
         })
     }
 
+    /// Constructs a new instance with no auxiliary data.
+    pub fn new_noaux(subproto_id: SubprotocolId, tx_type: TxType) -> Self {
+        Self {
+            subproto_id,
+            tx_type,
+            aux_data: vec![],
+        }
+    }
+
     /// Gets the subprotocol ID.
     pub fn subproto_id(&self) -> SubprotocolId {
         self.subproto_id
