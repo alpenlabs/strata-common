@@ -37,7 +37,11 @@ where
     // Perform startup logic.  If this errors we propagate it immediately and
     // crash the task.
     {
-        let launch_span = info_span!("{}.launch", span_prefix, service.name = %service_name);
+        let launch_span = info_span!(
+            "service.launch",
+            span_prefix = %span_prefix,
+            service.name = %service_name,
+        );
         let start = Instant::now();
 
         let launch_result = S::on_launch(&mut state).instrument(launch_span).await;
@@ -108,9 +112,10 @@ where
 
     // Process messages in a loop
     while let Some(input) = inp.recv_next().await? {
-        let msg_span = debug_span!(
-            "{}.process_message", span_prefix,
-            service.name = %service_name
+        let msg_span = trace_span!(
+            "service.process_message",
+            span_prefix = %span_prefix,
+            service.name = %service_name,
         );
         let start = Instant::now();
 
@@ -164,7 +169,11 @@ async fn handle_shutdown<S: AsyncService>(
     span_prefix: &str,
 ) {
     let service_name = state.name().to_string();
-    let shutdown_span = info_span!("{}.shutdown", span_prefix, service.name = %service_name);
+    let shutdown_span = info_span!(
+        "service.shutdown",
+        span_prefix = %span_prefix,
+        service.name = %service_name,
+    );
     let start = Instant::now();
 
     let shutdown_result = S::before_shutdown(state, err)

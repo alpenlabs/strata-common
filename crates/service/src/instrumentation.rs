@@ -335,11 +335,11 @@ impl ServiceInstrumentation {
         service_name: &str,
         service_type: &'static str,
     ) -> TracingSpan {
-        let span_name = format!("{}.lifecycle", span_prefix);
         tracing::info_span!(
             target: "strata_service",
             parent: None,
-            "{}", span_name,
+            "service.lifecycle",
+            span_prefix = %span_prefix,
             service.name = %service_name,
             service.type = %service_type,
         )
