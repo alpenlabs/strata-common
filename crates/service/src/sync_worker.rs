@@ -34,7 +34,11 @@ where
     // Perform startup logic.  If this errors we propagate it immediately and
     // crash the task.
     {
-        let launch_span = info_span!("{}.launch", span_prefix, service.name = %service_name);
+        let launch_span = info_span!(
+            "service.launch",
+            span_prefix = %span_prefix,
+            service.name = %service_name,
+        );
         let _g = launch_span.enter();
         let start = Instant::now();
 
@@ -58,9 +62,10 @@ where
             break;
         }
 
-        let msg_span = debug_span!(
-            "{}.process_message", span_prefix,
-            service.name = %service_name
+        let msg_span = trace_span!(
+            "service.process_message",
+            span_prefix = %span_prefix,
+            service.name = %service_name,
         );
         let _g = msg_span.enter();
         let start = Instant::now();
@@ -139,7 +144,11 @@ fn handle_shutdown<S: SyncService>(
     span_prefix: &str,
 ) {
     let service_name = state.name().to_string();
-    let shutdown_span = info_span!("{}.shutdown", span_prefix, service.name = %service_name);
+    let shutdown_span = info_span!(
+        "service.shutdown",
+        span_prefix = %span_prefix,
+        service.name = %service_name,
+    );
     let _g = shutdown_span.enter();
     let start = Instant::now();
 
