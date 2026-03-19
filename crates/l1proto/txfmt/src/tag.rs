@@ -306,7 +306,7 @@ fn extract_magic_and_tag_from_buf<'t>(buf: &'t [u8]) -> TxFmtResult<(MagicBytes,
     let tx_type = buf[5];
     let aux_data = &buf[MIN_TAG_LEN..];
 
-    if aux_data.len() >= MAX_AUX_LEN {
+    if aux_data.len() > MAX_AUX_LEN {
         return Err(TxFmtError::AuxTooLong);
     }
 
@@ -520,6 +520,32 @@ mod test {
         match result.unwrap_err() {
             TxFmtError::AuxTooLong => {}
             e => panic!("test: expected AuxTooLong error (got {e:?})"),
+        }
+    }
+
+    #[test]
+    fn parse_aux_data_at_max_len_succeeds() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(MAGIC_BYTES);
+        buf.push(1); // subproto
+        buf.push(2); // tx_type
+        buf.extend_from_slice(&[0xBB; MAX_AUX_LEN]);
+
+        let (_magic, tag) = extract_magic_and_tag_from_buf(&buf).unwrap();
+        assert_eq!(tag.aux_data().len(), MAX_AUX_LEN);
+    }
+
+    #[test]
+    fn parse_aux_data_exceeding_max_len_fails() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(MAGIC_BYTES);
+        buf.push(1); // subproto
+        buf.push(2); // tx_type
+        buf.extend_from_slice(&[0xBB; MAX_AUX_LEN + 1]);
+
+        match extract_magic_and_tag_from_buf(&buf) {
+            Err(TxFmtError::AuxTooLong) => {}
+            other => panic!("expected AuxTooLong error, got {other:?}"),
         }
     }
 
