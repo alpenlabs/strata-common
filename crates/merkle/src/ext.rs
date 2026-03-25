@@ -12,6 +12,10 @@ use crate::traits::MmrState;
 /// are hashed. The blanket implementation provides the actual MMR algorithms that
 /// work with any state backend implementing [`MmrState`].
 pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
+    /// Creates a new instance with some arbitrary number of repeated leafs
+    /// pre-inserted.
+    fn new_repeated(leaf: MH::Hash, count: u64) -> Self;
+
     /// Returns if the MMR is empty.
     fn is_empty(&self) -> bool;
 
@@ -69,6 +73,32 @@ where
     MH: MerkleHasher,
     S: MmrState<MH::Hash>,
 {
+    fn new_repeated(leaf: MH::Hash, count: u64) -> Self {
+        let mut this = Self::new_empty();
+
+        let mut cur = leaf;
+        for i in 0..u64::BITS {
+            let shr = count >> i;
+
+            // If the bit is set then set the value.
+            if shr & 1 != 0 {
+                this.set_peak(i as u8, cur);
+            }
+
+            // If there's no more set bits then break so that we don't keep
+            // hashing uselessly.
+            if shr == 0 {
+                break;
+            }
+
+            // We hash on every iteration because we need to compute the root at
+            // each step *anyways*.
+            cur = MH::hash_node(cur, cur);
+        }
+
+        this
+    }
+
     fn is_empty(&self) -> bool {
         self.num_entries() == 0
     }
@@ -773,6 +803,33 @@ mod tests {
                 state_iter[i].0 > state_iter[i - 1].0,
                 "peak heights should be in ascending order"
             );
+        }
+    }
+
+    #[test]
+    fn test_new_repeated_matches_add_leaf() {
+        let leaf = make_hash(b"repeated_leaf");
+
+        let mut acc = CompactMmr64::<Hash32>::new(64);
+
+        for count in 0..=10000 {
+            let batch = <CompactMmr64<Hash32> as Mmr<Sha256Hasher>>::new_repeated(leaf, count);
+
+            assert_eq!(
+                acc.num_entries(),
+                batch.num_entries(),
+                "test: num_entries mismatch for count={count}"
+            );
+
+            assert!(
+                acc.iter_peaks()
+                    .zip(batch.iter_peaks())
+                    .all(|((h1, v1), (h2, v2))| h1 == h2 && v1 == v2),
+                "test: peaks mismatch for count={count}"
+            );
+
+            // Add the leaf at the end so it's there for the next iteration.
+            Mmr::<Sha256Hasher>::add_leaf(&mut acc, leaf).unwrap();
         }
     }
 
