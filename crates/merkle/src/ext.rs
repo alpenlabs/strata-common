@@ -311,7 +311,7 @@ mod tests {
 
     use super::*;
     use crate::Sha256Hasher;
-    use crate::mmr::CompactMmr64;
+    use crate::legacy_compact_mmr::CompactMmr64;
     use crate::proof::MerkleProof;
     use crate::traits::MmrState;
 

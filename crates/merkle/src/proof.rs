@@ -524,9 +524,7 @@ mod proofb32 {
 mod tests {
     #[cfg(feature = "ssz")]
     use {
-        crate::{
-            MerkleProof, MerkleProofB32, Mmr, RawMerkleProofB32, Sha256Hasher, mmr::CompactMmr64,
-        },
+        crate::{CompactMmr64, MerkleProof, MerkleProofB32, Mmr, RawMerkleProofB32, Sha256Hasher},
         sha2::{Digest, Sha256},
         ssz::{Decode, Encode},
         ssz_types::FixedBytes,

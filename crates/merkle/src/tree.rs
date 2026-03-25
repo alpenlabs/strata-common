@@ -4,7 +4,7 @@
 //! functionality: construct from leaves, generate inclusion proofs, and verify
 //! those proofs.
 use crate::error::MerkleError;
-use crate::hasher::{MerkleHash, MerkleHasher};
+use crate::hasher::*;
 use crate::proof::MerkleProof;
 
 /// Simple binary Merkle tree backed by a flattened node array.

@@ -41,6 +41,7 @@ ssz = [
   "dep:tree_hash_derive",
   "dep:ssz_codegen",
 ]
+legacy_compact = []
 
 [[bench]]
 name = "mmr_comparison"

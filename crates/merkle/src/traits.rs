@@ -4,6 +4,9 @@ use crate::hasher::MerkleHash;
 
 /// Abstracts over an MMR accumulator's state.
 pub trait MmrState<H: MerkleHash> {
+    /// Creates a new empty MMR state instance.
+    fn new_empty() -> Self;
+
     /// Gets the maximum number of peaks we can store.
     fn max_num_peaks(&self) -> u8;
 
