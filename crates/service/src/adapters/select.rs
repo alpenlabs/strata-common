@@ -19,7 +19,7 @@
 use std::fmt;
 use std::future::Future;
 
-use crate::{AsyncServiceInput, ServiceInput, ServiceMsg};
+use crate::{AsyncServiceInput, ServiceInput};
 
 /// A value from one of two input sources.
 #[derive(Clone, Debug)]
@@ -53,26 +53,12 @@ impl<L, R> fmt::Debug for SelectInput<L, R> {
     }
 }
 
-impl<L, R> ServiceInput for SelectInput<L, R>
-where
-    L: AsyncServiceInput,
-    R: AsyncServiceInput,
-    L::Msg: ServiceMsg,
-    R::Msg: ServiceMsg,
-{
+impl<L: AsyncServiceInput, R: AsyncServiceInput> ServiceInput for SelectInput<L, R> {
     type Msg = Either<L::Msg, R::Msg>;
 }
 
-impl<L, R> AsyncServiceInput for SelectInput<L, R>
-where
-    L: AsyncServiceInput,
-    R: AsyncServiceInput,
-    L::Msg: ServiceMsg,
-    R::Msg: ServiceMsg,
-{
-    fn recv_next(
-        &mut self,
-    ) -> impl Future<Output = anyhow::Result<Option<Self::Msg>>> + Send {
+impl<L: AsyncServiceInput, R: AsyncServiceInput> AsyncServiceInput for SelectInput<L, R> {
+    fn recv_next(&mut self) -> impl Future<Output = anyhow::Result<Option<Self::Msg>>> + Send {
         async {
             tokio::select! {
                 result = self.left.recv_next() => {
