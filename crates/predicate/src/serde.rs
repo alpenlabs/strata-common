@@ -32,10 +32,8 @@
 
 use std::fmt;
 
-use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
-    de::{SeqAccess, Visitor},
-};
+use serde::de::{SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{PredicateKey, PredicateTypeId};
 

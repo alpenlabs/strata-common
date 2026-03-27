@@ -1,26 +1,24 @@
-use std::{
-    any::Any,
-    fmt::{Display, Formatter},
-    future::Future,
-    panic::{self, AssertUnwindSafe},
-    pin::pin,
-    sync::Arc,
-    time::Duration,
-};
+use std::any::Any;
+use std::fmt::{Display, Formatter};
+use std::future::Future;
+use std::panic::{self, AssertUnwindSafe};
+use std::pin::pin;
+use std::sync::Arc;
+use std::time::Duration;
 
-use futures_util::{future::select, FutureExt};
+use futures_util::future::select;
+use futures_util::FutureExt;
 use thiserror::Error;
+use tokio::runtime::Handle;
 #[cfg(not(unix))]
 use tokio::signal::ctrl_c;
 #[cfg(unix)]
 use tokio::signal::unix::{signal, SignalKind};
-use tokio::{runtime::Handle, sync::mpsc};
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-use crate::{
-    pending_tasks::PendingTasks,
-    shutdown::{Shutdown, ShutdownGuard, ShutdownSignal},
-};
+use crate::pending_tasks::PendingTasks;
+use crate::shutdown::{Shutdown, ShutdownGuard, ShutdownSignal};
 
 /// Reason for a task exiting.
 #[derive(Debug, thiserror::Error)]

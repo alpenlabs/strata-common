@@ -1,11 +1,9 @@
 //! Varint-length vec used for container that are optimized towards short
 //! lengths.
 
-use crate::{
-    errors::CodecError,
-    types::{Codec, Decoder, Encoder},
-    varint::{VARINT_MAX, Varint},
-};
+use crate::errors::CodecError;
+use crate::types::{Codec, Decoder, Encoder};
+use crate::varint::{VARINT_MAX, Varint};
 
 /// Vec that ensures capacity stays within bounds of a simple varint.  In
 /// practice, this means it has a max capacity of 0x3fffffff, or about 1

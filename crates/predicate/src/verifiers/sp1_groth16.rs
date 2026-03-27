@@ -3,19 +3,16 @@
 //! This module provides predicate verification for SP1-generated Groth16 proofs
 //! using types and verification functions from the `zkaleido-sp1-groth16-verifier` crate.
 
+use zkaleido_sp1_groth16_verifier::hashes::{blake3_to_fr, sha256_to_fr};
 use zkaleido_sp1_groth16_verifier::{
     GROTH16_PROOF_COMPRESSED_SIZE, GROTH16_PROOF_UNCOMPRESSED_SIZE, Groth16Proof,
     Groth16VerifyingKey, SP1_GROTH16_VK_COMPRESSED_SIZE_MERGED,
-    SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED,
-    hashes::{blake3_to_fr, sha256_to_fr},
-    verify_sp1_groth16_algebraic,
+    SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED, verify_sp1_groth16_algebraic,
 };
 
-use crate::{
-    errors::{PredicateError, PredicateResult},
-    type_ids::PredicateTypeId,
-    verifier::PredicateVerifier,
-};
+use crate::errors::{PredicateError, PredicateResult};
+use crate::type_ids::PredicateTypeId;
+use crate::verifier::PredicateVerifier;
 
 /// SP1 Groth16 proof verifier.
 ///

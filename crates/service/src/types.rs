@@ -1,6 +1,8 @@
 //! Core service worker types.
 
-use std::{any::Any, fmt::Debug, future::Future};
+use std::any::Any;
+use std::fmt::Debug;
+use std::future::Future;
 
 use serde::Serialize;
 

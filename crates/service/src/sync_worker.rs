@@ -5,12 +5,10 @@ use std::time::Instant;
 use tokio::sync::watch;
 use tracing::*;
 
-use crate::{
-    instrumentation::{
-        record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason,
-    },
-    Response, ServiceState, SyncService, SyncServiceInput,
+use crate::instrumentation::{
+    record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason,
 };
+use crate::{Response, ServiceState, SyncService, SyncServiceInput};
 
 pub(crate) fn worker_task<S: SyncService, I>(
     mut state: S::State,

@@ -1,4 +1,5 @@
-use std::{collections::VecDeque, future::Future};
+use std::collections::VecDeque;
+use std::future::Future;
 
 use crate::{AsyncServiceInput, ServiceInput, ServiceMsg, SyncServiceInput};
 

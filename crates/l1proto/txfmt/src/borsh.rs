@@ -1,6 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{MagicBytes, magic::MAGIC_BYTES_LEN};
+use crate::MagicBytes;
+use crate::magic::MAGIC_BYTES_LEN;
 
 impl BorshSerialize for MagicBytes {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {

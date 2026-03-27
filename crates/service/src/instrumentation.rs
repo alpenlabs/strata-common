@@ -11,13 +11,12 @@
 //! 2. Child spans for launch, message processing, shutdown
 //! 3. Automatic metrics collection (counters and histograms)
 
-use std::{fmt::Display, str::FromStr, time::Duration};
+use std::fmt::Display;
+use std::str::FromStr;
+use std::time::Duration;
 
-use opentelemetry::{
-    global,
-    metrics::{Counter, Histogram},
-    KeyValue,
-};
+use opentelemetry::metrics::{Counter, Histogram};
+use opentelemetry::{global, KeyValue};
 use tracing::Span as TracingSpan;
 
 /// Result of an operation (success or error).

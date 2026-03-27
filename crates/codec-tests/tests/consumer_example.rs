@@ -3,11 +3,9 @@
 #![expect(missing_docs, reason = "test repo")]
 #![expect(unused_crate_dependencies, reason = "macro hacks")]
 
-use strata_codec_tests::{
-    generate_codec_tests,
-    proptest::prelude::*,
-    strata_codec::{Codec, CodecError, Decoder, Encoder},
-};
+use strata_codec_tests::generate_codec_tests;
+use strata_codec_tests::proptest::prelude::*;
+use strata_codec_tests::strata_codec::{Codec, CodecError, Decoder, Encoder};
 
 // Example: Consumer defines their own type with manual Codec implementation
 #[derive(Debug, Clone, PartialEq, Eq)]

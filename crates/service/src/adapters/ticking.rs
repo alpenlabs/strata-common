@@ -1,9 +1,8 @@
-use std::{future::Future, time::Duration};
+use std::future::Future;
+use std::time::Duration;
 
-use futures::{
-    future::{select, Either},
-    pin_mut,
-};
+use futures::future::{select, Either};
+use futures::pin_mut;
 use tokio::time::{interval, Interval, MissedTickBehavior};
 
 use crate::{AsyncServiceInput, ServiceInput, ServiceMsg};

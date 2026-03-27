@@ -9,10 +9,8 @@
 //! 11bbbbbb_bbbbbbbb_bbbbbbbb_bbbbbbbb
 //! ```
 
-use crate::{
-    errors::CodecError,
-    types::{Codec, Decoder, Encoder},
-};
+use crate::errors::CodecError;
+use crate::types::{Codec, Decoder, Encoder};
 
 /// The max value one of these varints can have, which is about 1 billion.
 pub const VARINT_MAX: u32 = 0x3fffffff;

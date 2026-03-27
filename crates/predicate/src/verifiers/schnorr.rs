@@ -8,11 +8,9 @@ const BIP340_PUBKEY_SIZE: usize = 32;
 const BIP340_SIGNATURE_SIZE: usize = 64;
 use signature::Verifier;
 
-use crate::{
-    errors::{PredicateError, PredicateResult},
-    type_ids::PredicateTypeId,
-    verifier::PredicateVerifier,
-};
+use crate::errors::{PredicateError, PredicateResult};
+use crate::type_ids::PredicateTypeId;
+use crate::verifier::PredicateVerifier;
 
 /// Schnorr BIP-340 signature verifier.
 ///
@@ -85,19 +83,17 @@ impl PredicateVerifier for SchnorrVerifier {
 #[cfg(test)]
 mod tests {
     use k256::schnorr::SigningKey;
-    use rand::{RngCore, rngs::OsRng};
+    use rand::RngCore;
+    use rand::rngs::OsRng;
     use signature::Signer;
 
     use super::SchnorrVerifier;
-    use crate::{
-        test_utils::{
-            assert_predicate_parsing_failed, assert_verification_failed,
-            assert_witness_parsing_failed,
-        },
-        type_ids::PredicateTypeId,
-        verifier::PredicateVerifier,
-        verifiers::schnorr::{BIP340_PUBKEY_SIZE, BIP340_SIGNATURE_SIZE},
+    use crate::test_utils::{
+        assert_predicate_parsing_failed, assert_verification_failed, assert_witness_parsing_failed,
     };
+    use crate::type_ids::PredicateTypeId;
+    use crate::verifier::PredicateVerifier;
+    use crate::verifiers::schnorr::{BIP340_PUBKEY_SIZE, BIP340_SIGNATURE_SIZE};
 
     fn load_predicate_claim_witness() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
         // Generate random message

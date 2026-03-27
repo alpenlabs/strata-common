@@ -6,12 +6,10 @@ use futures::FutureExt;
 use tokio::sync::watch;
 use tracing::*;
 
-use crate::{
-    instrumentation::{
-        record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason,
-    },
-    AsyncService, AsyncServiceInput, Response, ServiceState,
+use crate::instrumentation::{
+    record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason,
 };
+use crate::{AsyncService, AsyncServiceInput, Response, ServiceState};
 
 /// Async worker task.
 pub(crate) async fn worker_task<S: AsyncService, I>(

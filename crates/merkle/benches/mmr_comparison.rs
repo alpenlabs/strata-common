@@ -6,7 +6,8 @@
 use criterion as _;
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sha2::{Digest, Sha256};
-use strata_merkle::{Mmr, Sha256Hasher, mmr::CompactMmr64};
+use strata_merkle::mmr::CompactMmr64;
+use strata_merkle::{Mmr, Sha256Hasher};
 
 type Hash32 = [u8; 32];
 
