@@ -1,13 +1,9 @@
-use bitcoin::{
-    ScriptBuf,
-    blockdata::script,
-    constants::MAX_SCRIPT_ELEMENT_SIZE,
-    opcodes::{
-        OP_FALSE,
-        all::{OP_CHECKSIG, OP_ENDIF, OP_IF},
-    },
-    script::PushBytesBuf,
-};
+use bitcoin::ScriptBuf;
+use bitcoin::blockdata::script;
+use bitcoin::constants::MAX_SCRIPT_ELEMENT_SIZE;
+use bitcoin::opcodes::OP_FALSE;
+use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
+use bitcoin::script::PushBytesBuf;
 
 use crate::errors::EnvelopeBuildError;
 
@@ -207,10 +203,8 @@ fn push_envelope(
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{
-        opcodes::all::{OP_ENDIF, OP_IF},
-        script::Instruction,
-    };
+    use bitcoin::opcodes::all::{OP_ENDIF, OP_IF};
+    use bitcoin::script::Instruction;
 
     use super::*;
 

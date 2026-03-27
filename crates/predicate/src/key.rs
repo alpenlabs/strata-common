@@ -1,11 +1,9 @@
 //! Predicate key implementation and type registry.
 
-use crate::{
-    PredicateKey,
-    errors::{PredicateError, PredicateResult},
-    type_ids::PredicateTypeId,
-    verifiers::VerifierType,
-};
+use crate::PredicateKey;
+use crate::errors::{PredicateError, PredicateResult};
+use crate::type_ids::PredicateTypeId;
+use crate::verifiers::VerifierType;
 
 /// A zero-copy predicate key that borrows from a buffer.
 ///
@@ -165,13 +163,12 @@ impl<'b> PredicateKeyBuf<'b> {
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
-    use ssz::{Decode, Encode, view::DecodeView};
+    use ssz::view::DecodeView;
+    use ssz::{Decode, Encode};
 
     use super::*;
-    use crate::{
-        PredicateKeyRef,
-        test_utils::{bounded_condition_strategy, predicate_key_strategy},
-    };
+    use crate::PredicateKeyRef;
+    use crate::test_utils::{bounded_condition_strategy, predicate_key_strategy};
 
     use super::*;
     use crate::PredicateKeyRef;

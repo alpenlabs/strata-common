@@ -1,10 +1,8 @@
 //! Merkle Mountain Range (MMR) accumulator and related types.
 
-use crate::{
-    hasher::{MerkleHash, MerkleHasher},
-    proof::MerkleProof,
-    traits::MmrState,
-};
+use crate::hasher::{MerkleHash, MerkleHasher};
+use crate::proof::MerkleProof;
+use crate::traits::MmrState;
 
 /// Compact representation of the MMR that can hold upto 2**64 elements.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -376,7 +374,9 @@ mod tests {
     };
 
     use super::CompactMmr64;
-    use crate::{Mmr, Sha256Hasher, proof::MerkleProof, traits::MmrState};
+    use crate::proof::MerkleProof;
+    use crate::traits::MmrState;
+    use crate::{Mmr, Sha256Hasher};
 
     type Hash32 = [u8; 32];
 

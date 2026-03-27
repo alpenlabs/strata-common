@@ -10,11 +10,9 @@ use zkaleido_sp1_groth16_verifier::{
     SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED, verify_sp1_groth16_algebraic,
 };
 
-use crate::{
-    errors::{PredicateError, PredicateResult},
-    type_ids::PredicateTypeId,
-    verifier::PredicateVerifier,
-};
+use crate::errors::{PredicateError, PredicateResult};
+use crate::type_ids::PredicateTypeId;
+use crate::verifier::PredicateVerifier;
 
 /// SP1 Groth16 proof verifier.
 ///

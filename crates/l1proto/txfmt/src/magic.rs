@@ -1,4 +1,5 @@
-use std::{fmt, str, str::FromStr};
+use std::str::FromStr;
+use std::{fmt, str};
 
 use thiserror::Error;
 

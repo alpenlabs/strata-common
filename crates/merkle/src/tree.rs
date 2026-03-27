@@ -3,11 +3,9 @@
 //! This complements the MMR by providing standard “binary Merkle tree”
 //! functionality: construct from leaves, generate inclusion proofs, and verify
 //! those proofs.
-use crate::{
-    error::MerkleError,
-    hasher::{MerkleHash, MerkleHasher},
-    proof::MerkleProof,
-};
+use crate::error::MerkleError;
+use crate::hasher::{MerkleHash, MerkleHasher};
+use crate::proof::MerkleProof;
 
 /// Simple binary Merkle tree backed by a flattened node array.
 #[derive(Clone, Debug)]
@@ -124,7 +122,9 @@ mod tests {
     use sha2::Sha256;
 
     use super::BinaryMerkleTree;
-    use crate::{Sha256Hasher, StrataMerkle, error::MerkleError, proof::MerkleProof};
+    use crate::error::MerkleError;
+    use crate::proof::MerkleProof;
+    use crate::{Sha256Hasher, StrataMerkle};
 
     type H = [u8; 32];
 

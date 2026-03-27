@@ -1,6 +1,7 @@
 use arbitrary::{Arbitrary, Unstructured};
 
-use crate::{MagicBytes, magic::MAGIC_BYTES_LEN};
+use crate::MagicBytes;
+use crate::magic::MAGIC_BYTES_LEN;
 
 impl<'a> Arbitrary<'a> for MagicBytes {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {

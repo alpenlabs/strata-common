@@ -2,9 +2,10 @@
 use super::SchnorrVerifier;
 #[cfg(feature = "sp1-groth16")]
 use super::Sp1Groth16Verifier;
+use crate::errors::PredicateError;
+use crate::type_ids::PredicateTypeId;
 #[cfg(any(feature = "schnorr", feature = "sp1-groth16"))]
 use crate::verifier::PredicateVerifier;
-use crate::{errors::PredicateError, type_ids::PredicateTypeId};
 
 /// Enum representing all supported verifier types and their implementations.
 ///
