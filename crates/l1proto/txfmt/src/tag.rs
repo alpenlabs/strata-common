@@ -9,10 +9,9 @@
 //! [6..]    auxiliary data (ignored here)
 //! ```
 
-use bitcoin::{
-    Transaction, opcodes::all::OP_RETURN, script::Instruction, script::PushBytesBuf,
-    script::ScriptBuf,
-};
+use bitcoin::Transaction;
+use bitcoin::opcodes::all::OP_RETURN;
+use bitcoin::script::{Instruction, PushBytesBuf, ScriptBuf};
 
 use crate::error::{TxFmtError, TxFmtResult};
 use crate::magic::MagicBytes;
@@ -322,12 +321,10 @@ fn extract_magic_and_tag_from_buf<'t>(buf: &'t [u8]) -> TxFmtResult<(MagicBytes,
 
 #[cfg(test)]
 mod test {
-    use bitcoin::{
-        Amount, Transaction, TxOut, absolute,
-        opcodes::all::{OP_DUP, OP_RETURN},
-        script::PushBytesBuf,
-        transaction::Version,
-    };
+    use bitcoin::opcodes::all::{OP_DUP, OP_RETURN};
+    use bitcoin::script::PushBytesBuf;
+    use bitcoin::transaction::Version;
+    use bitcoin::{Amount, Transaction, TxOut, absolute};
 
     use super::*;
 

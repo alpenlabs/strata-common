@@ -71,15 +71,13 @@ pub type Sha256NoPrefixHasher = DigestMerkleHasherNoPrefix<Sha256, 32>;
 
 /// Compatibility alias for the primary hasher trait used across Merkle data structures.
 pub use hasher::MerkleHasher as StrataMerkle;
-
 // Common re-exports for ergonomic access at the crate root.
 pub use hasher::{MerkleHash, MerkleHasher};
 pub use mmr::CompactMmr64;
 pub use proof::{MerkleProof, ProofData, ProofDataMut, RawMerkleProof};
-pub use tree::BinaryMerkleTree;
-
 // Re-export SSZ-generated concrete types (32-byte hash versions)
 #[cfg(feature = "ssz")]
 pub use ssz_generated::ssz::mmr::*;
 #[cfg(feature = "ssz")]
 pub use ssz_generated::ssz::proof::*;
+pub use tree::BinaryMerkleTree;

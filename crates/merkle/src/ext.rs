@@ -303,18 +303,17 @@ where
 #[cfg(test)]
 mod tests {
     use sha2::{Digest, Sha256};
+    #[cfg(feature = "ssz")]
+    use {
+        crate::{MerkleProofB32, Mmr64B32},
+        ssz::{Decode, Encode},
+    };
 
     use super::*;
     use crate::Sha256Hasher;
     use crate::mmr::CompactMmr64;
     use crate::proof::MerkleProof;
     use crate::traits::MmrState;
-
-    #[cfg(feature = "ssz")]
-    use {
-        crate::{MerkleProofB32, Mmr64B32},
-        ssz::{Decode, Encode},
-    };
 
     type Hash32 = [u8; 32];
 

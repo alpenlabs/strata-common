@@ -4,9 +4,11 @@
 //! different predicate verifier implementations to ensure consistent error
 //! checking and reduce code duplication in tests.
 
-use crate::{MAX_CONDITION_LEN, PredicateKey, errors::PredicateError, type_ids::PredicateTypeId};
-
 use proptest::prelude::*;
+
+use crate::errors::PredicateError;
+use crate::type_ids::PredicateTypeId;
+use crate::{MAX_CONDITION_LEN, PredicateKey};
 
 /// Asserts that a result contains a `PredicateParsingFailed` error for the given predicate type.
 #[allow(dead_code)]

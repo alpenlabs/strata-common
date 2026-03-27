@@ -162,12 +162,13 @@ impl<'b> PredicateKeyBuf<'b> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::PredicateKeyRef;
-    use crate::test_utils::{bounded_condition_strategy, predicate_key_strategy};
     use proptest::prelude::*;
     use ssz::view::DecodeView;
     use ssz::{Decode, Encode};
+
+    use super::*;
+    use crate::PredicateKeyRef;
+    use crate::test_utils::{bounded_condition_strategy, predicate_key_strategy};
 
     #[test]
     fn proptest_predicate_key_roundtrip() {

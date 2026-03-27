@@ -1,6 +1,7 @@
 //! Status handle.
 
-use std::{any::Any, fmt::Debug};
+use std::any::Any;
+use std::fmt::Debug;
 
 use serde::de::DeserializeOwned;
 use tokio::sync::{mpsc, watch};

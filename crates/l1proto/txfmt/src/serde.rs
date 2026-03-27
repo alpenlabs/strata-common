@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
-use serde::de;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de};
 
 use crate::MagicBytes;
 use crate::magic::MAGIC_BYTES_LEN;

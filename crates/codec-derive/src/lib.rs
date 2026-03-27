@@ -30,11 +30,10 @@
 //! ```
 
 // The strata-codec dev-dependency is used in tests
-#[cfg(test)]
-use strata_codec as _;
-
 use proc_macro::TokenStream;
 use quote::quote;
+#[cfg(test)]
+use strata_codec as _;
 use syn::{Data, DeriveInput, Fields, parse_macro_input};
 
 /// Derives the `Codec` trait for structs.
@@ -122,7 +121,8 @@ pub fn derive_codec(input: TokenStream) -> TokenStream {
     };
 
     // Generate the final implementation
-    // We need to handle both cases: when used from external crates and when used within strata_codec itself
+    // We need to handle both cases: when used from external crates and when used within
+    // strata_codec itself
     let expanded = quote! {
         #[automatically_derived]
         impl #impl_generics ::strata_codec::Codec for #name #ty_generics #where_clause {

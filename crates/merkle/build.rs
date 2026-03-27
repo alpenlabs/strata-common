@@ -1,6 +1,7 @@
 //! Build script for generating SSZ code from schema definitions
 
-use std::{env, fs, path::Path};
+use std::path::Path;
+use std::{env, fs};
 
 #[cfg(feature = "ssz")]
 use ssz_codegen::{ModuleGeneration, build_ssz_files};

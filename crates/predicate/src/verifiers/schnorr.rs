@@ -83,7 +83,8 @@ impl PredicateVerifier for SchnorrVerifier {
 #[cfg(test)]
 mod tests {
     use k256::schnorr::SigningKey;
-    use rand::{RngCore, rngs::OsRng};
+    use rand::RngCore;
+    use rand::rngs::OsRng;
     use signature::Signer;
 
     use super::SchnorrVerifier;

@@ -3,11 +3,9 @@
 #![expect(missing_docs, reason = "test repo")]
 #![expect(unused_crate_dependencies, reason = "macro hacks")]
 
-use strata_codec_tests::{
-    generate_codec_tests,
-    proptest::prelude::*,
-    strata_codec::{Codec, impl_type_flat_struct},
-};
+use strata_codec_tests::generate_codec_tests;
+use strata_codec_tests::proptest::prelude::*;
+use strata_codec_tests::strata_codec::{Codec, impl_type_flat_struct};
 
 // Example 1: Simple 3D point struct
 impl_type_flat_struct! {

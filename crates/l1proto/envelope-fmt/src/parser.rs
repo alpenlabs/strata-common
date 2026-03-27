@@ -1,11 +1,7 @@
-use bitcoin::{
-    Opcode, ScriptBuf,
-    opcodes::{
-        OP_0, OP_FALSE,
-        all::{OP_CHECKSIG, OP_ENDIF, OP_IF},
-    },
-    script::{Instruction, Instructions},
-};
+use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
+use bitcoin::opcodes::{OP_0, OP_FALSE};
+use bitcoin::script::{Instruction, Instructions};
+use bitcoin::{Opcode, ScriptBuf};
 
 use crate::errors::EnvelopeParseError;
 
@@ -161,9 +157,8 @@ fn extract_until_op_endif(
 
 #[cfg(test)]
 mod tests {
-    use crate::builder::{EnvelopeScriptBuilder, MIN_ENVELOPE_PAYLOAD_SIZE, build_envelope_script};
-
     use super::*;
+    use crate::builder::{EnvelopeScriptBuilder, MIN_ENVELOPE_PAYLOAD_SIZE, build_envelope_script};
 
     #[test]
     fn test_parse_envelope_data() {
@@ -223,7 +218,8 @@ mod tests {
     #[test]
     fn test_parse_envelope_missing_op_endif() {
         use bitcoin::blockdata::script;
-        use bitcoin::opcodes::{OP_FALSE, all::OP_IF};
+        use bitcoin::opcodes::OP_FALSE;
+        use bitcoin::opcodes::all::OP_IF;
 
         // Build a malformed script: OP_FALSE OP_IF <data> (no OP_ENDIF)
         let malformed_script = script::Builder::new()
@@ -255,7 +251,8 @@ mod tests {
     #[test]
     fn test_parse_envelope_missing_op_if() {
         use bitcoin::blockdata::script;
-        use bitcoin::opcodes::{OP_FALSE, all::OP_ENDIF};
+        use bitcoin::opcodes::OP_FALSE;
+        use bitcoin::opcodes::all::OP_ENDIF;
 
         // Build a malformed script: OP_FALSE <data> OP_ENDIF (no OP_IF)
         let malformed_script = script::Builder::new()
@@ -271,10 +268,8 @@ mod tests {
     #[test]
     fn test_parse_envelope_invalid_payload_instruction() {
         use bitcoin::blockdata::script;
-        use bitcoin::opcodes::{
-            OP_FALSE,
-            all::{OP_ADD, OP_ENDIF, OP_IF},
-        };
+        use bitcoin::opcodes::OP_FALSE;
+        use bitcoin::opcodes::all::{OP_ADD, OP_ENDIF, OP_IF};
 
         // Build a malformed script with non-push instruction in payload
         let malformed_script = script::Builder::new()
@@ -295,10 +290,8 @@ mod tests {
     #[test]
     fn test_parse_envelope_accepts_all_op_false_forms() {
         use bitcoin::blockdata::script;
-        use bitcoin::opcodes::{
-            OP_FALSE,
-            all::{OP_ENDIF, OP_IF},
-        };
+        use bitcoin::opcodes::OP_FALSE;
+        use bitcoin::opcodes::all::{OP_ENDIF, OP_IF};
 
         let payload_data = [1u8, 2, 3, 4, 5];
 

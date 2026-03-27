@@ -3,12 +3,11 @@
 //! This module provides predicate verification for SP1-generated Groth16 proofs
 //! using types and verification functions from the `zkaleido-sp1-groth16-verifier` crate.
 
+use zkaleido_sp1_groth16_verifier::hashes::{blake3_to_fr, sha256_to_fr};
 use zkaleido_sp1_groth16_verifier::{
     GROTH16_PROOF_COMPRESSED_SIZE, GROTH16_PROOF_UNCOMPRESSED_SIZE, Groth16Proof,
     Groth16VerifyingKey, SP1_GROTH16_VK_COMPRESSED_SIZE_MERGED,
-    SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED,
-    hashes::{blake3_to_fr, sha256_to_fr},
-    verify_sp1_groth16_algebraic,
+    SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED, verify_sp1_groth16_algebraic,
 };
 
 use crate::errors::{PredicateError, PredicateResult};
@@ -131,13 +130,14 @@ impl PredicateVerifier for Sp1Groth16Verifier {
 
 #[cfg(test)]
 mod tests {
+    use sp1_verifier::GROTH16_VK_BYTES;
+    use zkaleido::ProofReceiptWithMetadata;
+    use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
+
     use super::*;
     use crate::test_utils::{
         assert_predicate_parsing_failed, assert_verification_failed, assert_witness_parsing_failed,
     };
-    use sp1_verifier::GROTH16_VK_BYTES;
-    use zkaleido::ProofReceiptWithMetadata;
-    use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
 
     fn load_condition_claim_witness() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
         let program_id_hex = "00eb7fd5709e4b833db86054ba4acca001a3aa5f18b7e7d0d96d0f1d340b4e34";

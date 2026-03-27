@@ -287,13 +287,12 @@ impl<H: MerkleHash> ProofDataMut for RawMerkleProof<H> {
 
 #[cfg(feature = "ssz")]
 mod proofb32 {
-    use super::*;
-    use crate::{
-        Sha256Hasher,
-        hasher::MerkleHasher,
-        ssz_generated::ssz::proof::{MerkleProofB32, RawMerkleProofB32},
-    };
     use ssz_types::FixedBytes;
+
+    use super::*;
+    use crate::Sha256Hasher;
+    use crate::hasher::MerkleHasher;
+    use crate::ssz_generated::ssz::proof::{MerkleProofB32, RawMerkleProofB32};
 
     type Hash32 = <Sha256Hasher as MerkleHasher>::Hash;
 

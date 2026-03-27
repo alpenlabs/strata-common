@@ -119,11 +119,12 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
 
 #[cfg(test)]
 mod tests {
-    use super::BinaryMerkleTree;
-    use crate::Sha256Hasher;
-    use crate::proof::MerkleProof;
-    use crate::{StrataMerkle, error::MerkleError};
     use sha2::Sha256;
+
+    use super::BinaryMerkleTree;
+    use crate::error::MerkleError;
+    use crate::proof::MerkleProof;
+    use crate::{Sha256Hasher, StrataMerkle};
 
     type H = [u8; 32];
 

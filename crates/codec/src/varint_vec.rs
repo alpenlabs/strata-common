@@ -297,9 +297,8 @@ impl<T: Codec, const BOUND: u32> Codec for VarVec<T, BOUND> {
 mod tests {
     // Most of these tests were written by Claude.
 
-    use crate::{decode_buf_exact, encode_to_vec};
-
     use super::*;
+    use crate::{decode_buf_exact, encode_to_vec};
 
     #[test]
     fn test_varvec_new() {

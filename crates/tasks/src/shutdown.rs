@@ -1,9 +1,8 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
-use tokio::sync::{futures::Notified, Notify};
+use tokio::sync::futures::Notified;
+use tokio::sync::Notify;
 
 use crate::pending_tasks::PendingTasks;
 

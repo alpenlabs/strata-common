@@ -12,10 +12,10 @@
 //! ```
 //!
 //! Where:
-//! - `{PredicateTypeId}` is the string representation of the predicate type enum variant
-//!   (e.g., "AlwaysAccept", "Bip340Schnorr", "Sp1Groth16")
-//! - `{hex_condition}` is the condition bytes encoded as lowercase hexadecimal
-//!   (empty string if condition is empty)
+//! - `{PredicateTypeId}` is the string representation of the predicate type enum variant (e.g.,
+//!   "AlwaysAccept", "Bip340Schnorr", "Sp1Groth16")
+//! - `{hex_condition}` is the condition bytes encoded as lowercase hexadecimal (empty string if
+//!   condition is empty)
 //!
 //! ## Examples
 //!
@@ -30,9 +30,10 @@
 //! For non-human-readable formats, the data is serialized as raw bytes in a tuple format:
 //! `(predicate_type_id_u8, condition_bytes)`
 
+use std::fmt;
+
 use serde::de::{SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
 
 use crate::{PredicateKey, PredicateTypeId};
 
@@ -121,10 +122,10 @@ impl<'de> Deserialize<'de> for PredicateKey {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    use crate::test_utils::predicate_key_strategy;
     use proptest::prelude::*;
+
+    use super::*;
+    use crate::test_utils::predicate_key_strategy;
 
     #[test]
     fn test_serde_json_serialization() {
