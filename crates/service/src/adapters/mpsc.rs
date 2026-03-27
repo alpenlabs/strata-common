@@ -7,7 +7,7 @@ use crate::{AsyncServiceInput, ServiceInput, ServiceMsg, SyncServiceInput};
 /// Adapter for using a mpsc receiver as a input.
 ///
 /// This is needed because [`mpsc::Receiver`] does not natively implement
-/// [`Stream`] and it avoids having to use the Tokio wrapper.
+/// [`futures::stream::Stream`] and it avoids having to use the Tokio wrapper.
 pub struct TokioMpscInput<T> {
     rx: mpsc::Receiver<T>,
     closed: bool,
