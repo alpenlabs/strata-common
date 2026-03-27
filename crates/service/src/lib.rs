@@ -72,7 +72,7 @@
 //! impl AsyncService for ListenerService {
 //!     async fn process_input(
 //!         state: &mut Self::State,
-//!         status: &MonitoredStatus,
+//!         status: MonitoredStatus,
 //!     ) -> anyhow::Result<Response> {
 //!         // React to status changes
 //!         println!("Monitored service status: {:?}", status);

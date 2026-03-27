@@ -76,9 +76,12 @@ pub trait AsyncService: Service {
     }
 
     /// Called for each input.
+    ///
+    /// Takes owned input so handlers can move data (e.g. completion senders)
+    /// into spawned tasks without cloning.
     fn process_input(
         _state: &mut Self::State,
-        _input: &Self::Msg,
+        _input: Self::Msg,
     ) -> impl Future<Output = anyhow::Result<Response>> + Send {
         async { Ok(Response::Continue) }
     }
@@ -102,7 +105,10 @@ pub trait SyncService: Service {
     }
 
     /// Called for each input.
-    fn process_input(_state: &mut Self::State, _input: &Self::Msg) -> anyhow::Result<Response> {
+    ///
+    /// Takes owned input so handlers can move data into processing
+    /// without cloning.
+    fn process_input(_state: &mut Self::State, _input: Self::Msg) -> anyhow::Result<Response> {
         Ok(Response::Continue)
     }
 
