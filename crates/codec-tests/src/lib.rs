@@ -5,12 +5,11 @@
 //! `generate_codec_tests!` macro.
 
 // Suppress unused dependency warning - strata-codec-derive is used in tests
-use strata_codec_derive as _;
-
 // Re-export dependencies for macro usage
 pub use paste;
 pub use proptest;
 pub use strata_codec;
+use strata_codec_derive as _;
 
 /// Generates property tests for a type that implements `Codec` using proptest.
 ///
@@ -28,9 +27,9 @@ pub use strata_codec;
 ///
 /// # Example
 /// ```rust,no_run
-/// use strata_codec_tests::generate_codec_tests;
-/// use strata_codec::{Codec, CodecError, Decoder, Encoder};
 /// use proptest::prelude::*;
+/// use strata_codec::{Codec, CodecError, Decoder, Encoder};
+/// use strata_codec_tests::generate_codec_tests;
 ///
 /// #[derive(Debug, Clone, PartialEq)]
 /// struct MyType {

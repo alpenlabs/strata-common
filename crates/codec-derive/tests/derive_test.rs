@@ -2,12 +2,11 @@
 
 // Suppress unused dependency warnings for proc-macro dependencies
 use quote as _;
-use syn as _;
-
-use strata_codec::{CodecError, decode_buf_exact, encode_to_vec};
 // Import both the trait and the derive macro with distinct names
 use strata_codec::Codec as CodecTrait;
+use strata_codec::{CodecError, decode_buf_exact, encode_to_vec};
 use strata_codec_derive::Codec;
+use syn as _;
 
 /// Test deriving Codec for a named struct
 #[derive(Debug, Clone, PartialEq, Eq, Codec)]

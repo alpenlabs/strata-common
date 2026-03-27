@@ -10,13 +10,16 @@
 //! ```
 
 use bitcoin::{
-    Transaction, opcodes::all::OP_RETURN, script::Instruction, script::PushBytesBuf,
-    script::ScriptBuf,
+    Transaction,
+    opcodes::all::OP_RETURN,
+    script::{Instruction, PushBytesBuf, ScriptBuf},
 };
 
-use crate::error::{TxFmtError, TxFmtResult};
-use crate::magic::MagicBytes;
-use crate::types::{SubprotocolId, TxType};
+use crate::{
+    error::{TxFmtError, TxFmtResult},
+    magic::MagicBytes,
+    types::{SubprotocolId, TxType},
+};
 
 /// Minimum length of a valid header tag.
 const MIN_TAG_LEN: usize = 6;

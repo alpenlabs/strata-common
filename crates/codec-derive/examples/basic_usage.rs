@@ -2,10 +2,9 @@
 
 // Suppress unused dependency warnings for proc-macro dependencies
 use quote as _;
-use syn as _;
-
 use strata_codec::{decode_buf_exact, encode_to_vec};
 use strata_codec_derive::Codec;
+use syn as _;
 
 /// A simple user struct with various field types.
 #[derive(Debug, Clone, PartialEq, Eq, Codec)]

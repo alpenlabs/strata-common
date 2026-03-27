@@ -22,14 +22,15 @@ impl BorshDeserialize for PredicateKey {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    use crate::PredicateTypeId;
-    use crate::test_utils::{
-        bounded_condition_strategy, predicate_key_strategy, predicate_type_id_strategy,
-    };
-
     use proptest::prelude::*;
+
+    use super::*;
+    use crate::{
+        PredicateTypeId,
+        test_utils::{
+            bounded_condition_strategy, predicate_key_strategy, predicate_type_id_strategy,
+        },
+    };
 
     proptest! {
             #[test]

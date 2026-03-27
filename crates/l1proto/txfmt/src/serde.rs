@@ -1,10 +1,8 @@
 use std::str::FromStr;
 
-use serde::de;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de};
 
-use crate::MagicBytes;
-use crate::magic::MAGIC_BYTES_LEN;
+use crate::{MagicBytes, magic::MAGIC_BYTES_LEN};
 
 impl Serialize for MagicBytes {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {

@@ -11,9 +11,11 @@ use zkaleido_sp1_groth16_verifier::{
     verify_sp1_groth16_algebraic,
 };
 
-use crate::errors::{PredicateError, PredicateResult};
-use crate::type_ids::PredicateTypeId;
-use crate::verifier::PredicateVerifier;
+use crate::{
+    errors::{PredicateError, PredicateResult},
+    type_ids::PredicateTypeId,
+    verifier::PredicateVerifier,
+};
 
 /// SP1 Groth16 proof verifier.
 ///
@@ -131,13 +133,14 @@ impl PredicateVerifier for Sp1Groth16Verifier {
 
 #[cfg(test)]
 mod tests {
+    use sp1_verifier::GROTH16_VK_BYTES;
+    use zkaleido::ProofReceiptWithMetadata;
+    use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
+
     use super::*;
     use crate::test_utils::{
         assert_predicate_parsing_failed, assert_verification_failed, assert_witness_parsing_failed,
     };
-    use sp1_verifier::GROTH16_VK_BYTES;
-    use zkaleido::ProofReceiptWithMetadata;
-    use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
 
     fn load_condition_claim_witness() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
         let program_id_hex = "00eb7fd5709e4b833db86054ba4acca001a3aa5f18b7e7d0d96d0f1d340b4e34";

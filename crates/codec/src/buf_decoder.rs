@@ -1,7 +1,6 @@
 //! Simple decoder for a flat buffer.
 
-use crate::errors::CodecError;
-use crate::types::Decoder;
+use crate::{errors::CodecError, types::Decoder};
 
 /// Decoder for an arbitrary [`AsRef`] on a byte slice.
 ///

@@ -47,8 +47,10 @@
 //!
 //! let script = EnvelopeScriptBuilder::with_pubkey(&pubkey)
 //!     .unwrap()
-//!     .add_envelope(&payload1).unwrap()
-//!     .add_envelope(&payload2).unwrap()
+//!     .add_envelope(&payload1)
+//!     .unwrap()
+//!     .add_envelope(&payload2)
+//!     .unwrap()
 //!     .build()
 //!     .unwrap();
 //! ```

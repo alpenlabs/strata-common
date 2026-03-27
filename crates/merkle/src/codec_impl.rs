@@ -1,11 +1,13 @@
 //! strata-codec serialization support for Merkle types.
 //! Enable via `--features codec`.
 
-use crate::hasher::MerkleHash;
-use crate::mmr::CompactMmr64;
-use crate::proof::{MerkleProof, RawMerkleProof};
-
 use strata_codec::{Codec, CodecError, Decoder, Encoder, VarVec};
+
+use crate::{
+    hasher::MerkleHash,
+    mmr::CompactMmr64,
+    proof::{MerkleProof, RawMerkleProof},
+};
 
 // CompactMmr64
 
@@ -84,11 +86,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::Mmr;
     use proptest::prelude::*;
     use sha2::Sha256;
     use strata_codec::{decode_buf_exact, encode_to_vec};
+
+    use super::*;
+    use crate::Mmr;
 
     type H = [u8; 32];
     type Hasher = crate::Sha256Hasher;

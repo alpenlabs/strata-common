@@ -11,8 +11,8 @@
 //!
 //! The predicate format defines three fundamental concepts:
 //!
-//! - **Predicate Keys**: An encoding of a formal boolean statement with a type identifier
-//!   and condition data. Represented by the [`PredicateKey`] struct.
+//! - **Predicate Keys**: An encoding of a formal boolean statement with a type identifier and
+//!   condition data. Represented by the [`PredicateKey`] struct.
 //! - **Claims**: A flat byte array representing a message that allegedly satisfies the predicate
 //! - **Witnesses**: An encoded attestation proving that a claim satisfies the predicate
 //!
@@ -60,19 +60,18 @@
 //!
 //! Each predicate type is identified by a unique constant:
 //!
-//! - **Never Accept** ([`PredicateTypeId::NeverAccept`] = 0):
-//!   Never accepts any witness for any claim. Represents an empty/invalid predicate.
+//! - **Never Accept** ([`PredicateTypeId::NeverAccept`] = 0): Never accepts any witness for any
+//!   claim. Represents an empty/invalid predicate.
 //!
-//! - **Always Accept** ([`PredicateTypeId::AlwaysAccept`] = 1):
-//!   Accepts any witness for any claim. Used for testing and placeholder scenarios.
+//! - **Always Accept** ([`PredicateTypeId::AlwaysAccept`] = 1): Accepts any witness for any claim.
+//!   Used for testing and placeholder scenarios.
 //!
-//! - **Schnorr BIP-340** ([`PredicateTypeId::Bip340Schnorr`] = 10):
-//!   Schnorr signature verification using BIP-340 standard. Expects 32-byte x-only public keys.
-//!   *Requires the `verify-schnorr` feature.*
+//! - **Schnorr BIP-340** ([`PredicateTypeId::Bip340Schnorr`] = 10): Schnorr signature verification
+//!   using BIP-340 standard. Expects 32-byte x-only public keys. *Requires the `verify-schnorr`
+//!   feature.*
 //!
-//! - **SP1 Groth16 Verifier** ([`PredicateTypeId::Sp1Groth16`] = 20):
-//!   Zero-knowledge proof verification for SP1-generated Groth16 proofs.
-//!   *Requires the `verify-sp1-groth16` feature.*
+//! - **SP1 Groth16 Verifier** ([`PredicateTypeId::Sp1Groth16`] = 20): Zero-knowledge proof
+//!   verification for SP1-generated Groth16 proofs. *Requires the `verify-sp1-groth16` feature.*
 //!
 //! ## Feature Flags
 //!
@@ -96,7 +95,6 @@
 //! - [`PredicateKeyBuf`]: Zero-copy borrowed variant of predicate key
 //! - [`verify_claim_witness`]: Main verification function
 //! - [`PredicateTypeId`]: Enum representing all supported predicate types
-//!
 
 mod errors;
 pub mod key;
@@ -129,16 +127,13 @@ mod ssz_generated {
 }
 
 // Publicly re-export only the SSZ items this crate's API intends to expose
-pub use ssz_generated::ssz::key::{MAX_CONDITION_LEN, PredicateKey, PredicateKeyRef};
-
-// Re-export main API
-pub use key::PredicateKeyBuf;
-
-// Re-export predicate type constants and enum for convenience
-pub use type_ids::PredicateTypeId;
-
 // Internal imports for the verify_claim_witness function
 pub use errors::{PredicateError, PredicateResult};
+// Re-export main API
+pub use key::PredicateKeyBuf;
+pub use ssz_generated::ssz::key::{MAX_CONDITION_LEN, PredicateKey, PredicateKeyRef};
+// Re-export predicate type constants and enum for convenience
+pub use type_ids::PredicateTypeId;
 
 /// Verifies that a witness satisfies a predicate key for a given claim.
 ///

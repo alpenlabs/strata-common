@@ -1,9 +1,10 @@
 //! Merkle Mountain Range (MMR) accumulator and related types.
 
-use crate::hasher::MerkleHash;
-use crate::hasher::MerkleHasher;
-use crate::proof::MerkleProof;
-use crate::traits::MmrState;
+use crate::{
+    hasher::{MerkleHash, MerkleHasher},
+    proof::MerkleProof,
+    traits::MmrState,
+};
 
 /// Compact representation of the MMR that can hold upto 2**64 elements.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -146,7 +147,8 @@ impl<H: MerkleHash> MmrState<H> for CompactMmr64<H> {
     }
 }
 
-/// Iterator that yields (peak_index, &hash) pairs from lowest to highest peak index for CompactMmr64.
+/// Iterator that yields (peak_index, &hash) pairs from lowest to highest peak index for
+/// CompactMmr64.
 struct CompactMmr64PeaksIter<'a, H> {
     /// Remaining bits to process (gets bits cleared as we iterate).
     remaining: u64,
@@ -184,9 +186,10 @@ impl<'a, H> Iterator for CompactMmr64PeaksIter<'a, H> {
 
 #[cfg(feature = "ssz")]
 mod mmr64b32 {
+    use ssz_types::{FixedBytes, VariableList};
+
     use super::*;
     use crate::{Mmr, Sha256Hasher};
-    use ssz_types::{FixedBytes, VariableList};
 
     type Hash32 = <Sha256Hasher as MerkleHasher>::Hash;
 
@@ -324,7 +327,8 @@ mod mmr64b32 {
         }
     }
 
-    /// Iterator that yields (peak_index, &hash) pairs from lowest to highest peak index for Mmr64B32.
+    /// Iterator that yields (peak_index, &hash) pairs from lowest to highest peak index for
+    /// Mmr64B32.
     struct CompactPeaksIter<'a> {
         /// Remaining bits to process (gets bits cleared as we iterate).
         remaining: u64,
@@ -364,19 +368,15 @@ mod mmr64b32 {
 #[cfg(test)]
 mod tests {
     use sha2::{Digest, Sha256};
-
-    use super::CompactMmr64;
-    use crate::Mmr;
-    use crate::Sha256Hasher;
-    use crate::proof::MerkleProof;
-    use crate::traits::MmrState;
-
     #[cfg(feature = "ssz")]
     use {
         crate::{MerkleProofB32, Mmr64B32},
         ssz::{Decode, Encode},
         ssz_types::FixedBytes,
     };
+
+    use super::CompactMmr64;
+    use crate::{Mmr, Sha256Hasher, proof::MerkleProof, traits::MmrState};
 
     type Hash32 = [u8; 32];
 

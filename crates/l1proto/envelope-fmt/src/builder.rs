@@ -52,8 +52,10 @@ pub const MAX_ENVELOPE_PAYLOAD_SIZE: usize = 395_000;
 ///
 /// let script = EnvelopeScriptBuilder::with_pubkey(&pubkey)
 ///     .unwrap()
-///     .add_envelope(&payload1).unwrap()
-///     .add_envelope(&payload2).unwrap()
+///     .add_envelope(&payload1)
+///     .unwrap()
+///     .add_envelope(&payload2)
+///     .unwrap()
 ///     .build()
 ///     .unwrap();
 /// ```
@@ -72,7 +74,8 @@ impl EnvelopeScriptBuilder {
     ///
     /// # Errors
     ///
-    /// Returns [`EnvelopeBuildError::PubkeyConversion`] if the pubkey cannot be converted to a `PushBytesBuf`.
+    /// Returns [`EnvelopeBuildError::PubkeyConversion`] if the pubkey cannot be converted to a
+    /// `PushBytesBuf`.
     pub fn with_pubkey(pubkey: &[u8]) -> Result<Self, EnvelopeBuildError> {
         let pubkey_bytes = PushBytesBuf::try_from(pubkey.to_vec())
             .map_err(|_| EnvelopeBuildError::PubkeyConversion)?;
@@ -94,7 +97,8 @@ impl EnvelopeScriptBuilder {
     ///
     /// # Errors
     ///
-    /// Returns [`EnvelopeBuildError::PayloadTooLarge`] if adding this envelope would exceed the maximum total payload size.
+    /// Returns [`EnvelopeBuildError::PayloadTooLarge`] if adding this envelope would exceed the
+    /// maximum total payload size.
     pub fn add_envelope(mut self, payload: &[u8]) -> Result<Self, EnvelopeBuildError> {
         self.total_payload_size += payload.len();
 
@@ -116,7 +120,8 @@ impl EnvelopeScriptBuilder {
     ///
     /// # Errors
     ///
-    /// Returns [`EnvelopeBuildError::PayloadTooLarge`] if adding these envelopes would exceed the maximum total payload size.
+    /// Returns [`EnvelopeBuildError::PayloadTooLarge`] if adding these envelopes would exceed the
+    /// maximum total payload size.
     pub fn add_envelopes<I>(mut self, payloads: I) -> Result<Self, EnvelopeBuildError>
     where
         I: IntoIterator,
@@ -165,8 +170,8 @@ impl EnvelopeScriptBuilder {
 /// Builds a Bitcoin script containing an envelope with the given payload.
 ///
 /// Creates a script with the structure: `OP_FALSE OP_IF <payload_chunks> OP_ENDIF`.
-/// The payload is automatically split into chunks of up to [`MAX_SCRIPT_ELEMENT_SIZE`] bytes to comply
-/// with Bitcoin's consensus rules.
+/// The payload is automatically split into chunks of up to [`MAX_SCRIPT_ELEMENT_SIZE`] bytes to
+/// comply with Bitcoin's consensus rules.
 ///
 /// # Errors
 ///
@@ -202,11 +207,12 @@ fn push_envelope(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use bitcoin::{
         opcodes::all::{OP_ENDIF, OP_IF},
         script::Instruction,
     };
+
+    use super::*;
 
     /// Test that validates the envelope structure uses correct opcodes.
     ///
