@@ -58,7 +58,7 @@
 //!     .await?;
 //!
 //! // Create a listener that reacts to status changes
-//! let listener_input = StatusMonitorInput::from_receiver(
+//! let listener_input = TokioWatchInput::from_receiver(
 //!     monitored_monitor.status_rx.clone()
 //! );
 //!
