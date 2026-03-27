@@ -6,8 +6,10 @@
 
 // Suppress unused dependency warning - strata-codec-derive is used in tests
 // Re-export dependencies for macro usage
+pub use paste;
+pub use proptest;
+pub use strata_codec;
 use strata_codec_derive as _;
-pub use {paste, proptest, strata_codec};
 
 /// Generates property tests for a type that implements `Codec` using proptest.
 ///

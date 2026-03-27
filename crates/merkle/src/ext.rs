@@ -1,10 +1,12 @@
 //! MMR (Merkle Mountain Range) algorithms implemented as an extension trait over
 //! [`MmrState`].
 
-use crate::error::MerkleError;
-use crate::hasher::MerkleHasher;
-use crate::proof::{MerkleProof, ProofData, RawMerkleProof, verify_with_root};
-use crate::traits::MmrState;
+use crate::{
+    error::MerkleError,
+    hasher::MerkleHasher,
+    proof::{MerkleProof, ProofData, RawMerkleProof, verify_with_root},
+    traits::MmrState,
+};
 
 /// Extension trait that provides MMR algorithms over any [`MmrState`] implementation.
 ///
@@ -310,10 +312,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::Sha256Hasher;
-    use crate::mmr::CompactMmr64;
-    use crate::proof::MerkleProof;
-    use crate::traits::MmrState;
+    use crate::{Sha256Hasher, mmr::CompactMmr64, proof::MerkleProof, traits::MmrState};
 
     type Hash32 = [u8; 32];
 

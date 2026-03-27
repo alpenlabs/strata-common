@@ -3,9 +3,11 @@
 
 use strata_codec::{Codec, CodecError, Decoder, Encoder, VarVec};
 
-use crate::hasher::MerkleHash;
-use crate::mmr::CompactMmr64;
-use crate::proof::{MerkleProof, RawMerkleProof};
+use crate::{
+    hasher::MerkleHash,
+    mmr::CompactMmr64,
+    proof::{MerkleProof, RawMerkleProof},
+};
 
 // CompactMmr64
 
