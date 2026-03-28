@@ -101,7 +101,7 @@ mod tests {
     impl AsyncService for TestMonitoredService {
         async fn process_input(
             state: &mut Self::State,
-            input: &Self::Msg,
+            input: Self::Msg,
         ) -> anyhow::Result<Response> {
             state.counter += input;
             Ok(Response::Continue)
@@ -145,7 +145,7 @@ mod tests {
     impl AsyncService for TestListenerService {
         async fn process_input(
             state: &mut Self::State,
-            input: &Self::Msg,
+            input: Self::Msg,
         ) -> anyhow::Result<Response> {
             state.last_seen = Some(input.counter);
             state.updates += 1;

@@ -69,7 +69,7 @@ where
         let start = Instant::now();
 
         // Process the input.
-        let res = S::process_input(&mut state, &input);
+        let res = S::process_input(&mut state, input);
 
         let duration = start.elapsed();
         let result = OperationResult::from(&res);
@@ -83,7 +83,6 @@ where
             Err(e) => {
                 error!(
                     service.name = %service_name,
-                    ?input,
                     duration_ms = duration.as_millis(),
                     %e,
                     "failed to process message"
