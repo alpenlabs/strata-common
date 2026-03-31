@@ -19,8 +19,12 @@ pub struct CommandHandle<M> {
 }
 
 impl<M> CommandHandle<M> {
-    /// Constructs a new instance.
-    pub(crate) fn new(tx: mpsc::Sender<M>) -> Self {
+    /// Constructs a new instance from an mpsc sender.
+    ///
+    /// Use this when you need to create a command channel manually (e.g., to
+    /// combine with other inputs via `SelectInput`). For standard command
+    /// worker services, prefer `ServiceBuilder::create_command_handle()`.
+    pub fn new(tx: mpsc::Sender<M>) -> Self {
         Self { tx }
     }
 
