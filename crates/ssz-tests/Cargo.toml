@@ -1,0 +1,13 @@
+[package]
+name = "strata-ssz-tests"
+version = "0.1.0"
+edition = "2024"
+description = "Property testing macros for SSZ-serializable types"
+
+[dependencies]
+proptest.workspace = true
+ssz.workspace = true
+tree_hash.workspace = true
+
+[lints]
+workspace = true
