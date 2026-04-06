@@ -1,28 +1,38 @@
 [workspace]
 members = [
+  "crates/btc-types",
   "crates/codec",
   "crates/codec-derive",
   "crates/codec-tests",
+  "crates/codec-utils",
+  "crates/crypto",
+  "crates/identifiers",
   "crates/l1proto/envelope-fmt",
   "crates/l1proto/txfmt",
   "crates/merkle",
   "crates/msg-fmt",
   "crates/predicate",
   "crates/service",
+  "crates/ssz-tests",
   "crates/tasks",
 ]
 
 resolver = "3"
 
 [workspace.dependencies]
+strata-btc-types = { path = "crates/btc-types" }
 strata-codec = { path = "crates/codec" }
 strata-codec-derive = { path = "crates/codec-derive" }
 strata-codec-tests = { path = "crates/codec-tests" }
+strata-codec-utils = { path = "crates/codec-utils" }
+strata-crypto = { path = "crates/crypto" }
+strata-identifiers = { path = "crates/identifiers" }
 strata-l1-txfmt = { path = "crates/l1proto/txfmt" }
 strata-merkle = { path = "crates/merkle" }
 strata-msg-fmt = { path = "crates/msg-fmt" }
 strata-predicate = { path = "crates/predicate" }
 strata-service = { path = "crates/services" }
+strata-ssz-tests = { path = "crates/ssz-tests" }
 strata-tasks = { path = "crates/tasks" }
 
 # SSZ dependencies
@@ -39,20 +49,30 @@ anyhow = "1"
 arbitrary = { version = "1.4", features = ["derive"] }
 bincode = "1.3"
 bitcoin = { version = "0.32.6" }
+bitcoin-bosd = { version = "0.9.0", default-features = false }
 borsh = { version = "1.5.0", features = ["derive"] }
+const-hex = "1.14"
 digest = "0.10"
 futures = "0.3"
 futures-util = "0.3"
-hex = "0.4"
+hex = { version = "0.4", features = ["serde"] }
+int-enum = "1"
+musig2 = "0.1"
+num_enum = "0.7"
 opentelemetry = "0.26"
+paste = "1"
 proptest = "1.8"
 rand = "0.8"
+rand_core = { version = "0.6", features = ["getrandom"] }
+schemars = { version = "1", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.94"
 sha2 = "0.10"
 thiserror = "2"
+secp256k1 = { version = "0.29.1", features = ["global-context", "std"] }
 tokio = { version = "1.37", features = ["full"] }
 tracing = "0.1"
+zeroize = { version = "1.8.1", features = ["derive"] }
 
 [workspace.lints]
 rust.missing_debug_implementations = "warn"
