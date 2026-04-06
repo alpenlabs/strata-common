@@ -1,25 +1,4 @@
-//! Merkle primitives and data structures.
-//!
-//! # MMR (Merkle Mountain Range)
-//!
-//! The primary MMR implementation is [`CompactMmr64`] with the [`Mmr`] extension trait.
-//!
-//! ```rust,ignore
-//! use strata_merkle::{CompactMmr64, Sha256Hasher, Mmr};
-//!
-//! let mut mmr = CompactMmr64::<[u8; 32]>::new(64);
-//! Mmr::<Sha256Hasher>::add_leaf(&mut mmr, leaf)?;
-//! Mmr::<Sha256Hasher>::verify(&mmr, &proof, &leaf);
-//! ```
-//!
-//! For SSZ-compatible types, use `Mmr64B32` which implements
-//! the [`MmrState`] trait and works with the same `Mmr` extension methods.
-//!
-//! # Modules
-//!
-//! - `hasher`: common hash and hasher traits/impls
-//! - `mmr`: [`CompactMmr64`] - compact MMR representation
-//! - `tree`: generic binary Merkle tree with proofs
+//! Merkle tree and merkle mountain range primitives, traits, etc.
 #![expect(
     clippy::declare_interior_mutable_const,
     reason = "Constants with interior mutability are needed for MMR implementation"
