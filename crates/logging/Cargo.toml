@@ -1,0 +1,16 @@
+[package]
+edition = "2024"
+name = "strata-logging"
+version = "0.1.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+opentelemetry.workspace = true
+opentelemetry-otlp.workspace = true
+opentelemetry_sdk.workspace = true
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true
