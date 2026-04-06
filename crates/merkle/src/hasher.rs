@@ -41,7 +41,7 @@ impl<const LEN: usize> MerkleHash for [u8; LEN] {
     }
 
     fn eq_ct(a: &Self, b: &Self) -> bool {
-        // Attempt to constant-time comparison.  This is *really hard* to do in
+        // Attempt at constant-time comparison.  This is *really hard* to do in
         // Rust, because LLVM likes to obliterate unnecessary instructions.
         //
         // I could use some of the more advanced libraries for this, but this

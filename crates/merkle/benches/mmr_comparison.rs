@@ -2,12 +2,14 @@
 #![allow(missing_docs)]
 #![allow(unused_crate_dependencies)]
 
+#[cfg(not(feature = "legacy_compact"))]
+compile_error!("build this target with `--features legacy_compact`");
+
 // stupid linter issue
 use criterion as _;
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sha2::{Digest, Sha256};
-use strata_merkle::mmr::CompactMmr64;
-use strata_merkle::{Mmr, Sha256Hasher};
+use strata_merkle::{CompactMmr64, Mmr, Sha256Hasher};
 
 type Hash32 = [u8; 32];
 

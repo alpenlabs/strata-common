@@ -15,7 +15,7 @@ class RawMerkleProofB32(Container):
 ### If the MMR or tree that produced this proof is updated, then this proof has
 ### to be updated as well.
 class MerkleProofB32(Container):
-    ### Sibling hashes required for proof.
-    inner: RawMerkleProofB32
     ### Index of the element for which this proof is for.
     index: uint64
+    ### Sibling hashes required for proof.
+    inner: RawMerkleProofB32
