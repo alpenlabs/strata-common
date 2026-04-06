@@ -204,7 +204,6 @@ mod tests {
         ssz_types::FixedBytes,
     };
 
-    use super::CompactMmr64;
     use crate::proof::MerkleProof;
     use crate::traits::MmrState;
     use crate::{CompactMmr64, Mmr, Sha256Hasher};

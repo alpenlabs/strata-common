@@ -51,7 +51,6 @@ mod tests {
     use strata_codec::{decode_buf_exact, encode_to_vec};
 
     use super::*;
-    use crate::Mmr;
 
     type H = [u8; 32];
 
