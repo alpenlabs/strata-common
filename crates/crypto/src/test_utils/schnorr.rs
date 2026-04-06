@@ -130,6 +130,7 @@ pub fn create_musig2_signature(
     panic!("No signers available to finalize signature");
 }
 
+/// Creates an aggregated public key from a slice of private keys.
 pub fn create_agg_pubkey_from_privkeys(operators_privkeys: &[EvenSecretKey]) -> XOnlyPublicKey {
     let pubkeys: Vec<_> = operators_privkeys
         .iter()

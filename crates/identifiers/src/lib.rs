@@ -17,7 +17,7 @@ mod jsonschema;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
-/// Re-exports the [`Hash`](exec::Hash) type alias for convenient access.
+/// Re-exports the `Hash` type alias for convenient access.
 pub mod hash {
     pub use crate::exec::Hash;
 }

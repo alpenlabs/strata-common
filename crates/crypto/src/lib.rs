@@ -7,6 +7,7 @@ pub mod keys;
 
 pub mod musig2;
 pub mod schnorr;
+/// Test utilities for cryptographic operations.
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
 /// Threshold signature schemes.
