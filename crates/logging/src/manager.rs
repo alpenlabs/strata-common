@@ -2,19 +2,18 @@
 
 use std::sync::OnceLock;
 
-use opentelemetry::{
-    global::{self, set_text_map_propagator},
-    trace::TracerProvider,
-};
+use opentelemetry::global::{self, set_text_map_propagator};
+use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::WithExportConfig;
-use opentelemetry_sdk::{
-    propagation::TraceContextPropagator,
-    runtime::Tokio,
-    trace::{Config, TracerProvider as SdkTracerProvider},
-};
+use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::runtime::Tokio;
+use opentelemetry_sdk::trace::{Config, TracerProvider as SdkTracerProvider};
 use tracing::*;
 use tracing_appender::rolling::RollingFileAppender;
-use tracing_subscriber::{fmt::layer, layer::SubscriberExt, util::SubscriberInitExt, Layer};
+use tracing_subscriber::Layer;
+use tracing_subscriber::fmt::layer;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use super::types::LoggerConfig;
 

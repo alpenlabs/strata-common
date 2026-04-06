@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use tracing::info;
 
-use super::{format_service_name, init, FileLoggingConfig, LoggerConfig};
+use super::{FileLoggingConfig, LoggerConfig, format_service_name, init};
 
 /// Configuration parameters for logging initialization.
 #[derive(Debug)]

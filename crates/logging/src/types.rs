@@ -1,6 +1,7 @@
 //! Configuration types for the logging subsystem.
 
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
+use std::time::Duration;
 
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::Resource;
@@ -40,6 +41,7 @@ pub struct FileLoggingConfig {
 }
 
 impl FileLoggingConfig {
+    /// Creates a new file logging configuration with daily rotation and compact format.
     pub fn new(directory: PathBuf, file_name_prefix: String) -> Self {
         Self {
             directory,
@@ -49,11 +51,13 @@ impl FileLoggingConfig {
         }
     }
 
+    /// Sets the log file rotation strategy.
     pub fn with_rotation(mut self, rotation: Rotation) -> Self {
         self.rotation = rotation;
         self
     }
 
+    /// Sets whether to use JSON format for file logs.
     pub fn with_json_format(mut self, json_format: bool) -> Self {
         self.json_format = json_format;
         self
@@ -94,6 +98,7 @@ pub struct ResourceConfig {
 }
 
 impl ResourceConfig {
+    /// Creates a new resource configuration with the given service name.
     pub fn new(service_name: String) -> Self {
         Self {
             service_name,

@@ -9,7 +9,7 @@ mod tests;
 
 // Re-export main types and functions
 pub use manager::{finalize, init};
-pub use service::{init_logging_from_config, LoggingInitConfig};
+pub use service::{LoggingInitConfig, init_logging_from_config};
 // Re-export tracing-appender types for convenience
 pub use tracing_appender::rolling::Rotation;
 pub use types::{FileLoggingConfig, LoggerConfig, OtlpExportConfig, ResourceConfig, StdoutConfig};

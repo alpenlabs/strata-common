@@ -1,8 +1,10 @@
 //! Unit tests for the logging subsystem.
 
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
+use std::time::Duration;
 
-use opentelemetry::{global, trace::TraceContextExt, KeyValue};
+use opentelemetry::trace::TraceContextExt;
+use opentelemetry::{KeyValue, global};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 
 use super::types::*;
@@ -24,9 +26,11 @@ fn test_resource_config_build_minimal() {
 
     // Resource should contain at least service.name
     let attrs: Vec<_> = resource.iter().collect();
-    assert!(attrs
-        .iter()
-        .any(|(key, value)| key.as_str() == "service.name" && value.as_str() == "test-service"));
+    assert!(
+        attrs
+            .iter()
+            .any(|(key, value)| key.as_str() == "service.name" && value.as_str() == "test-service")
+    );
 }
 
 #[test]
@@ -46,26 +50,38 @@ fn test_resource_config_build_with_all_semantic_conventions() {
     let attrs: Vec<_> = resource.iter().collect();
 
     // Verify all semantic conventions are present
-    assert!(attrs
-        .iter()
-        .any(|(key, value)| key.as_str() == "service.name" && value.as_str() == "test-service"));
-    assert!(attrs
-        .iter()
-        .any(|(key, value)| key.as_str() == "service.version" && value.as_str() == "1.0.0"));
-    assert!(attrs
-        .iter()
-        .any(|(key, value)| key.as_str() == "deployment.environment"
-            && value.as_str() == "production"));
-    assert!(attrs
-        .iter()
-        .any(|(key, value)| key.as_str() == "service.instance.id"
-            && value.as_str() == "instance-123"));
-    assert!(attrs
-        .iter()
-        .any(|(key, value)| key.as_str() == "custom.key1" && value.as_str() == "value1"));
-    assert!(attrs
-        .iter()
-        .any(|(key, value)| key.as_str() == "custom.key2" && value.as_str() == "value2"));
+    assert!(
+        attrs
+            .iter()
+            .any(|(key, value)| key.as_str() == "service.name" && value.as_str() == "test-service")
+    );
+    assert!(
+        attrs
+            .iter()
+            .any(|(key, value)| key.as_str() == "service.version" && value.as_str() == "1.0.0")
+    );
+    assert!(
+        attrs
+            .iter()
+            .any(|(key, value)| key.as_str() == "deployment.environment"
+                && value.as_str() == "production")
+    );
+    assert!(
+        attrs
+            .iter()
+            .any(|(key, value)| key.as_str() == "service.instance.id"
+                && value.as_str() == "instance-123")
+    );
+    assert!(
+        attrs
+            .iter()
+            .any(|(key, value)| key.as_str() == "custom.key1" && value.as_str() == "value1")
+    );
+    assert!(
+        attrs
+            .iter()
+            .any(|(key, value)| key.as_str() == "custom.key2" && value.as_str() == "value2")
+    );
 }
 
 #[test]
