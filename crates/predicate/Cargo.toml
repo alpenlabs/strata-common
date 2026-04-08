@@ -36,7 +36,7 @@ sp1-verifier = "5.2.1"
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc20" }
 
 [features]
-default = ["serde", "borsh"]
+default = ["serde", "borsh", "sp1-groth16"]
 serde = ["dep:serde", "dep:hex"]
 borsh = ["dep:borsh"]
 arbitrary = ["dep:arbitrary"]

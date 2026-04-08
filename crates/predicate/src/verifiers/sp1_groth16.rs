@@ -7,7 +7,7 @@ use zkaleido_sp1_groth16_verifier::hashes::{blake3_to_fr, sha256_to_fr};
 use zkaleido_sp1_groth16_verifier::{
     GROTH16_PROOF_COMPRESSED_SIZE, GROTH16_PROOF_UNCOMPRESSED_SIZE, Groth16Proof,
     Groth16VerifyingKey, SP1_GROTH16_VK_COMPRESSED_SIZE_MERGED,
-    SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED, verify_sp1_groth16_algebraic,
+    SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED, VK_HASH_PREFIX_LENGTH, verify_sp1_groth16_algebraic,
 };
 
 use crate::errors::{PredicateError, PredicateResult};
@@ -36,6 +36,13 @@ use crate::verifier::PredicateVerifier;
 /// - `hash(public_values)`: SHA-256 or Blake3 hash of the claim data
 #[derive(Debug, Default)]
 pub(crate) struct Sp1Groth16Verifier;
+
+/// Size of a compressed Groth16 proof prefixed with SP1's 4-byte VK hash tag.
+const PREFIXED_COMPRESSED_PROOF_SIZE: usize = GROTH16_PROOF_COMPRESSED_SIZE + VK_HASH_PREFIX_LENGTH;
+
+/// Size of an uncompressed Groth16 proof prefixed with SP1's 4-byte VK hash tag.
+const PREFIXED_UNCOMPRESSED_PROOF_SIZE: usize =
+    GROTH16_PROOF_UNCOMPRESSED_SIZE + VK_HASH_PREFIX_LENGTH;
 
 impl PredicateVerifier for Sp1Groth16Verifier {
     type Condition = Groth16VerifyingKey;
@@ -81,11 +88,31 @@ impl PredicateVerifier for Sp1Groth16Verifier {
                     id: PredicateTypeId::Sp1Groth16,
                     reason: e.to_string(),
                 }),
+            // SP1 prefixes proofs with a 4-byte VK hash tag. We strip the prefix and parse the
+            // remaining bytes. The prefix is ignored since we work with merged verifying keys.
+            PREFIXED_COMPRESSED_PROOF_SIZE => {
+                Groth16Proof::from_gnark_compressed_bytes(&witness[VK_HASH_PREFIX_LENGTH..])
+                    .map_err(|e| PredicateError::WitnessParsingFailed {
+                        id: PredicateTypeId::Sp1Groth16,
+                        reason: e.to_string(),
+                    })
+            }
+            PREFIXED_UNCOMPRESSED_PROOF_SIZE => Groth16Proof::from_uncompressed_bytes(
+                &witness[VK_HASH_PREFIX_LENGTH..],
+            )
+            .map_err(|e| PredicateError::WitnessParsingFailed {
+                id: PredicateTypeId::Sp1Groth16,
+                reason: e.to_string(),
+            }),
             _ => Err(PredicateError::WitnessParsingFailed {
                 id: PredicateTypeId::Sp1Groth16,
                 reason: format!(
-                    "invalid groth16 proof witness size {}. expected {GROTH16_PROOF_COMPRESSED_SIZE} for compressed and {GROTH16_PROOF_UNCOMPRESSED_SIZE} for uncompressed.",
-                    witness.len()
+                    "invalid groth16 proof witness size {}. expected {} for compressed, {} for uncompressed, {} for prefixed compressed, or {} for prefixed uncompressed",
+                    witness.len(),
+                    GROTH16_PROOF_COMPRESSED_SIZE,
+                    GROTH16_PROOF_UNCOMPRESSED_SIZE,
+                    PREFIXED_COMPRESSED_PROOF_SIZE,
+                    PREFIXED_UNCOMPRESSED_PROOF_SIZE,
                 ),
             }),
         }
@@ -163,6 +190,28 @@ mod tests {
         let verifier = Sp1Groth16Verifier;
         let res = verifier.verify(&predicate, &claim, &witness);
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_sp1_groth16_prefixed_uncompressed_witness() {
+        let program_id_hex = "00eb7fd5709e4b833db86054ba4acca001a3aa5f18b7e7d0d96d0f1d340b4e34";
+        let program_id: [u8; 32] = hex::decode(program_id_hex).unwrap().try_into().unwrap();
+
+        let verifier = SP1Groth16Verifier::load(&GROTH16_VK_BYTES, program_id).unwrap();
+        let proof_file = format!("data/proofs/fibonacci_sp1_0x{program_id_hex}.proof");
+        let receipt = ProofReceiptWithMetadata::load(proof_file)
+            .unwrap()
+            .receipt()
+            .clone();
+
+        let condition = verifier.vk.to_gnark_bytes();
+        let claim = receipt.public_values().as_bytes().to_vec();
+        // Keep the full proof bytes including the 4-byte SP1 VK hash prefix.
+        let prefixed_witness = receipt.proof().as_bytes().to_vec();
+
+        let pred_verifier = Sp1Groth16Verifier;
+        let res = pred_verifier.verify(&condition, &claim, &prefixed_witness);
+        assert!(res.is_ok(), "prefixed uncompressed witness should verify");
     }
 
     #[test]
