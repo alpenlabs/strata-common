@@ -31,10 +31,9 @@ default = ["bitcoin"]
 bitcoin = ["dep:bitcoin"]
 
 [dev-dependencies]
-strata-ssz-tests.workspace = true
 rand_core = { workspace = true, features = ["getrandom"] }
+strata-ssz-tests.workspace = true
 
 borsh.workspace = true
 proptest.workspace = true
 serde_json.workspace = true
-

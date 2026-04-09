@@ -24,10 +24,10 @@ thiserror.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
-rand_core = { workspace = true, features = ["getrandom"] }
 bitcoin.workspace = true
 proptest.workspace = true
 rand.workspace = true
+rand_core = { workspace = true, features = ["getrandom"] }
 serde_json.workspace = true
 
 [features]

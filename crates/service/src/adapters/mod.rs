@@ -8,6 +8,7 @@
 )]
 
 mod async_sync;
+mod dumb_ticking;
 mod iter;
 mod mpsc;
 mod select;
@@ -18,6 +19,7 @@ mod vec;
 mod watch;
 
 pub use async_sync::AsyncSyncInput;
+pub use dumb_ticking::{DumbTickHandle, DumbTickingInput};
 pub use iter::IterInput;
 pub use mpsc::TokioMpscInput;
 pub use select::{Either, SelectInput};
