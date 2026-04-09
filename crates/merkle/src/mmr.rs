@@ -37,7 +37,7 @@ mod mmr64b32 {
                 .collect();
             Self {
                 entries: mmr.entries,
-                roots: roots.into(),
+                roots: roots.try_into().expect("valid legth"),
             }
         }
 
@@ -111,7 +111,7 @@ mod mmr64b32 {
                 if bits_below < roots_vec.len() {
                     roots_vec.remove(bits_below);
                     self.entries &= !bit_mask; // Clear the bit.
-                    self.roots = roots_vec.into();
+                    self.roots = roots_vec.try_into().expect("valid length");
                     return true;
                 }
 
@@ -125,7 +125,7 @@ mod mmr64b32 {
                     let bits_below = (self.entries & (bit_mask - 1)).count_ones() as usize;
                     if let Some(fb) = roots_vec.get_mut(bits_below) {
                         *fb = val_fb;
-                        self.roots = roots_vec.into();
+                        self.roots = roots_vec.try_into().expect("valid length");
                         return true;
                     }
 
@@ -138,7 +138,7 @@ mod mmr64b32 {
                     if bits_below <= roots_vec.len() {
                         roots_vec.insert(bits_below, val_fb);
                         self.entries |= bit_mask; // Set the bit
-                        self.roots = roots_vec.into();
+                        self.roots = roots_vec.try_into().expect("valid length");
                         return true;
                     }
 
@@ -462,7 +462,7 @@ mod tests {
             .collect();
         let ssz_mmr = Mmr64B32 {
             entries: mmr.entries,
-            roots: roots_vec.into(),
+            roots: roots_vec.try_into().expect("valid length"),
         };
 
         // Encode to SSZ
@@ -505,7 +505,7 @@ mod tests {
                 .collect();
             let ssz_mmr = Mmr64B32 {
                 entries: mmr.entries,
-                roots: roots_vec.into(),
+                roots: roots_vec.try_into().expect("valid length"),
             };
 
             let encoded = ssz_mmr.as_ssz_bytes();

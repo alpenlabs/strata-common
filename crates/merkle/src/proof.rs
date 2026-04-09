@@ -305,7 +305,9 @@ mod proofb32 {
                 .map(|h| FixedBytes::<32>::from(*h))
                 .collect();
             Self {
-                cohashes: cohashes.into(),
+                cohashes: cohashes
+                    .try_into()
+                    .expect("proof cohashes should fit into capacity"),
             }
         }
 
@@ -315,7 +317,9 @@ mod proofb32 {
         pub fn new(cohashes: Vec<[u8; 32]>) -> Self {
             let cohashes_vec: Vec<_> = cohashes.into_iter().map(FixedBytes::<32>::from).collect();
             Self {
-                cohashes: cohashes_vec.into(),
+                cohashes: cohashes_vec
+                    .try_into()
+                    .expect("proof cohashes should fit into capacity"),
             }
         }
 
@@ -324,7 +328,9 @@ mod proofb32 {
         /// This is similar to `RawMerkleProof::new_zero`.
         pub fn new_zero() -> Self {
             Self {
-                cohashes: vec![].into(),
+                cohashes: vec![]
+                    .try_into()
+                    .expect("empty proof cohashes should fit into capacity"),
             }
         }
 
@@ -429,7 +435,9 @@ mod proofb32 {
             let cohashes_vec: Vec<_> = cohashes.into_iter().map(FixedBytes::<32>::from).collect();
             Self {
                 inner: RawMerkleProofB32 {
-                    cohashes: cohashes_vec.into(),
+                    cohashes: cohashes_vec
+                        .try_into()
+                        .expect("proof cohashes should fit into capacity"),
                 },
                 index,
             }
@@ -441,7 +449,9 @@ mod proofb32 {
         pub fn new_zero() -> Self {
             Self {
                 inner: RawMerkleProofB32 {
-                    cohashes: vec![].into(),
+                    cohashes: vec![]
+                        .try_into()
+                        .expect("empty proof cohashes should fit into capacity"),
                 },
                 index: 0,
             }
@@ -607,7 +617,9 @@ mod tests {
             .map(|h| FixedBytes::<32>::from(*h))
             .collect();
         let ssz_proof = RawMerkleProofB32 {
-            cohashes: cohashes_vec.into(),
+            cohashes: cohashes_vec
+                .try_into()
+                .expect("proof cohashes should fit into capacity"),
         };
 
         let encoded = ssz_proof.as_ssz_bytes();
@@ -632,7 +644,9 @@ mod tests {
             .collect();
         let ssz_proof = MerkleProofB32 {
             inner: RawMerkleProofB32 {
-                cohashes: cohashes_vec.into(),
+                cohashes: cohashes_vec
+                    .try_into()
+                    .expect("proof cohashes should fit into capacity"),
             },
             index: proof.index(),
         };
@@ -657,7 +671,9 @@ mod tests {
     fn test_empty_proof_ssz() {
         let ssz_proof = MerkleProofB32 {
             inner: RawMerkleProofB32 {
-                cohashes: vec![].into(),
+                cohashes: vec![]
+                    .try_into()
+                    .expect("empty proof cohashes should fit into capacity"),
             },
             index: 0,
         };

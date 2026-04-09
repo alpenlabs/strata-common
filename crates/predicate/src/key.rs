@@ -34,7 +34,7 @@ impl PredicateKey {
     pub fn new(id: PredicateTypeId, condition: Vec<u8>) -> Self {
         Self {
             id: id.as_u8(),
-            condition: condition.into(),
+            condition: condition.try_into().expect("valid length"),
         }
     }
 
@@ -141,7 +141,7 @@ impl<'b> PredicateKeyBuf<'b> {
     pub fn to_owned(&self) -> PredicateKey {
         PredicateKey {
             id: self.id.as_u8(),
-            condition: self.condition.to_vec().into(),
+            condition: self.condition.to_vec().try_into().expect("valid length"),
         }
     }
 
