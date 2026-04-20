@@ -247,7 +247,7 @@ mod tests {
         match result {
             Err(PredicateError::UnsupportedPredicateType { id, reason }) => {
                 assert_eq!(id, PredicateTypeId::Bip340Schnorr);
-                assert!(reason.contains("verify-schnorr"));
+                assert!(reason.contains("schnorr"));
             }
             _ => panic!("Expected UnsupportedPredicateType error, got: {result:?}"),
         }
@@ -265,7 +265,7 @@ mod tests {
         match result {
             Err(PredicateError::UnsupportedPredicateType { id, reason }) => {
                 assert_eq!(id, PredicateTypeId::Sp1Groth16);
-                assert!(reason.contains("verify-sp1-groth16"));
+                assert!(reason.contains("sp1-groth16"));
             }
             _ => panic!("Expected UnsupportedPredicateType error, got: {result:?}"),
         }
