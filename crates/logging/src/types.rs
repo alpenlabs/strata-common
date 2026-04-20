@@ -152,6 +152,14 @@ pub struct LoggerConfig {
     pub file_logging_config: Option<FileLoggingConfig>,
     /// OTLP export configuration
     pub otlp_export_config: OtlpExportConfig,
+    /// Whether to install the tracing-to-metrics bridge layer.
+    ///
+    /// When `true`, a [`MetricsLayer`](super::MetricsLayer) is added to the
+    /// subscriber stack and records per-span busy/idle histograms via the
+    /// `metrics` facade. Only enable this when a `metrics` recorder is (or
+    /// will be) installed by the binary; otherwise the per-span state is
+    /// allocated for nothing.
+    pub enable_metrics_layer: bool,
 }
 
 impl LoggerConfig {
@@ -163,6 +171,7 @@ impl LoggerConfig {
             stdout_config: StdoutConfig::default(),
             file_logging_config: None,
             otlp_export_config: OtlpExportConfig::default(),
+            enable_metrics_layer: false,
         }
     }
 
@@ -210,6 +219,12 @@ impl LoggerConfig {
     /// Set OTLP export configuration
     pub fn with_otlp_export_config(mut self, config: OtlpExportConfig) -> Self {
         self.otlp_export_config = config;
+        self
+    }
+
+    /// Enable or disable the tracing-to-metrics bridge layer.
+    pub fn with_metrics_layer(mut self, enabled: bool) -> Self {
+        self.enable_metrics_layer = enabled;
         self
     }
 

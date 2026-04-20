@@ -23,6 +23,11 @@ pub struct LoggingInitConfig<'a> {
     pub json_format: Option<bool>,
     /// Default log file prefix if not specified in config
     pub default_log_prefix: &'a str,
+    /// Enable the tracing-to-metrics bridge layer.
+    ///
+    /// Set to `true` only when a `metrics` recorder has been (or will be)
+    /// installed. See [`MetricsLayer`](super::MetricsLayer).
+    pub enable_metrics_layer: bool,
 }
 
 /// Initialize logging from configuration with all standard setup.
@@ -57,6 +62,8 @@ pub fn init_logging_from_config(config: LoggingInitConfig<'_>) {
     if let Some(json_format) = config.json_format {
         lconfig = lconfig.with_json_logging(json_format);
     }
+
+    lconfig = lconfig.with_metrics_layer(config.enable_metrics_layer);
 
     // Initialize logging
     init(lconfig);
