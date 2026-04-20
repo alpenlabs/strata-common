@@ -30,6 +30,7 @@ impl EVMExtraPayload {
 }
 
 /// Serializes a block hash into a byte vector for use as an EVM extra payload.
+#[cfg(feature = "borsh")]
 pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
     block_hash.0.to_vec()
 }

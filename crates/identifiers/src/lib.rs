@@ -1,6 +1,15 @@
 //! Core identifier types and buffer types.
 #![warn(missing_docs)]
 
+// Used conditionally via `#[serde(with = "hex::serde")]` and in tests.
+#[cfg(test)]
+use bincode as _;
+use hex as _;
+#[cfg(test)]
+use serde_json as _;
+#[cfg(test)]
+use strata_ssz_tests as _;
+
 #[macro_use]
 mod macros;
 

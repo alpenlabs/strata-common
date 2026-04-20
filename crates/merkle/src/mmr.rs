@@ -4,7 +4,7 @@
 mod mmr64b32 {
     use ssz_types::{FixedBytes, VariableList};
 
-    #[cfg(feature = "legacy_compact")]
+    #[cfg(any(feature = "legacy_compact", test))]
     use crate::CompactMmr64;
     use crate::ext::*;
     use crate::hasher::*;
@@ -28,7 +28,7 @@ mod mmr64b32 {
         }
 
         /// Creates a concrete MMR from a generic CompactMmr64
-        #[cfg(feature = "legacy_compact")]
+        #[cfg(any(feature = "legacy_compact", test))]
         pub fn from_generic(mmr: &CompactMmr64<Hash32>) -> Self {
             let roots: Vec<_> = mmr
                 .roots
@@ -42,7 +42,7 @@ mod mmr64b32 {
         }
 
         /// Converts to a generic CompactMmr64
-        #[cfg(feature = "legacy_compact")]
+        #[cfg(any(feature = "legacy_compact", test))]
         pub fn to_generic(&self) -> CompactMmr64<Hash32> {
             CompactMmr64 {
                 entries: self.entries,

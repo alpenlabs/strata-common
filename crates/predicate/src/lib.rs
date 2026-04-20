@@ -114,8 +114,15 @@ mod borsh;
 mod arbitrary;
 
 // Suppress unused dev-dependency warnings when verify features are disabled
+// `bincode`, `hex`, `serde_json` are only used by the `serde`-gated tests.
+#[cfg(all(test, not(feature = "serde")))]
+use bincode as _;
+#[cfg(all(test, not(feature = "serde")))]
+use hex as _;
 #[cfg(all(test, not(feature = "schnorr")))]
 use rand as _;
+#[cfg(all(test, not(feature = "serde")))]
+use serde_json as _;
 #[cfg(all(test, not(feature = "sp1-groth16")))]
 use sp1_verifier as _;
 #[cfg(all(test, not(feature = "sp1-groth16")))]
