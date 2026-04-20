@@ -19,8 +19,8 @@ struct SpanTiming {
 ///
 /// For every span that closes, two histograms are recorded (microseconds):
 ///
-/// - `strata_span_busy_us{span="<name>"}` — time the span was actively executing.
-/// - `strata_span_idle_us{span="<name>"}` — wall time the span existed but was not executing.
+/// - `strata_span_busy_us{span="<name>"}`: time the span was actively executing.
+/// - `strata_span_idle_us{span="<name>"}`: wall time the span existed but was not executing.
 ///
 /// The layer always emits these via the `metrics` facade. If no recorder is
 /// installed, the calls are cheap no-ops, but the per-span state is still
@@ -70,9 +70,9 @@ where
             let total = timing.created_at.elapsed();
             let busy = timing.busy;
             let idle = total.saturating_sub(busy);
-            let name = span.name().to_string();
+            let name: &'static str = span.name();
 
-            metrics::histogram!("strata_span_busy_us", "span" => name.clone())
+            metrics::histogram!("strata_span_busy_us", "span" => name)
                 .record(busy.as_micros() as f64);
             metrics::histogram!("strata_span_idle_us", "span" => name)
                 .record(idle.as_micros() as f64);
@@ -89,7 +89,7 @@ mod tests {
     use super::*;
 
     /// Exercising the layer without a metrics recorder installed should not
-    /// panic — `metrics::histogram!` is a no-op in that case.
+    /// panic. `metrics::histogram!` is a no-op in that case.
     #[test]
     fn records_without_panicking_when_no_recorder_is_installed() {
         let subscriber = registry().with(MetricsLayer);
