@@ -128,6 +128,18 @@ fn test_trace_context_propagation() {
 }
 
 #[test]
+fn test_logger_config_metrics_layer_builder() {
+    let config = LoggerConfig::new("test-service".to_string());
+    assert!(!config.enable_metrics_layer);
+
+    let enabled = LoggerConfig::new("test-service".to_string()).with_metrics_layer(true);
+    assert!(enabled.enable_metrics_layer);
+
+    let disabled = enabled.with_metrics_layer(false);
+    assert!(!disabled.enable_metrics_layer);
+}
+
+#[test]
 fn test_logger_config_with_otlp_export_config() {
     let export_config = OtlpExportConfig {
         timeout: Duration::from_secs(5),

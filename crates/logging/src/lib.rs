@@ -1,6 +1,7 @@
 //! Logging subsystem with OpenTelemetry support.
 
 pub mod manager;
+pub mod metrics_layer;
 pub mod service;
 pub mod types;
 
@@ -9,6 +10,7 @@ mod tests;
 
 // Re-export main types and functions
 pub use manager::{finalize, init};
+pub use metrics_layer::MetricsLayer;
 pub use service::{LoggingInitConfig, init_logging_from_config};
 // Re-export tracing-appender types for convenience
 pub use tracing_appender::rolling::Rotation;
