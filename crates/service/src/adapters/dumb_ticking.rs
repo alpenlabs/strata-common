@@ -11,6 +11,7 @@ use tokio::time::{interval, Interval, MissedTickBehavior};
 use crate::{AsyncServiceInput, ServiceInput};
 
 /// Handle for stopping a service using a [`DumbTickingInput`].
+#[derive(Debug)]
 pub struct DumbTickHandle {
     stop_tx: oneshot::Sender<()>,
 }
