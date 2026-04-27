@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 metrics.workspace = true
+metrics-exporter-otel.workspace = true
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true

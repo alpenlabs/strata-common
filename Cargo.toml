@@ -60,6 +60,7 @@ futures-util = "0.3"
 hex = { version = "0.4", features = ["serde"] }
 int-enum = "1"
 metrics = "0.24"
+metrics-exporter-otel = "0.3"
 musig2 = "0.1"
 num_enum = "0.7"
 opentelemetry = "0.31"
