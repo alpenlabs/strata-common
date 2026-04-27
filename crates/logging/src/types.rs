@@ -135,7 +135,7 @@ impl ResourceConfig {
 
         attributes.extend(custom_attributes.iter().cloned());
 
-        Resource::new(attributes)
+        Resource::builder().with_attributes(attributes).build()
     }
 }
 
