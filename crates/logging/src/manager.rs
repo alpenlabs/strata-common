@@ -1,5 +1,6 @@
 //! Logging initialization and shutdown management.
 
+use std::env;
 use std::sync::OnceLock;
 
 use metrics_exporter_otel::OpenTelemetryRecorder;
@@ -13,10 +14,10 @@ use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use tracing::*;
 use tracing_appender::rolling::RollingFileAppender;
-use tracing_subscriber::Layer;
 use tracing_subscriber::fmt::layer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Layer};
 
 use super::metrics_layer::MetricsLayer;
 use super::types::LoggerConfig;
@@ -40,13 +41,15 @@ pub fn init(config: LoggerConfig) {
     // Set the global trace context propagator for distributed tracing
     set_text_map_propagator(TraceContextPropagator::new());
 
-    // Default filter suppresses verbose SP1 executor logs below WARN (so TRACE, INFO and DEBUG
-    // are filtered out).
-    // It still allows further override via RUST_LOG.
-    let filt = tracing_subscriber::EnvFilter::builder()
-        .with_default_directive(tracing::Level::INFO.into())
-        .from_env_lossy()
-        .add_directive("sp1_core_executor=warn".parse().unwrap());
+    // Build the filter from any consumer-supplied directives plus the value of
+    // `RUST_LOG`. Consumers are expected to pass directives such as
+    // `sp1_core_executor=warn` or `jsonrpsee_server::server=warn` themselves;
+    // this crate is intentionally agnostic about which dependencies are noisy.
+    // `RUST_LOG` still wins on conflicts because it is appended last.
+    let filt = build_env_filter(
+        &config.extra_filter_directives,
+        env::var(EnvFilter::DEFAULT_ENV).ok().as_deref(),
+    );
 
     // Configure stdout logging with JSON or compact format
     let stdout_sub = if config.stdout_config.json_format {
@@ -164,6 +167,29 @@ pub fn init(config: LoggerConfig) {
         deployment_environment = ?config.resource.deployment_environment,
         "logging initialized"
     );
+}
+
+fn build_env_filter(extra_directives: &[String], env_filter: Option<&str>) -> EnvFilter {
+    let extras = extra_directives
+        .iter()
+        .map(String::as_str)
+        .filter(|d| !d.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let directives = match (extras.is_empty(), env_filter) {
+        (true, Some(env)) if !env.trim().is_empty() => env.to_string(),
+        (true, _) => String::new(),
+        (false, Some(env)) if !env.trim().is_empty() => format!("{extras},{env}"),
+        (false, _) => extras,
+    };
+
+    let builder = EnvFilter::builder().with_default_directive(tracing::Level::INFO.into());
+    if directives.is_empty() {
+        builder.parse_lossy("")
+    } else {
+        builder.parse_lossy(directives)
+    }
 }
 
 /// Shuts down the logging subsystem, flushing pending spans and tearing down resources.

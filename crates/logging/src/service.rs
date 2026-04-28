@@ -28,6 +28,12 @@ pub struct LoggingInitConfig<'a> {
     /// Set to `true` only when a `metrics` recorder has been (or will be)
     /// installed. See [`MetricsLayer`](super::MetricsLayer).
     pub enable_metrics_layer: bool,
+    /// Extra `EnvFilter` directives to merge before `RUST_LOG`.
+    ///
+    /// Forwarded to [`LoggerConfig::extra_filter_directives`]. Use this from
+    /// the binary to silence noisy dependencies (e.g.
+    /// `["sp1_core_executor=warn", "jsonrpsee_server::server=warn"]`).
+    pub extra_filter_directives: &'a [&'a str],
 }
 
 /// Initialize logging from configuration with all standard setup.
@@ -64,6 +70,11 @@ pub fn init_logging_from_config(config: LoggingInitConfig<'_>) {
     }
 
     lconfig = lconfig.with_metrics_layer(config.enable_metrics_layer);
+
+    if !config.extra_filter_directives.is_empty() {
+        lconfig =
+            lconfig.with_extra_filter_directives(config.extra_filter_directives.iter().copied());
+    }
 
     // Initialize logging
     init(lconfig);
