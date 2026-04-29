@@ -160,6 +160,11 @@ pub struct LoggerConfig {
     /// will be) installed by the binary; otherwise the per-span state is
     /// allocated for nothing.
     pub enable_metrics_layer: bool,
+    /// Name passed to `opentelemetry::global::meter(...)` when installing
+    /// the `metrics`-crate to OpenTelemetry bridge. Identifies the
+    /// instrumentation library (the `otel.scope.name` attribute) on the
+    /// emitted metrics. Defaults to `"strata"`.
+    pub meter_name: String,
 }
 
 impl LoggerConfig {
@@ -172,6 +177,7 @@ impl LoggerConfig {
             file_logging_config: None,
             otlp_export_config: OtlpExportConfig::default(),
             enable_metrics_layer: false,
+            meter_name: "strata".to_string(),
         }
     }
 
@@ -225,6 +231,13 @@ impl LoggerConfig {
     /// Enable or disable the tracing-to-metrics bridge layer.
     pub fn with_metrics_layer(mut self, enabled: bool) -> Self {
         self.enable_metrics_layer = enabled;
+        self
+    }
+
+    /// Override the meter name passed to `opentelemetry::global::meter(...)`
+    /// when installing the `metrics`-crate to OpenTelemetry bridge.
+    pub fn with_meter_name(mut self, name: String) -> Self {
+        self.meter_name = name;
         self
     }
 

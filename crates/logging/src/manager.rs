@@ -3,7 +3,9 @@
 use std::sync::OnceLock;
 
 use metrics_exporter_otel::OpenTelemetryRecorder;
-use opentelemetry::global::{self, set_meter_provider, set_text_map_propagator};
+use opentelemetry::InstrumentationScope;
+use opentelemetry::global::{set_meter_provider, set_text_map_propagator};
+use opentelemetry::metrics::MeterProvider;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::{MetricExporter, SpanExporter, WithExportConfig};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
@@ -126,17 +128,20 @@ pub fn init(config: LoggerConfig) {
 
         set_meter_provider(mp.clone());
 
-        if METER_PROVIDER.set(mp).is_err() {
-            error!("Failed to set global meter provider");
-        }
-
         // Bridge `metrics`-crate calls into the OpenTelemetry meter. After
         // this, every `metrics::counter!` / `gauge!` / `histogram!` site,
         // including reth's internals and the [`MetricsLayer`] span timings,
-        // flows through OTLP push to the collector.
-        let recorder = OpenTelemetryRecorder::new(global::meter("strata"));
+        // flows through OTLP push to the collector. Using `meter_with_scope`
+        // (instead of `global::meter`) lets the meter name come from a
+        // runtime String without leaking via `&'static str`.
+        let meter_scope = InstrumentationScope::builder(config.meter_name.clone()).build();
+        let recorder = OpenTelemetryRecorder::new(mp.meter_with_scope(meter_scope));
+
+        if METER_PROVIDER.set(mp).is_err() {
+            error!("Failed to set global meter provider");
+        }
         if let Err(e) = metrics::set_global_recorder(recorder) {
-            error!(error = ?e, "failed to install metrics-otel recorder");
+            error!(err = %e, "failed to install metrics-otel recorder");
         }
 
         let tt = tp.tracer("alpen-tracer");
@@ -170,7 +175,7 @@ pub fn finalize() {
 
     if let Some(provider) = TRACER_PROVIDER.get() {
         if let Err(e) = provider.shutdown() {
-            error!("failed to shut down tracer provider: {:?}", e);
+            error!(err = %e, "failed to shut down tracer provider");
         } else {
             info!("tracer provider shut down successfully");
         }
@@ -180,7 +185,7 @@ pub fn finalize() {
 
     if let Some(provider) = METER_PROVIDER.get() {
         if let Err(e) = provider.shutdown() {
-            error!("failed to shut down meter provider: {:?}", e);
+            error!(err = %e, "failed to shut down meter provider");
         } else {
             info!("meter provider shut down successfully");
         }
