@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 use std::future::Future;
 use std::panic::{self, AssertUnwindSafe};
 use std::pin::pin;
@@ -66,7 +66,7 @@ impl TaskError {
 }
 
 impl Display for TaskError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let task_name = &self.task_name;
         match &self.reason {
             FailureReason::Error(error) => {

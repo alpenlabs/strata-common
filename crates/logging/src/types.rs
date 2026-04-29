@@ -165,6 +165,14 @@ pub struct LoggerConfig {
     /// instrumentation library (the `otel.scope.name` attribute) on the
     /// emitted metrics. Defaults to `"strata"`.
     pub meter_name: String,
+    /// Extra `EnvFilter` directives applied before the value of `RUST_LOG`.
+    ///
+    /// Each entry is a directive in the same syntax as `RUST_LOG`
+    /// (e.g. `"sp1_core_executor=warn"`). They are joined with commas and
+    /// prepended to the env value, so the env still wins on conflicts.
+    /// Use this to suppress noisy dependencies from the consumer side rather
+    /// than hardcoding directives inside this crate.
+    pub extra_filter_directives: Vec<String>,
 }
 
 impl LoggerConfig {
@@ -178,6 +186,7 @@ impl LoggerConfig {
             otlp_export_config: OtlpExportConfig::default(),
             enable_metrics_layer: false,
             meter_name: "strata".to_string(),
+            extra_filter_directives: Vec::new(),
         }
     }
 
@@ -238,6 +247,19 @@ impl LoggerConfig {
     /// when installing the `metrics`-crate to OpenTelemetry bridge.
     pub fn with_meter_name(mut self, name: String) -> Self {
         self.meter_name = name;
+        self
+    }
+
+    /// Replace the set of extra `EnvFilter` directives.
+    ///
+    /// See [`Self::extra_filter_directives`] for the directive syntax and
+    /// precedence rules.
+    pub fn with_extra_filter_directives<I, S>(mut self, directives: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.extra_filter_directives = directives.into_iter().map(Into::into).collect();
         self
     }
 

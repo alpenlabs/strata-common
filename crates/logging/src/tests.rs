@@ -140,6 +140,26 @@ fn test_logger_config_metrics_layer_builder() {
 }
 
 #[test]
+fn test_logger_config_extra_filter_directives_default_empty() {
+    let config = LoggerConfig::new("test-service".to_string());
+    assert!(config.extra_filter_directives.is_empty());
+}
+
+#[test]
+fn test_logger_config_with_extra_filter_directives() {
+    let config = LoggerConfig::new("test-service".to_string())
+        .with_extra_filter_directives(["sp1_core_executor=warn", "jsonrpsee_server::server=warn"]);
+
+    assert_eq!(
+        config.extra_filter_directives,
+        vec![
+            "sp1_core_executor=warn".to_string(),
+            "jsonrpsee_server::server=warn".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn test_logger_config_with_otlp_export_config() {
     let export_config = OtlpExportConfig {
         timeout: Duration::from_secs(5),
