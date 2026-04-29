@@ -11,6 +11,9 @@
 // stupid linter issue
 #[cfg(test)]
 use criterion as _;
+// Used by tests gated by the `codec` feature.
+#[cfg(test)]
+use proptest as _;
 
 #[cfg(feature = "codec")]
 mod codec_impl;

@@ -116,3 +116,10 @@ macro_rules! ssz_proptest {
 macro_rules! ssz_proptest {
     ($($tt:tt)*) => {};
 }
+
+#[cfg(test)]
+mod smoke {
+    // Smoke test the `ssz_proptest!` macro against a primitive to ensure the
+    // macro expands correctly and the crate has at least one runnable test.
+    crate::ssz_proptest!(u64, ::proptest::prelude::any::<u64>());
+}

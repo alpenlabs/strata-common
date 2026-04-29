@@ -12,10 +12,7 @@ strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 
 arbitrary.workspace = true
-bitcoin = { workspace = true, features = [
-  "serde",
-  "rand-std",
-], optional = true }
+bitcoin = { workspace = true, features = ["serde", "rand-std"] }
 bitcoin-bosd = { workspace = true, features = ["address"] }
 borsh.workspace = true
 num_enum.workspace = true
@@ -25,10 +22,6 @@ thiserror.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true
 tree_hash.workspace = true
-
-[features]
-default = ["bitcoin"]
-bitcoin = ["dep:bitcoin"]
 
 [dev-dependencies]
 rand_core = { workspace = true, features = ["getrandom"] }

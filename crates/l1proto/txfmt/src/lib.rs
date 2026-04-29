@@ -1,5 +1,11 @@
 //! This crate contains all the types and logic related to encoding and parsing SPS-50 headers.
 
+// Used by the `serde` feature's tests only.
+#[cfg(test)]
+use bincode as _;
+#[cfg(test)]
+use serde_json as _;
+
 #[cfg(feature = "arbitrary")]
 mod arbitrary;
 #[cfg(feature = "borsh")]

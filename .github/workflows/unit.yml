@@ -33,10 +33,10 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
 
-      - name: Install latest cargo-nextest release
+      - name: Install cargo-nextest and cargo-hack
         uses: taiki-e/install-action@d6d752794628f1e1fffa3c4d3c8874e06f043d50 # v2.62.15
         with:
-          tool: nextest
+          tool: nextest,cargo-hack
 
       - name: Install bitcoind
         env:
@@ -56,9 +56,9 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Run tests
+      - name: Run tests across each feature
         run: |
-          cargo --locked nextest run --all-features
+          cargo hack --workspace --each-feature nextest run --locked
 
   doc:
     name: Run doc tests
