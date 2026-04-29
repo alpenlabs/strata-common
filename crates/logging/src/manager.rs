@@ -2,12 +2,15 @@
 
 use std::sync::OnceLock;
 
-use opentelemetry::global::{self, set_text_map_propagator};
+use metrics_exporter_otel::OpenTelemetryRecorder;
+use opentelemetry::InstrumentationScope;
+use opentelemetry::global::{set_meter_provider, set_text_map_propagator};
+use opentelemetry::metrics::MeterProvider;
 use opentelemetry::trace::TracerProvider;
-use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_otlp::{MetricExporter, SpanExporter, WithExportConfig};
+use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
-use opentelemetry_sdk::runtime::Tokio;
-use opentelemetry_sdk::trace::{Config, TracerProvider as SdkTracerProvider};
+use opentelemetry_sdk::trace::SdkTracerProvider;
 use tracing::*;
 use tracing_appender::rolling::RollingFileAppender;
 use tracing_subscriber::Layer;
@@ -20,6 +23,17 @@ use super::types::LoggerConfig;
 
 /// Global tracer provider for proper shutdown
 static TRACER_PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();
+
+/// Global meter provider for proper shutdown.
+///
+/// When the OTLP endpoint is configured, [`init`] builds an
+/// [`SdkMeterProvider`] alongside the tracer provider, sets it as the global
+/// meter provider, and installs a `metrics`-crate recorder that bridges
+/// `metrics::counter!` / `gauge!` / `histogram!` calls into the OpenTelemetry
+/// meter. This means hand-written `metrics::*!` calls, reth's free metrics,
+/// span timings via [`MetricsLayer`], and `strata-service` framework
+/// instrumentation all flow through one OpenTelemetry pipeline.
+static METER_PROVIDER: OnceLock<SdkMeterProvider> = OnceLock::new();
 
 /// Initializes the logging subsystem with the provided config.
 pub fn init(config: LoggerConfig) {
@@ -74,31 +88,60 @@ pub fn init(config: LoggerConfig) {
         }
     });
 
-    // Build optional OpenTelemetry layer
+    // Build optional OpenTelemetry layer plus the meter provider and the
+    // metrics-crate recorder bridge. Both pipelines share the same OTLP gRPC
+    // endpoint and Resource. The Collector demuxes by signal type.
     let otel_layer = config.otel_url.as_ref().map(|otel_url| {
         let resource = config.resource.build_resource();
 
-        // TODO (@voidash) modify here once we have more idea on span limits
-        let trace_config = Config::default().with_resource(resource);
-
-        // Configure exporter with timeout
-        // tonic is a grpc exporter
-        let exporter = opentelemetry_otlp::new_exporter()
-            .tonic()
+        // Trace pipeline. tonic is the gRPC exporter; its underlying client
+        // has built-in retry logic.
+        let span_exporter = SpanExporter::builder()
+            .with_tonic()
             .with_endpoint(otel_url)
-            .with_timeout(config.otlp_export_config.timeout);
+            .with_timeout(config.otlp_export_config.timeout)
+            .build()
+            .expect("init: failed to build OTLP span exporter");
 
-        // The underlying tonic client has built-in retry logic.
-        let tp = opentelemetry_otlp::new_pipeline()
-            .tracing()
-            .with_exporter(exporter)
-            .with_trace_config(trace_config)
-            .install_batch(Tokio)
-            .expect("init: failed to initialize opentelemetry pipeline");
+        let tp = SdkTracerProvider::builder()
+            .with_resource(resource.clone())
+            .with_batch_exporter(span_exporter)
+            .build();
 
-        // Store tracer provider for shutdown
         if TRACER_PROVIDER.set(tp.clone()).is_err() {
             error!("Failed to set global tracer provider");
+        }
+
+        // Metric pipeline. PeriodicReader exports on a default interval; the
+        // SDK handles batching.
+        let metric_exporter = MetricExporter::builder()
+            .with_tonic()
+            .with_endpoint(otel_url)
+            .with_timeout(config.otlp_export_config.timeout)
+            .build()
+            .expect("init: failed to build OTLP metric exporter");
+
+        let mp = SdkMeterProvider::builder()
+            .with_resource(resource)
+            .with_periodic_exporter(metric_exporter)
+            .build();
+
+        set_meter_provider(mp.clone());
+
+        // Bridge `metrics`-crate calls into the OpenTelemetry meter. After
+        // this, every `metrics::counter!` / `gauge!` / `histogram!` site,
+        // including reth's internals and the [`MetricsLayer`] span timings,
+        // flows through OTLP push to the collector. Using `meter_with_scope`
+        // (instead of `global::meter`) lets the meter name come from a
+        // runtime String without leaking via `&'static str`.
+        let meter_scope = InstrumentationScope::builder(config.meter_name.clone()).build();
+        let recorder = OpenTelemetryRecorder::new(mp.meter_with_scope(meter_scope));
+
+        if METER_PROVIDER.set(mp).is_err() {
+            error!("Failed to set global meter provider");
+        }
+        if let Err(e) = metrics::set_global_recorder(recorder) {
+            error!(err = %e, "failed to install metrics-otel recorder");
         }
 
         let tt = tp.tracer("alpen-tracer");
@@ -131,19 +174,22 @@ pub fn finalize() {
     info!("shutting down logging");
 
     if let Some(provider) = TRACER_PROVIDER.get() {
-        match provider.shutdown() {
-            Ok(()) => {
-                info!("tracer provider shut down successfully");
-            }
-            Err(e) => {
-                error!("failed to shut down tracer provider: {:?}", e);
-            }
+        if let Err(e) = provider.shutdown() {
+            error!(err = %e, "failed to shut down tracer provider");
+        } else {
+            info!("tracer provider shut down successfully");
         }
     } else {
-        // No OTLP configured, nothing to shut down
         debug!("no tracer provider to shut down");
     }
 
-    // Shutdown global text map propagator
-    global::shutdown_tracer_provider();
+    if let Some(provider) = METER_PROVIDER.get() {
+        if let Err(e) = provider.shutdown() {
+            error!(err = %e, "failed to shut down meter provider");
+        } else {
+            info!("meter provider shut down successfully");
+        }
+    } else {
+        debug!("no meter provider to shut down");
+    }
 }

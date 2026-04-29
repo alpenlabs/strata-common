@@ -204,19 +204,19 @@ impl InstrumentationBuilder {
             .u64_counter("service.messages.processed")
             .with_description("Total number of messages processed by the service")
             .with_unit("messages")
-            .init();
+            .build();
 
         let launches_total = meter
             .u64_counter("service.launches.total")
             .with_description("Total number of service launches")
             .with_unit("launches")
-            .init();
+            .build();
 
         let shutdowns_total = meter
             .u64_counter("service.shutdowns.total")
             .with_description("Total number of service shutdowns")
             .with_unit("shutdowns")
-            .init();
+            .build();
 
         // Create histograms with configured buckets
         let message_duration = meter
@@ -224,21 +224,21 @@ impl InstrumentationBuilder {
             .with_description("Duration of message processing")
             .with_unit("s")
             .with_boundaries(self.buckets.message)
-            .init();
+            .build();
 
         let launch_duration = meter
             .f64_histogram("service.launch.duration")
             .with_description("Duration of service launch phase")
             .with_unit("s")
             .with_boundaries(self.buckets.launch)
-            .init();
+            .build();
 
         let shutdown_duration = meter
             .f64_histogram("service.shutdown.duration")
             .with_description("Duration of service shutdown phase")
             .with_unit("s")
             .with_boundaries(self.buckets.shutdown)
-            .init();
+            .build();
 
         ServiceInstrumentation {
             service_name,
