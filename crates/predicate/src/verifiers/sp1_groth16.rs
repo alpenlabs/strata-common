@@ -3,12 +3,7 @@
 //! This module provides predicate verification for SP1-generated Groth16 proofs
 //! using types and verification functions from the `zkaleido-sp1-groth16-verifier` crate.
 
-use zkaleido_sp1_groth16_verifier::hashes::{blake3_to_fr, sha256_to_fr};
-use zkaleido_sp1_groth16_verifier::{
-    GROTH16_PROOF_COMPRESSED_SIZE, GROTH16_PROOF_UNCOMPRESSED_SIZE, Groth16Proof,
-    Groth16VerifyingKey, SP1_GROTH16_VK_COMPRESSED_SIZE_MERGED,
-    SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED, VK_HASH_PREFIX_LENGTH, verify_sp1_groth16_algebraic,
-};
+use zkaleido_sp1_groth16_verifier::{SP1Groth16Verifier as Sp1Verifier, Sp1Groth16Proof};
 
 use crate::errors::{PredicateError, PredicateResult};
 use crate::type_ids::PredicateTypeId;
@@ -16,106 +11,32 @@ use crate::verifier::PredicateVerifier;
 
 /// SP1 Groth16 proof verifier.
 ///
-/// This verifier verifies SP1-generated Groth16 proofs using the
-/// `zkaleido-sp1-groth16-verifier` crate. The verifier expects:
+/// Thin wrapper around `zkaleido-sp1-groth16-verifier`, which performs the actual
+/// parsing and proof verification.
 ///
 /// ## Predicate Format
-/// - **Condition**: Borsh-serialized `SP1Groth16Verifier` from zkaleido
-/// - **Witness**: Groth16 proof bytes
-/// - **Claim**: Public values to be hashed and verified
-///
-/// ## Verification Process
-/// 1. Parses condition as `Groth16VerifyingKey` containing program ID and verifying key
-/// 2. Parses witness as `Groth16Proof` using gnark format
-/// 3. Attempts verification with SHA-256 hash of claim as public input
-/// 4. Falls back to Blake3 hash if SHA-256 verification fails (for compatibility)
-/// 5. Returns success if either hash method validates the proof
-///
-/// SP1's Groth16 circuit expects two public inputs:
-/// - `program_id`: Identifier of the SP1 program (embedded in verifying key)
-/// - `hash(public_values)`: SHA-256 or Blake3 hash of the claim data
+/// - **Condition**: Borsh-serialized `SP1Groth16Verifier` (verifying key + program ID)
+/// - **Witness**: Groth16 proof bytes; multiple encodings accepted by `Sp1Groth16Proof::parse`
+/// - **Claim**: SP1 public values bytes
 #[derive(Debug, Default)]
 pub(crate) struct Sp1Groth16Verifier;
 
-/// Size of a compressed Groth16 proof prefixed with SP1's 4-byte VK hash tag.
-const PREFIXED_COMPRESSED_PROOF_SIZE: usize = GROTH16_PROOF_COMPRESSED_SIZE + VK_HASH_PREFIX_LENGTH;
-
-/// Size of an uncompressed Groth16 proof prefixed with SP1's 4-byte VK hash tag.
-const PREFIXED_UNCOMPRESSED_PROOF_SIZE: usize =
-    GROTH16_PROOF_UNCOMPRESSED_SIZE + VK_HASH_PREFIX_LENGTH;
-
 impl PredicateVerifier for Sp1Groth16Verifier {
-    type Condition = Groth16VerifyingKey;
-    type Witness = Groth16Proof;
+    type Condition = Sp1Verifier;
+    type Witness = Sp1Groth16Proof;
 
     fn parse_condition(&self, condition: &[u8]) -> PredicateResult<Self::Condition> {
-        match condition.len() {
-            SP1_GROTH16_VK_COMPRESSED_SIZE_MERGED => {
-                Groth16VerifyingKey::from_gnark_bytes(condition).map_err(|e| {
-                    PredicateError::ConditionParsingFailed {
-                        id: PredicateTypeId::Sp1Groth16,
-                        reason: e.to_string(),
-                    }
-                })
-            }
-            SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED => {
-                Groth16VerifyingKey::from_uncompressed_bytes(condition).map_err(|e| {
-                    PredicateError::ConditionParsingFailed {
-                        id: PredicateTypeId::Sp1Groth16,
-                        reason: e.to_string(),
-                    }
-                })
-            }
-            _ => Err(PredicateError::ConditionParsingFailed {
-                id: PredicateTypeId::Sp1Groth16,
-                reason: format!(
-                    "invalid sp1 groth16 verifying key size {}. expected {SP1_GROTH16_VK_COMPRESSED_SIZE_MERGED} for compressed and {SP1_GROTH16_VK_UNCOMPRESSED_SIZE_MERGED} for uncompressed",
-                    condition.len(),
-                ),
-            }),
-        }
+        borsh::from_slice(condition).map_err(|e| PredicateError::ConditionParsingFailed {
+            id: PredicateTypeId::Sp1Groth16,
+            reason: format!("failed to parse sp1 groth16 verifying key: {e}"),
+        })
     }
 
     fn parse_witness(&self, witness: &[u8]) -> PredicateResult<Self::Witness> {
-        match witness.len() {
-            GROTH16_PROOF_COMPRESSED_SIZE => Groth16Proof::from_gnark_compressed_bytes(witness)
-                .map_err(|e| PredicateError::WitnessParsingFailed {
-                    id: PredicateTypeId::Sp1Groth16,
-                    reason: e.to_string(),
-                }),
-            GROTH16_PROOF_UNCOMPRESSED_SIZE => Groth16Proof::from_uncompressed_bytes(witness)
-                .map_err(|e| PredicateError::WitnessParsingFailed {
-                    id: PredicateTypeId::Sp1Groth16,
-                    reason: e.to_string(),
-                }),
-            // SP1 prefixes proofs with a 4-byte VK hash tag. We strip the prefix and parse the
-            // remaining bytes. The prefix is ignored since we work with merged verifying keys.
-            PREFIXED_COMPRESSED_PROOF_SIZE => {
-                Groth16Proof::from_gnark_compressed_bytes(&witness[VK_HASH_PREFIX_LENGTH..])
-                    .map_err(|e| PredicateError::WitnessParsingFailed {
-                        id: PredicateTypeId::Sp1Groth16,
-                        reason: e.to_string(),
-                    })
-            }
-            PREFIXED_UNCOMPRESSED_PROOF_SIZE => Groth16Proof::from_uncompressed_bytes(
-                &witness[VK_HASH_PREFIX_LENGTH..],
-            )
-            .map_err(|e| PredicateError::WitnessParsingFailed {
-                id: PredicateTypeId::Sp1Groth16,
-                reason: e.to_string(),
-            }),
-            _ => Err(PredicateError::WitnessParsingFailed {
-                id: PredicateTypeId::Sp1Groth16,
-                reason: format!(
-                    "invalid groth16 proof witness size {}. expected {} for compressed, {} for uncompressed, {} for prefixed compressed, or {} for prefixed uncompressed",
-                    witness.len(),
-                    GROTH16_PROOF_COMPRESSED_SIZE,
-                    GROTH16_PROOF_UNCOMPRESSED_SIZE,
-                    PREFIXED_COMPRESSED_PROOF_SIZE,
-                    PREFIXED_UNCOMPRESSED_PROOF_SIZE,
-                ),
-            }),
-        }
+        Sp1Groth16Proof::parse(witness).map_err(|e| PredicateError::WitnessParsingFailed {
+            id: PredicateTypeId::Sp1Groth16,
+            reason: e.to_string(),
+        })
     }
 
     fn verify_inner(
@@ -124,42 +45,19 @@ impl PredicateVerifier for Sp1Groth16Verifier {
         claim: &[u8],
         proof: &Self::Witness,
     ) -> PredicateResult<()> {
-        // SP1's Groth16 circuit expects two public inputs:
-        // 1. program_id (embedded in the verifying key)
-        // 2. hash(public_values) (computed from claim)
-
-        // Try SHA-256 hash first as it's the default for SP1
-        let fr_sha2 = sha256_to_fr(claim).map_err(|e| PredicateError::VerificationFailed {
-            id: PredicateTypeId::Sp1Groth16,
-            reason: format!("failed to compute SHA-256 hash of claim: {e}"),
-        })?;
-
-        // Attempt algebraic verification using zkaleido's verifier with SHA-256 hash
-        if verify_sp1_groth16_algebraic(program, proof, &fr_sha2).is_ok() {
-            return Ok(());
-        }
-
-        // Fallback: try Blake3 hash for compatibility with different SP1 configurations
-        let fr_blake3 = blake3_to_fr(claim).map_err(|e| PredicateError::VerificationFailed {
-            id: PredicateTypeId::Sp1Groth16,
-            reason: format!("failed to compute Blake3 hash of claim: {e}"),
-        })?;
-
-        // Retry verification with Blake3 hash using zkaleido's verifier
-        verify_sp1_groth16_algebraic(program, proof, &fr_blake3).map_err(|e| {
-            PredicateError::VerificationFailed {
+        program
+            .verify_parsed(proof, claim)
+            .map_err(|e| PredicateError::VerificationFailed {
                 id: PredicateTypeId::Sp1Groth16,
-                reason: format!("SP1 Groth16 proof verification failed with both SHA-256 and Blake3 hashing: {e}"),
-            }
-        })
+                reason: e.to_string(),
+            })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use sp1_verifier::GROTH16_VK_BYTES;
+    use sp1_verifier::{GROTH16_VK_BYTES, VK_ROOT_BYTES};
     use zkaleido::ProofReceiptWithMetadata;
-    use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
 
     use super::*;
     use crate::test_utils::{
@@ -167,19 +65,20 @@ mod tests {
     };
 
     fn load_condition_claim_witness() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
-        let program_id_hex = "00eb7fd5709e4b833db86054ba4acca001a3aa5f18b7e7d0d96d0f1d340b4e34";
-        let program_id: [u8; 32] = hex::decode(program_id_hex).unwrap().try_into().unwrap();
+        let proof_data =
+            ProofReceiptWithMetadata::load("data/proofs/fibonacci_SP1_v6.1.0.proof.bin").unwrap();
 
-        let verifier = SP1Groth16Verifier::load(&GROTH16_VK_BYTES, program_id).unwrap();
-        let proof_file = format!("data/proofs/fibonacci_sp1_0x{program_id_hex}.proof");
-        let receipt = ProofReceiptWithMetadata::load(proof_file)
-            .unwrap()
-            .receipt()
-            .clone();
+        let verifier = Sp1Verifier::load(
+            &GROTH16_VK_BYTES,
+            proof_data.metadata().program_id().0,
+            *VK_ROOT_BYTES,
+            true,
+        )
+        .unwrap();
 
-        let condition = verifier.vk.to_gnark_bytes();
-        let claim = receipt.public_values().as_bytes().to_vec();
-        let witness = receipt.proof().as_bytes()[4..].to_vec();
+        let condition = borsh::to_vec(&verifier).unwrap();
+        let claim = proof_data.receipt().public_values().as_bytes().to_vec();
+        let witness = proof_data.receipt().proof().as_bytes().to_vec();
 
         (condition, claim, witness)
     }
@@ -190,28 +89,6 @@ mod tests {
         let verifier = Sp1Groth16Verifier;
         let res = verifier.verify(&predicate, &claim, &witness);
         assert!(res.is_ok());
-    }
-
-    #[test]
-    fn test_sp1_groth16_prefixed_uncompressed_witness() {
-        let program_id_hex = "00eb7fd5709e4b833db86054ba4acca001a3aa5f18b7e7d0d96d0f1d340b4e34";
-        let program_id: [u8; 32] = hex::decode(program_id_hex).unwrap().try_into().unwrap();
-
-        let verifier = SP1Groth16Verifier::load(&GROTH16_VK_BYTES, program_id).unwrap();
-        let proof_file = format!("data/proofs/fibonacci_sp1_0x{program_id_hex}.proof");
-        let receipt = ProofReceiptWithMetadata::load(proof_file)
-            .unwrap()
-            .receipt()
-            .clone();
-
-        let condition = verifier.vk.to_gnark_bytes();
-        let claim = receipt.public_values().as_bytes().to_vec();
-        // Keep the full proof bytes including the 4-byte SP1 VK hash prefix.
-        let prefixed_witness = receipt.proof().as_bytes().to_vec();
-
-        let pred_verifier = Sp1Groth16Verifier;
-        let res = pred_verifier.verify(&condition, &claim, &prefixed_witness);
-        assert!(res.is_ok(), "prefixed uncompressed witness should verify");
     }
 
     #[test]
@@ -275,7 +152,7 @@ mod tests {
         // Test with modified bytes inside witness
         witness[0] = witness[0].wrapping_add(1);
         let res = verifier.verify(&condition, &claim, &witness);
-        assert_witness_parsing_failed(res, PredicateTypeId::Sp1Groth16);
+        assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
     }
 
     #[test]

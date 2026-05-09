@@ -14,7 +14,9 @@ ssz_types.workspace = true
 thiserror.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc20", optional = true }
+zkaleido-sp1-groth16-verifier = { workspace = true, features = [
+    "borsh",
+], optional = true }
 
 arbitrary = { workspace = true, optional = true, features = ["derive"] }
 borsh = { workspace = true, optional = true }
@@ -32,14 +34,14 @@ hex.workspace = true
 proptest.workspace = true
 rand.workspace = true
 serde_json.workspace = true
-sp1-verifier = "5.2.1"
-zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc20" }
+sp1-verifier = "6.1.0"
+zkaleido.workspace = true
 
 [features]
-default = ["serde", "borsh", "sp1-groth16"]
+default = ["serde", "borsh"]
 serde = ["dep:serde", "dep:hex"]
 borsh = ["dep:borsh"]
 arbitrary = ["dep:arbitrary"]
 schnorr = ["dep:k256", "dep:signature"]
-sp1-groth16 = ["dep:zkaleido-sp1-groth16-verifier"]
+sp1-groth16 = ["dep:zkaleido-sp1-groth16-verifier", "dep:borsh"]
 all = ["schnorr", "sp1-groth16"]
