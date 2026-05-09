@@ -5206,7 +5206,7 @@ dependencies = [
 [[package]]
 name = "zkaleido"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?rev=2b132ff7ed1356424df31fa36551ed31051b8530#2b132ff7ed1356424df31fa36551ed31051b8530"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc26#4ec7ebfe380924219837f185146f5c8b4f0066fa"
 dependencies = [
  "bincode",
  "borsh",
@@ -5217,7 +5217,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-groth16-verifier"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?rev=2b132ff7ed1356424df31fa36551ed31051b8530#2b132ff7ed1356424df31fa36551ed31051b8530"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc26#4ec7ebfe380924219837f185146f5c8b4f0066fa"
 dependencies = [
  "blake3",
  "borsh",
