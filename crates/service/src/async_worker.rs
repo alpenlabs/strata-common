@@ -93,7 +93,10 @@ where
 
     info!(service.name = %service_name, "service stopped");
 
-    Ok(())
+    match err {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }
 
 async fn worker_task_inner<S: AsyncService, I>(
@@ -186,4 +189,94 @@ async fn handle_shutdown<S: AsyncService>(
         instrumentation,
         shutdown_reason,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::Serialize;
+    use tokio::sync::watch;
+
+    use super::*;
+    use crate::{AsyncGuard, VecInput};
+
+    /// Guard that never fires shutdown.
+    struct NeverShutdown;
+
+    impl AsyncGuard for NeverShutdown {
+        async fn wait_for_shutdown(&self) {
+            std::future::pending().await
+        }
+    }
+
+    #[derive(Clone, Debug, Serialize)]
+    struct TestStatus;
+
+    struct TestState;
+
+    impl ServiceState for TestState {
+        fn name(&self) -> &str {
+            "test-async"
+        }
+    }
+
+    struct FailingService;
+
+    impl crate::Service for FailingService {
+        type State = TestState;
+        type Msg = u32;
+        type Status = TestStatus;
+
+        fn get_status(_s: &Self::State) -> Self::Status {
+            TestStatus
+        }
+    }
+
+    impl AsyncService for FailingService {
+        async fn process_input(_state: &mut TestState, _input: u32) -> anyhow::Result<Response> {
+            anyhow::bail!("async process error")
+        }
+    }
+
+    struct OkService;
+
+    impl crate::Service for OkService {
+        type State = TestState;
+        type Msg = u32;
+        type Status = TestStatus;
+
+        fn get_status(_s: &Self::State) -> Self::Status {
+            TestStatus
+        }
+    }
+
+    impl AsyncService for OkService {
+        async fn process_input(_state: &mut TestState, _input: u32) -> anyhow::Result<Response> {
+            Ok(Response::Continue)
+        }
+    }
+
+    #[tokio::test]
+    async fn worker_task_propagates_inner_error() {
+        let inp = VecInput::from_iter([1u32]);
+        let (status_tx, _status_rx) = watch::channel(TestStatus);
+
+        let result =
+            worker_task::<FailingService, _>(TestState, inp, status_tx, NeverShutdown).await;
+
+        let err = result.expect_err("worker_task should return Err on process_input failure");
+        assert!(
+            err.to_string().contains("async process error"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn worker_task_returns_ok_on_complete_without_error() {
+        let inp = VecInput::from_iter([1u32, 2, 3]);
+        let (status_tx, _status_rx) = watch::channel(TestStatus);
+
+        let result = worker_task::<OkService, _>(TestState, inp, status_tx, NeverShutdown).await;
+
+        result.expect("worker_task should return Ok when all inputs succeed");
+    }
 }
