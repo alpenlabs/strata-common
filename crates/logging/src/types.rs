@@ -1,4 +1,4 @@
-//! Configuration types for the logging subsystem.
+//! Configuration types for the logging and tracing subsystem.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -152,19 +152,6 @@ pub struct LoggerConfig {
     pub file_logging_config: Option<FileLoggingConfig>,
     /// OTLP export configuration
     pub otlp_export_config: OtlpExportConfig,
-    /// Whether to install the tracing-to-metrics bridge layer.
-    ///
-    /// When `true`, a [`MetricsLayer`](super::MetricsLayer) is added to the
-    /// subscriber stack and records per-span busy/idle histograms via the
-    /// `metrics` facade. Only enable this when a `metrics` recorder is (or
-    /// will be) installed by the binary; otherwise the per-span state is
-    /// allocated for nothing.
-    pub enable_metrics_layer: bool,
-    /// Name passed to `opentelemetry::global::meter(...)` when installing
-    /// the `metrics`-crate to OpenTelemetry bridge. Identifies the
-    /// instrumentation library (the `otel.scope.name` attribute) on the
-    /// emitted metrics. Defaults to `"strata"`.
-    pub meter_name: String,
     /// Extra `EnvFilter` directives applied before the value of `RUST_LOG`.
     ///
     /// Each entry is a directive in the same syntax as `RUST_LOG`
@@ -184,8 +171,6 @@ impl LoggerConfig {
             stdout_config: StdoutConfig::default(),
             file_logging_config: None,
             otlp_export_config: OtlpExportConfig::default(),
-            enable_metrics_layer: false,
-            meter_name: "strata".to_string(),
             extra_filter_directives: Vec::new(),
         }
     }
@@ -234,19 +219,6 @@ impl LoggerConfig {
     /// Set OTLP export configuration
     pub fn with_otlp_export_config(mut self, config: OtlpExportConfig) -> Self {
         self.otlp_export_config = config;
-        self
-    }
-
-    /// Enable or disable the tracing-to-metrics bridge layer.
-    pub fn with_metrics_layer(mut self, enabled: bool) -> Self {
-        self.enable_metrics_layer = enabled;
-        self
-    }
-
-    /// Override the meter name passed to `opentelemetry::global::meter(...)`
-    /// when installing the `metrics`-crate to OpenTelemetry bridge.
-    pub fn with_meter_name(mut self, name: String) -> Self {
-        self.meter_name = name;
         self
     }
 

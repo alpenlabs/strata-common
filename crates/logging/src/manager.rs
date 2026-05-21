@@ -1,43 +1,43 @@
-//! Logging initialization and shutdown management.
+//! Logging and tracing initialization and shutdown management.
 
 use std::env;
 use std::sync::OnceLock;
 
-use metrics_exporter_otel::OpenTelemetryRecorder;
-use opentelemetry::InstrumentationScope;
-use opentelemetry::global::{set_meter_provider, set_text_map_propagator};
-use opentelemetry::metrics::MeterProvider;
+use opentelemetry::global::set_text_map_propagator;
 use opentelemetry::trace::TracerProvider;
-use opentelemetry_otlp::{MetricExporter, SpanExporter, WithExportConfig};
-use opentelemetry_sdk::metrics::SdkMeterProvider;
+use opentelemetry_otlp::{SpanExporter, WithExportConfig};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use tracing::*;
 use tracing_appender::rolling::RollingFileAppender;
 use tracing_subscriber::fmt::layer;
 use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::registry::Registry;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-use super::metrics_layer::MetricsLayer;
 use super::types::LoggerConfig;
 
 /// Global tracer provider for proper shutdown
 static TRACER_PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();
 
-/// Global meter provider for proper shutdown.
-///
-/// When the OTLP endpoint is configured, [`init`] builds an
-/// [`SdkMeterProvider`] alongside the tracer provider, sets it as the global
-/// meter provider, and installs a `metrics`-crate recorder that bridges
-/// `metrics::counter!` / `gauge!` / `histogram!` calls into the OpenTelemetry
-/// meter. This means hand-written `metrics::*!` calls, reth's free metrics,
-/// span timings via [`MetricsLayer`], and `strata-service` framework
-/// instrumentation all flow through one OpenTelemetry pipeline.
-static METER_PROVIDER: OnceLock<SdkMeterProvider> = OnceLock::new();
+/// Boxed tracing subscriber layer accepted by [`init_with_layers`].
+pub type BoxedLayer = Box<dyn Layer<Registry> + Send + Sync + 'static>;
 
-/// Initializes the logging subsystem with the provided config.
+/// Initializes process-global logging and tracing with the provided config.
+///
+/// Call this once from the process entrypoint. Library crates should not call
+/// it; they should emit `tracing` signals and rely on the binary to install the
+/// subscriber.
 pub fn init(config: LoggerConfig) {
+    init_with_layers(config, Vec::new());
+}
+
+/// Initializes process-global logging and tracing with extra subscriber layers.
+///
+/// This exists so companion crates can provide tracing layers without making
+/// `strata-logging` depend on those systems directly.
+pub fn init_with_layers(config: LoggerConfig, extra_layers: Vec<BoxedLayer>) {
     // Set the global trace context propagator for distributed tracing
     set_text_map_propagator(TraceContextPropagator::new());
 
@@ -52,22 +52,22 @@ pub fn init(config: LoggerConfig) {
     );
 
     // Configure stdout logging with JSON or compact format
-    let stdout_sub = if config.stdout_config.json_format {
+    let stdout_sub: BoxedLayer = if config.stdout_config.json_format {
         layer()
             .json()
-            .with_span_events(config.stdout_config.fmt_span)
+            .with_span_events(config.stdout_config.fmt_span.clone())
             .with_filter(filt.clone())
             .boxed()
     } else {
         layer()
             .compact()
-            .with_span_events(config.stdout_config.fmt_span)
+            .with_span_events(config.stdout_config.fmt_span.clone())
             .with_filter(filt.clone())
             .boxed()
     };
 
     // Build optional file logging layer
-    let file_layer = config.file_logging_config.as_ref().map(|file_config| {
+    let file_layer: Option<BoxedLayer> = config.file_logging_config.as_ref().map(|file_config| {
         let file_appender = RollingFileAppender::new(
             file_config.rotation.clone(),
             &file_config.directory,
@@ -91,10 +91,8 @@ pub fn init(config: LoggerConfig) {
         }
     });
 
-    // Build optional OpenTelemetry layer plus the meter provider and the
-    // metrics-crate recorder bridge. Both pipelines share the same OTLP gRPC
-    // endpoint and Resource. The Collector demuxes by signal type.
-    let otel_layer = config.otel_url.as_ref().map(|otel_url| {
+    // Build optional OpenTelemetry tracing layer.
+    let otel_layer: Option<BoxedLayer> = config.otel_url.as_ref().map(|otel_url| {
         let resource = config.resource.build_resource();
 
         // Trace pipeline. tonic is the gRPC exporter; its underlying client
@@ -115,51 +113,16 @@ pub fn init(config: LoggerConfig) {
             error!("Failed to set global tracer provider");
         }
 
-        // Metric pipeline. PeriodicReader exports on a default interval; the
-        // SDK handles batching.
-        let metric_exporter = MetricExporter::builder()
-            .with_tonic()
-            .with_endpoint(otel_url)
-            .with_timeout(config.otlp_export_config.timeout)
-            .build()
-            .expect("init: failed to build OTLP metric exporter");
-
-        let mp = SdkMeterProvider::builder()
-            .with_resource(resource)
-            .with_periodic_exporter(metric_exporter)
-            .build();
-
-        set_meter_provider(mp.clone());
-
-        // Bridge `metrics`-crate calls into the OpenTelemetry meter. After
-        // this, every `metrics::counter!` / `gauge!` / `histogram!` site,
-        // including reth's internals and the [`MetricsLayer`] span timings,
-        // flows through OTLP push to the collector. Using `meter_with_scope`
-        // (instead of `global::meter`) lets the meter name come from a
-        // runtime String without leaking via `&'static str`.
-        let meter_scope = InstrumentationScope::builder(config.meter_name.clone()).build();
-        let recorder = OpenTelemetryRecorder::new(mp.meter_with_scope(meter_scope));
-
-        if METER_PROVIDER.set(mp).is_err() {
-            error!("Failed to set global meter provider");
-        }
-        if let Err(e) = metrics::set_global_recorder(recorder) {
-            error!(err = %e, "failed to install metrics-otel recorder");
-        }
-
-        let tt = tp.tracer("alpen-tracer");
-        tracing_opentelemetry::layer().with_tracer(tt)
+        let tracer = tp.tracer("alpen-tracer");
+        tracing_opentelemetry::layer().with_tracer(tracer).boxed()
     });
 
-    let metrics_layer = config.enable_metrics_layer.then_some(MetricsLayer);
+    let mut layers = vec![stdout_sub];
+    layers.extend(file_layer);
+    layers.extend(otel_layer);
+    layers.extend(extra_layers);
 
-    // Register all layers - with() accepts Option<Layer> so this scales cleanly
-    tracing_subscriber::registry()
-        .with(stdout_sub)
-        .with(file_layer)
-        .with(otel_layer)
-        .with(metrics_layer)
-        .init();
+    tracing_subscriber::registry().with(layers).init();
 
     info!(
         service_name = %config.resource.service_name,
@@ -207,15 +170,5 @@ pub fn finalize() {
         }
     } else {
         debug!("no tracer provider to shut down");
-    }
-
-    if let Some(provider) = METER_PROVIDER.get() {
-        if let Err(e) = provider.shutdown() {
-            error!(err = %e, "failed to shut down meter provider");
-        } else {
-            info!("meter provider shut down successfully");
-        }
-    } else {
-        debug!("no meter provider to shut down");
     }
 }

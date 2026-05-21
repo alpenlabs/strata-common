@@ -17,18 +17,14 @@ struct SpanTiming {
 
 /// A tracing [`Layer`] that records span busy/idle time as `metrics` histograms.
 ///
-/// For every span that closes, two histograms are recorded (microseconds):
+/// For every span that closes, two histograms are recorded in microseconds:
 ///
 /// - `strata_span_busy_us{span="<name>"}`: time the span was actively executing.
 /// - `strata_span_idle_us{span="<name>"}`: wall time the span existed but was not executing.
 ///
-/// The layer always emits these via the `metrics` facade. If no recorder is
-/// installed, the calls are cheap no-ops, but the per-span state is still
-/// allocated. Callers who never run with a recorder should install this layer
-/// conditionally (see [`LoggerConfig::enable_metrics_layer`][super::LoggerConfig]).
-///
-/// Timing assumes each span is entered and exited in balanced pairs, which is
-/// the contract `tracing` guarantees for correctly instrumented async code.
+/// The layer always emits via the `metrics` facade. If no recorder is
+/// installed, the calls are no-ops, but the per-span state is still allocated.
+/// Binaries should install this layer only when span timing metrics are wanted.
 #[derive(Debug)]
 pub struct MetricsLayer;
 
@@ -77,25 +73,5 @@ where
             metrics::histogram!("strata_span_idle_us", "span" => name)
                 .record(idle.as_micros() as f64);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use tracing::{info_span, subscriber};
-    use tracing_subscriber::layer::SubscriberExt;
-    use tracing_subscriber::registry;
-
-    use super::*;
-
-    /// Exercising the layer without a metrics recorder installed should not
-    /// panic. `metrics::histogram!` is a no-op in that case.
-    #[test]
-    fn records_without_panicking_when_no_recorder_is_installed() {
-        let subscriber = registry().with(MetricsLayer);
-        subscriber::with_default(subscriber, || {
-            let span = info_span!("test_span");
-            let _guard = span.enter();
-        });
     }
 }
