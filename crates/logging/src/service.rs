@@ -1,10 +1,10 @@
-//! Common logging service initialization for binaries.
+//! Common logging and tracing initialization for binaries.
 
 use std::path::PathBuf;
 
 use tracing::info;
 
-use super::{FileLoggingConfig, LoggerConfig, format_service_name, init};
+use super::{BoxedLayer, FileLoggingConfig, LoggerConfig, format_service_name, init_with_layers};
 
 /// Configuration parameters for logging initialization.
 #[derive(Debug)]
@@ -23,11 +23,6 @@ pub struct LoggingInitConfig<'a> {
     pub json_format: Option<bool>,
     /// Default log file prefix if not specified in config
     pub default_log_prefix: &'a str,
-    /// Enable the tracing-to-metrics bridge layer.
-    ///
-    /// Set to `true` only when a `metrics` recorder has been (or will be)
-    /// installed. See [`MetricsLayer`](super::MetricsLayer).
-    pub enable_metrics_layer: bool,
     /// Extra `EnvFilter` directives to merge before `RUST_LOG`.
     ///
     /// Forwarded to [`LoggerConfig::extra_filter_directives`]. Use this from
@@ -36,11 +31,23 @@ pub struct LoggingInitConfig<'a> {
     pub extra_filter_directives: &'a [&'a str],
 }
 
-/// Initialize logging from configuration with all standard setup.
+/// Initialize process-global logging from configuration with all standard setup.
 ///
 /// This function encapsulates the common logging initialization logic used
-/// across all binaries:
+/// across binaries. It should be called once from a process entrypoint, not
+/// from libraries.
 pub fn init_logging_from_config(config: LoggingInitConfig<'_>) {
+    init_logging_from_config_with_layers(config, Vec::new());
+}
+
+/// Initialize process-global logging from configuration with extra subscriber layers.
+///
+/// This keeps logging initialization centralized while allowing companion crates
+/// to provide tracing layers without making this crate depend on them.
+pub fn init_logging_from_config_with_layers(
+    config: LoggingInitConfig<'_>,
+    extra_layers: Vec<BoxedLayer>,
+) {
     // Construct service name with optional label
     let service_name = format_service_name(config.service_base_name, config.service_label);
 
@@ -69,15 +76,13 @@ pub fn init_logging_from_config(config: LoggingInitConfig<'_>) {
         lconfig = lconfig.with_json_logging(json_format);
     }
 
-    lconfig = lconfig.with_metrics_layer(config.enable_metrics_layer);
-
     if !config.extra_filter_directives.is_empty() {
         lconfig =
             lconfig.with_extra_filter_directives(config.extra_filter_directives.iter().copied());
     }
 
     // Initialize logging
-    init(lconfig);
+    init_with_layers(lconfig, extra_layers);
 
     // Log configuration after init
     if let Some(url) = config.otlp_url {

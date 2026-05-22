@@ -1,7 +1,10 @@
-//! Logging subsystem with OpenTelemetry support.
+//! Process-level logging and tracing initialization.
+//!
+//! This crate installs global `tracing` state. Binaries should initialize it
+//! once at process startup. Libraries should emit `tracing` spans/events and let
+//! the owning binary decide where they are exported.
 
 pub mod manager;
-pub mod metrics_layer;
 pub mod service;
 pub mod types;
 
@@ -9,9 +12,10 @@ pub mod types;
 mod tests;
 
 // Re-export main types and functions
-pub use manager::{finalize, init};
-pub use metrics_layer::MetricsLayer;
-pub use service::{LoggingInitConfig, init_logging_from_config};
+pub use manager::{BoxedLayer, finalize, init, init_with_layers};
+pub use service::{
+    LoggingInitConfig, init_logging_from_config, init_logging_from_config_with_layers,
+};
 // Re-export tracing-appender types for convenience
 pub use tracing_appender::rolling::Rotation;
 pub use types::{FileLoggingConfig, LoggerConfig, OtlpExportConfig, ResourceConfig, StdoutConfig};

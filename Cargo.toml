@@ -10,6 +10,7 @@ members = [
   "crates/l1proto/envelope-fmt",
   "crates/l1proto/txfmt",
   "crates/logging",
+  "crates/metrics",
   "crates/merkle",
   "crates/msg-fmt",
   "crates/predicate",
@@ -30,10 +31,11 @@ strata-crypto = { path = "crates/crypto" }
 strata-identifiers = { path = "crates/identifiers" }
 strata-l1-txfmt = { path = "crates/l1proto/txfmt" }
 strata-logging = { path = "crates/logging" }
+strata-metrics = { path = "crates/metrics" }
 strata-merkle = { path = "crates/merkle" }
 strata-msg-fmt = { path = "crates/msg-fmt" }
 strata-predicate = { path = "crates/predicate" }
-strata-service = { path = "crates/services" }
+strata-service = { path = "crates/service" }
 strata-ssz-tests = { path = "crates/ssz-tests" }
 strata-tasks = { path = "crates/tasks" }
 
@@ -61,6 +63,10 @@ hex = { version = "0.4", features = ["serde"] }
 int-enum = "1"
 metrics = "0.24"
 metrics-exporter-otel = "0.3"
+metrics-exporter-prometheus = { version = "0.16", default-features = false, features = [
+  "http-listener",
+] }
+metrics-util = { version = "0.20", default-features = false, features = ["layers"] }
 musig2 = "0.1"
 num_enum = "0.7"
 opentelemetry = "0.31"
