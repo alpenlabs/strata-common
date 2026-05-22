@@ -4079,6 +4079,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -4124,7 +4125,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
  "futures",
- "opentelemetry",
+ "metrics",
  "serde",
  "serde_json",
  "strata-tasks",

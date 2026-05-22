@@ -35,7 +35,7 @@ strata-metrics = { path = "crates/metrics" }
 strata-merkle = { path = "crates/merkle" }
 strata-msg-fmt = { path = "crates/msg-fmt" }
 strata-predicate = { path = "crates/predicate" }
-strata-service = { path = "crates/services" }
+strata-service = { path = "crates/service" }
 strata-ssz-tests = { path = "crates/ssz-tests" }
 strata-tasks = { path = "crates/tasks" }
 

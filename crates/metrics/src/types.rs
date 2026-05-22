@@ -1,12 +1,16 @@
 //! Configuration types for metrics exporters.
 
 use std::net::SocketAddr;
+#[cfg(feature = "otlp")]
 use std::time::Duration;
 
+#[cfg(feature = "otlp")]
 use opentelemetry::KeyValue;
+#[cfg(feature = "otlp")]
 use opentelemetry_sdk::Resource;
 
 /// Configuration for OTLP exporter retry and timeout.
+#[cfg(feature = "otlp")]
 #[derive(Debug, Clone)]
 pub struct OtlpExportConfig {
     /// Timeout for export requests.
@@ -15,6 +19,7 @@ pub struct OtlpExportConfig {
     pub max_retries: u32,
 }
 
+#[cfg(feature = "otlp")]
 impl Default for OtlpExportConfig {
     fn default() -> Self {
         Self {
@@ -25,78 +30,74 @@ impl Default for OtlpExportConfig {
 }
 
 /// Metrics exporter configuration.
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
-pub enum MetricsConfig {
-    /// Preserve default metrics behavior for the configured backend.
-    ///
-    /// When an OTLP endpoint is configured, this installs the OTLP metrics
-    /// recorder. Otherwise, it leaves metrics disabled.
-    #[default]
-    Default,
-    /// Do not install a `metrics` recorder.
-    Disabled,
-    /// Export metrics through the configured OTLP endpoint.
-    Otlp,
-    /// Expose metrics through a Prometheus scrape endpoint.
-    Prometheus {
-        /// Address used by the Prometheus HTTP listener.
-        listen_addr: SocketAddr,
-    },
-    /// Export metrics through OTLP and expose them through Prometheus.
-    OtlpAndPrometheus {
-        /// Address used by the Prometheus HTTP listener.
-        listen_addr: SocketAddr,
-    },
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct MetricsConfig {
+    /// OTLP endpoint URL used for push-based metrics export.
+    pub otlp_endpoint: Option<String>,
+    /// Address used by the Prometheus HTTP listener.
+    pub prometheus_listener_addr: Option<SocketAddr>,
 }
 
 impl MetricsConfig {
-    /// Builds a metrics configuration from explicit exporter inputs.
-    pub const fn from_exporters(
-        otlp_enabled: bool,
-        prometheus_listen_addr: Option<SocketAddr>,
-    ) -> Self {
-        match (otlp_enabled, prometheus_listen_addr) {
-            (true, Some(listen_addr)) => Self::OtlpAndPrometheus { listen_addr },
-            (true, None) => Self::Otlp,
-            (false, Some(listen_addr)) => Self::Prometheus { listen_addr },
-            (false, None) => Self::Disabled,
+    /// Creates a disabled metrics exporter configuration.
+    pub const fn disabled() -> Self {
+        Self {
+            otlp_endpoint: None,
+            prometheus_listener_addr: None,
         }
     }
 
-    /// Resolves default behavior against the configured OTLP endpoint.
-    pub const fn resolve(self, otlp_endpoint_configured: bool) -> Self {
-        match (self, otlp_endpoint_configured) {
-            (Self::Default, true) => Self::Otlp,
-            (Self::Default, false) => Self::Disabled,
-            (config, _) => config,
+    /// Builds a metrics configuration from explicit exporter inputs.
+    pub fn from_exporters(
+        otlp_endpoint: Option<String>,
+        prometheus_listener_addr: Option<SocketAddr>,
+    ) -> Self {
+        Self {
+            otlp_endpoint,
+            prometheus_listener_addr,
         }
+    }
+
+    /// Sets the OTLP endpoint URL.
+    pub fn with_otlp_endpoint(mut self, endpoint: String) -> Self {
+        self.otlp_endpoint = Some(endpoint);
+        self
+    }
+
+    /// Sets the Prometheus listener address.
+    pub const fn with_prometheus_listener(mut self, listen_addr: SocketAddr) -> Self {
+        self.prometheus_listener_addr = Some(listen_addr);
+        self
+    }
+
+    /// Returns `true` when this config enables at least one metrics exporter.
+    pub fn is_enabled(&self) -> bool {
+        self.otlp_endpoint.is_some() || self.prometheus_listener_addr.is_some()
     }
 
     /// Returns `true` when this config explicitly enables a metrics recorder.
-    pub const fn is_explicitly_enabled(self) -> bool {
-        matches!(
-            self,
-            Self::Otlp | Self::Prometheus { .. } | Self::OtlpAndPrometheus { .. }
-        )
+    pub fn is_explicitly_enabled(&self) -> bool {
+        self.is_enabled()
     }
 
     /// Returns `true` when metrics should be exported over OTLP.
-    pub const fn uses_otlp(self) -> bool {
-        matches!(self, Self::Otlp | Self::OtlpAndPrometheus { .. })
+    pub fn uses_otlp(&self) -> bool {
+        self.otlp_endpoint.is_some()
+    }
+
+    /// Returns the OTLP endpoint URL, if configured.
+    pub fn otlp_endpoint(&self) -> Option<&str> {
+        self.otlp_endpoint.as_deref()
     }
 
     /// Returns the Prometheus listener address, if configured.
-    pub const fn prometheus_listen_addr(self) -> Option<SocketAddr> {
-        match self {
-            Self::Prometheus { listen_addr } | Self::OtlpAndPrometheus { listen_addr } => {
-                Some(listen_addr)
-            }
-            Self::Default | Self::Disabled | Self::Otlp => None,
-        }
+    pub const fn prometheus_listen_addr(&self) -> Option<SocketAddr> {
+        self.prometheus_listener_addr
     }
 }
 
 /// Resource attributes following OpenTelemetry semantic conventions.
+#[cfg(feature = "otlp")]
 #[derive(Debug, Clone)]
 pub struct ResourceConfig {
     /// Service name.
@@ -111,6 +112,7 @@ pub struct ResourceConfig {
     pub custom_attributes: Vec<KeyValue>,
 }
 
+#[cfg(feature = "otlp")]
 impl ResourceConfig {
     /// Creates a new resource configuration with the given service name.
     pub fn new(service_name: String) -> Self {
@@ -157,34 +159,45 @@ impl ResourceConfig {
 #[derive(Debug, Clone)]
 pub struct MetricsInitConfig {
     /// Resource configuration used for OTLP metrics.
+    #[cfg(feature = "otlp")]
     pub resource: ResourceConfig,
-    /// OTLP endpoint URL.
-    pub otlp_url: Option<String>,
     /// OTLP export configuration.
+    #[cfg(feature = "otlp")]
     pub otlp_export_config: OtlpExportConfig,
-    /// Metrics exporter configuration.
-    pub metrics_config: MetricsConfig,
     /// Name of the OpenTelemetry instrumentation scope used by the metrics
     /// facade bridge.
+    #[cfg(feature = "otlp")]
     pub meter_name: String,
+    /// Metrics exporter configuration.
+    pub metrics_config: MetricsConfig,
 }
 
 impl MetricsInitConfig {
     /// Creates a metrics initialization config with defaults.
     pub fn new(service_name: String) -> Self {
+        #[cfg(not(feature = "otlp"))]
+        let _ = service_name;
+
         Self {
+            #[cfg(feature = "otlp")]
             resource: ResourceConfig::new(service_name),
-            otlp_url: None,
+            #[cfg(feature = "otlp")]
             otlp_export_config: OtlpExportConfig::default(),
-            metrics_config: MetricsConfig::default(),
+            #[cfg(feature = "otlp")]
             meter_name: "strata".to_string(),
+            metrics_config: MetricsConfig::default(),
         }
     }
 
     /// Sets the OTLP endpoint URL.
     pub fn with_otlp_url(mut self, url: String) -> Self {
-        self.otlp_url = Some(url);
+        self.metrics_config = self.metrics_config.with_otlp_endpoint(url);
         self
+    }
+
+    /// Sets the OTLP endpoint URL.
+    pub fn with_otlp_endpoint(self, url: String) -> Self {
+        self.with_otlp_url(url)
     }
 
     /// Sets the metrics exporter configuration.
@@ -194,12 +207,14 @@ impl MetricsInitConfig {
     }
 
     /// Sets the OTLP export configuration.
+    #[cfg(feature = "otlp")]
     pub fn with_otlp_export_config(mut self, config: OtlpExportConfig) -> Self {
         self.otlp_export_config = config;
         self
     }
 
     /// Sets the meter name used by the `metrics` facade to OpenTelemetry bridge.
+    #[cfg(feature = "otlp")]
     pub fn with_meter_name(mut self, name: String) -> Self {
         self.meter_name = name;
         self

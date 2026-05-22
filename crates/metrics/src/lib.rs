@@ -11,6 +11,8 @@ pub mod types;
 #[cfg(test)]
 mod tests;
 
-pub use manager::{finalize, init};
+pub use manager::{MetricsInitError, finalize, init};
 pub use metrics_layer::MetricsLayer;
-pub use types::{MetricsConfig, MetricsInitConfig, OtlpExportConfig, ResourceConfig};
+pub use types::{MetricsConfig, MetricsInitConfig};
+#[cfg(feature = "otlp")]
+pub use types::{OtlpExportConfig, ResourceConfig};

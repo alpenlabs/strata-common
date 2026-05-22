@@ -1,7 +1,7 @@
 //! Service instrumentation for automatic metrics and tracing.
 //!
-//! This module provides automatic OpenTelemetry-based instrumentation for all services
-//! built with the service framework. It tracks:
+//! This module provides automatic instrumentation for all services built with
+//! the service framework. It tracks:
 //! - Message processing metrics (count, latency, errors)
 //! - Service lifecycle metrics (launches, shutdowns)
 //! - Distributed tracing with proper span hierarchy
@@ -9,14 +9,13 @@
 //! All services automatically get:
 //! 1. Parent span wrapping entire service lifecycle
 //! 2. Child spans for launch, message processing, shutdown
-//! 3. Automatic metrics collection (counters and histograms)
+//! 3. Automatic metrics collection through the `metrics` facade
 
 use std::fmt::Display;
 use std::str::FromStr;
 use std::time::Duration;
 
-use opentelemetry::metrics::{Counter, Histogram};
-use opentelemetry::{global, KeyValue};
+use metrics::{counter, describe_counter, describe_histogram, histogram};
 use tracing::Span as TracingSpan;
 
 /// Result of an operation (success or error).
@@ -116,200 +115,23 @@ impl FromStr for ShutdownReason {
     }
 }
 
-/// Histogram bucket configuration for service metrics.
-///
-/// Defines the bucket boundaries for latency histograms. Buckets are not configurable
-/// by default to keep the API simple and ensure consistent cross-service metrics.
-#[derive(Clone, Debug)]
-pub struct HistogramBuckets {
-    /// Bucket boundaries for message processing duration (in seconds).
-    pub message: Vec<f64>,
-    /// Bucket boundaries for service launch duration (in seconds).
-    pub launch: Vec<f64>,
-    /// Bucket boundaries for service shutdown duration (in seconds).
-    pub shutdown: Vec<f64>,
-}
-
-impl Default for HistogramBuckets {
-    fn default() -> Self {
-        Self {
-            // Message processing: 1ms to 60s range covers quick operations to slow tasks
-            message: vec![0.001, 0.01, 0.1, 1.0, 10.0, 60.0],
-            // Launch: 10ms to 10s range covers initialization, connection setup, warmup
-            launch: vec![0.01, 0.1, 1.0, 5.0, 10.0],
-            // Shutdown: 1ms to 5s range covers cleanup, flush, graceful termination
-            shutdown: vec![0.001, 0.01, 0.1, 1.0, 5.0],
-        }
-    }
-}
-
-/// Builder for creating `ServiceInstrumentation` with custom configuration.
-///
-/// Use this when you need to customize histogram buckets for services with
-/// non-standard latency profiles.
-#[derive(Debug)]
-pub struct InstrumentationBuilder {
-    service_name: String,
-    buckets: HistogramBuckets,
-}
-
-impl InstrumentationBuilder {
-    /// Creates a new builder with default histogram buckets.
-    pub fn new(service_name: impl Into<String>) -> Self {
-        Self {
-            service_name: service_name.into(),
-            buckets: HistogramBuckets::default(),
-        }
-    }
-
-    /// Sets custom bucket boundaries for message processing duration histogram.
-    ///
-    /// # Arguments
-    ///
-    /// * `buckets` - Bucket boundaries in seconds, must be in ascending order
-    pub fn message_buckets(mut self, buckets: Vec<f64>) -> Self {
-        self.buckets.message = buckets;
-        self
-    }
-
-    /// Sets custom bucket boundaries for service launch duration histogram.
-    ///
-    /// # Arguments
-    ///
-    /// * `buckets` - Bucket boundaries in seconds, must be in ascending order
-    pub fn launch_buckets(mut self, buckets: Vec<f64>) -> Self {
-        self.buckets.launch = buckets;
-        self
-    }
-
-    /// Sets custom bucket boundaries for service shutdown duration histogram.
-    ///
-    /// # Arguments
-    ///
-    /// * `buckets` - Bucket boundaries in seconds, must be in ascending order
-    pub fn shutdown_buckets(mut self, buckets: Vec<f64>) -> Self {
-        self.buckets.shutdown = buckets;
-        self
-    }
-
-    /// Builds the `ServiceInstrumentation` with the configured buckets.
-    pub fn build(self) -> ServiceInstrumentation {
-        let meter = global::meter("strata-service");
-
-        // Pre-allocate service name attribute to avoid allocations on every metric call
-        let service_name = KeyValue::new("service.name", self.service_name);
-
-        // Create counters
-        let messages_processed = meter
-            .u64_counter("service.messages.processed")
-            .with_description("Total number of messages processed by the service")
-            .with_unit("messages")
-            .build();
-
-        let launches_total = meter
-            .u64_counter("service.launches.total")
-            .with_description("Total number of service launches")
-            .with_unit("launches")
-            .build();
-
-        let shutdowns_total = meter
-            .u64_counter("service.shutdowns.total")
-            .with_description("Total number of service shutdowns")
-            .with_unit("shutdowns")
-            .build();
-
-        // Create histograms with configured buckets
-        let message_duration = meter
-            .f64_histogram("service.message.duration")
-            .with_description("Duration of message processing")
-            .with_unit("s")
-            .with_boundaries(self.buckets.message)
-            .build();
-
-        let launch_duration = meter
-            .f64_histogram("service.launch.duration")
-            .with_description("Duration of service launch phase")
-            .with_unit("s")
-            .with_boundaries(self.buckets.launch)
-            .build();
-
-        let shutdown_duration = meter
-            .f64_histogram("service.shutdown.duration")
-            .with_description("Duration of service shutdown phase")
-            .with_unit("s")
-            .with_boundaries(self.buckets.shutdown)
-            .build();
-
-        ServiceInstrumentation {
-            service_name,
-            messages_processed,
-            launches_total,
-            shutdowns_total,
-            message_duration,
-            launch_duration,
-            shutdown_duration,
-        }
-    }
-}
-
 /// Service instrumentation context.
 ///
-/// This struct encapsulates all OpenTelemetry instrumentation for a service,
-/// including both tracing and metrics. It's automatically created in worker
-/// tasks and used to record service lifecycle events.
+/// This struct encapsulates the service name used when recording service
+/// lifecycle metrics. Metrics are emitted through the `metrics` facade so the
+/// process entrypoint can choose an OTLP, Prometheus, or fanout recorder.
 pub struct ServiceInstrumentation {
-    /// Pre-allocated service name attribute for reuse across metric recordings.
-    service_name: KeyValue,
-
-    /// Counter for total messages processed.
-    messages_processed: Counter<u64>,
-
-    /// Counter for total service launches.
-    launches_total: Counter<u64>,
-
-    /// Counter for total service shutdowns.
-    shutdowns_total: Counter<u64>,
-
-    /// Histogram for message processing duration.
-    message_duration: Histogram<f64>,
-
-    /// Histogram for service launch duration.
-    launch_duration: Histogram<f64>,
-
-    /// Histogram for service shutdown duration.
-    shutdown_duration: Histogram<f64>,
+    /// Service name label value reused across metric recordings.
+    service_name: String,
 }
 
 impl ServiceInstrumentation {
-    /// Creates a new service instrumentation context with default histogram buckets.
-    ///
-    /// If the OpenTelemetry provider is not initialized, this function will
-    /// return a no-op instrumentation that safely does nothing.
-    ///
-    /// For custom histogram buckets, use [`ServiceInstrumentation::builder()`].
+    /// Creates a new service instrumentation context.
     pub fn new(service_name: &str) -> Self {
-        InstrumentationBuilder::new(service_name).build()
-    }
-
-    /// Creates a builder for configuring custom histogram buckets.
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// use strata_service::instrumentation::ServiceInstrumentation;
-    ///
-    /// // Fast service with sub-millisecond latencies
-    /// let fast_inst = ServiceInstrumentation::builder("cache")
-    ///     .message_buckets(vec![0.0001, 0.001, 0.01, 0.1])
-    ///     .build();
-    ///
-    /// // Slow service with multi-second latencies
-    /// let slow_inst = ServiceInstrumentation::builder("batch_processor")
-    ///     .message_buckets(vec![1.0, 10.0, 60.0, 300.0])
-    ///     .build();
-    /// ```
-    pub fn builder(service_name: impl Into<String>) -> InstrumentationBuilder {
-        InstrumentationBuilder::new(service_name)
+        describe_service_metrics();
+        Self {
+            service_name: service_name.to_owned(),
+        }
     }
 
     /// Creates a lifecycle span wrapping the entire service lifetime.
@@ -346,36 +168,78 @@ impl ServiceInstrumentation {
 
     /// Records a message processing operation.
     pub fn record_message(&self, duration: Duration, result: OperationResult) {
-        let attrs = &[
-            self.service_name.clone(),
-            KeyValue::new("operation.result", result.as_str()),
-        ];
-
-        self.messages_processed.add(1, attrs);
-        self.message_duration.record(duration.as_secs_f64(), attrs);
+        counter!(
+            "strata_service_messages_processed_total",
+            "service_name" => self.service_name.clone(),
+            "operation_result" => result.as_str(),
+        )
+        .increment(1);
+        histogram!(
+            "strata_service_message_duration_seconds",
+            "service_name" => self.service_name.clone(),
+            "operation_result" => result.as_str(),
+        )
+        .record(duration.as_secs_f64());
     }
 
     /// Records a service launch operation.
     pub fn record_launch(&self, duration: Duration, result: OperationResult) {
-        let attrs = &[
-            self.service_name.clone(),
-            KeyValue::new("operation.result", result.as_str()),
-        ];
-
-        self.launches_total.add(1, attrs);
-        self.launch_duration.record(duration.as_secs_f64(), attrs);
+        counter!(
+            "strata_service_launches_total",
+            "service_name" => self.service_name.clone(),
+            "operation_result" => result.as_str(),
+        )
+        .increment(1);
+        histogram!(
+            "strata_service_launch_duration_seconds",
+            "service_name" => self.service_name.clone(),
+            "operation_result" => result.as_str(),
+        )
+        .record(duration.as_secs_f64());
     }
 
     /// Records a service shutdown operation.
     pub fn record_shutdown(&self, duration: Duration, reason: ShutdownReason) {
-        let attrs = &[
-            self.service_name.clone(),
-            KeyValue::new("shutdown.reason", reason.as_str()),
-        ];
-
-        self.shutdowns_total.add(1, attrs);
-        self.shutdown_duration.record(duration.as_secs_f64(), attrs);
+        counter!(
+            "strata_service_shutdowns_total",
+            "service_name" => self.service_name.clone(),
+            "shutdown_reason" => reason.as_str(),
+        )
+        .increment(1);
+        histogram!(
+            "strata_service_shutdown_duration_seconds",
+            "service_name" => self.service_name.clone(),
+            "shutdown_reason" => reason.as_str(),
+        )
+        .record(duration.as_secs_f64());
     }
+}
+
+fn describe_service_metrics() {
+    describe_counter!(
+        "strata_service_messages_processed_total",
+        "Total number of messages processed by the service"
+    );
+    describe_counter!(
+        "strata_service_launches_total",
+        "Total number of service launches"
+    );
+    describe_counter!(
+        "strata_service_shutdowns_total",
+        "Total number of service shutdowns"
+    );
+    describe_histogram!(
+        "strata_service_message_duration_seconds",
+        "Duration of message processing in seconds"
+    );
+    describe_histogram!(
+        "strata_service_launch_duration_seconds",
+        "Duration of service launch phase in seconds"
+    );
+    describe_histogram!(
+        "strata_service_shutdown_duration_seconds",
+        "Duration of service shutdown phase in seconds"
+    );
 }
 
 /// Common logic for recording shutdown metrics and logging results.
@@ -389,10 +253,8 @@ pub(crate) fn record_shutdown_result(
     instrumentation: &ServiceInstrumentation,
     shutdown_reason: ShutdownReason,
 ) {
-    // Record metrics
     instrumentation.record_shutdown(duration, shutdown_reason);
 
-    // Log result
     if let Err(e) = shutdown_result {
         tracing::error!(
             service.name = %service_name,
@@ -412,12 +274,6 @@ impl std::fmt::Debug for ServiceInstrumentation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ServiceInstrumentation")
             .field("service_name", &self.service_name)
-            .field("messages_processed", &"<counter>")
-            .field("launches_total", &"<counter>")
-            .field("shutdowns_total", &"<counter>")
-            .field("message_duration", &"<histogram>")
-            .field("launch_duration", &"<histogram>")
-            .field("shutdown_duration", &"<histogram>")
             .finish()
     }
 }
@@ -425,6 +281,25 @@ impl std::fmt::Debug for ServiceInstrumentation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_operation_result_display() {
+        assert_eq!(OperationResult::Success.to_string(), "success");
+        assert_eq!(OperationResult::Error.to_string(), "error");
+    }
+
+    #[test]
+    fn test_operation_result_from_str() {
+        assert_eq!(
+            "success".parse::<OperationResult>().unwrap(),
+            OperationResult::Success
+        );
+        assert_eq!(
+            "error".parse::<OperationResult>().unwrap(),
+            OperationResult::Error
+        );
+        assert!("invalid".parse::<OperationResult>().is_err());
+    }
 
     #[test]
     fn test_operation_result_from_bool() {
@@ -455,20 +330,16 @@ mod tests {
     }
 
     #[test]
-    fn test_instrumentation_new_without_provider() {
-        // Should not panic even if OpenTelemetry provider is not initialized
-        // OpenTelemetry returns a no-op meter by default
+    fn test_instrumentation_new_without_recorder() {
         let instrumentation = ServiceInstrumentation::new("test_service");
 
-        // Verify we can access the service name attribute
-        assert_eq!(instrumentation.service_name.key.as_str(), "service.name");
+        assert_eq!(instrumentation.service_name, "test_service");
     }
 
     #[test]
     fn test_instrumentation_record_message() {
         let instrumentation = ServiceInstrumentation::new("test_service");
 
-        // Should not panic when recording metrics (no-op if provider not initialized)
         instrumentation.record_message(Duration::from_millis(100), OperationResult::Success);
         instrumentation.record_message(Duration::from_millis(200), OperationResult::Error);
     }
@@ -477,7 +348,6 @@ mod tests {
     fn test_instrumentation_record_launch() {
         let instrumentation = ServiceInstrumentation::new("test_service");
 
-        // Should not panic when recording launch metrics
         instrumentation.record_launch(Duration::from_millis(50), OperationResult::Success);
         instrumentation.record_launch(Duration::from_millis(100), OperationResult::Error);
     }
@@ -486,7 +356,6 @@ mod tests {
     fn test_instrumentation_record_shutdown() {
         let instrumentation = ServiceInstrumentation::new("test_service");
 
-        // Should not panic when recording shutdown metrics
         instrumentation.record_shutdown(Duration::from_millis(10), ShutdownReason::Normal);
         instrumentation.record_shutdown(Duration::from_millis(20), ShutdownReason::Error);
         instrumentation.record_shutdown(Duration::from_millis(15), ShutdownReason::Signal);
@@ -496,21 +365,16 @@ mod tests {
     fn test_lifecycle_span_creation() {
         let instrumentation = ServiceInstrumentation::new("test_service");
 
-        // Should be able to create lifecycle spans without panicking
-        // Note: metadata() may return None if no tracing subscriber is initialized
         let _async_span =
             instrumentation.create_lifecycle_span("test_service", "test_service", "async");
         let _sync_span =
             instrumentation.create_lifecycle_span("test_service", "test_service", "sync");
-
-        // If this test completes without panicking, span creation works
     }
 
     #[test]
     fn test_instrumentation_debug_impl() {
         let instrumentation = ServiceInstrumentation::new("test_service");
 
-        // Verify Debug implementation doesn't panic
         let debug_str = format!("{:?}", instrumentation);
         assert!(debug_str.contains("ServiceInstrumentation"));
         assert!(debug_str.contains("service_name"));
@@ -518,28 +382,20 @@ mod tests {
 
     #[test]
     fn test_multiple_instrumentation_instances() {
-        // Should be able to create multiple instrumentation instances
         let inst1 = ServiceInstrumentation::new("service1");
         let inst2 = ServiceInstrumentation::new("service2");
 
-        // Record metrics on both without panicking
         inst1.record_message(Duration::from_millis(10), OperationResult::Success);
         inst2.record_message(Duration::from_millis(20), OperationResult::Success);
 
-        // Verify service names are different
-        assert_eq!(inst1.service_name.value.as_str(), "service1");
-        assert_eq!(inst2.service_name.value.as_str(), "service2");
+        assert_eq!(inst1.service_name, "service1");
+        assert_eq!(inst2.service_name, "service2");
     }
 
     #[test]
     fn test_pre_allocated_service_name() {
         let instrumentation = ServiceInstrumentation::new("my_test_service");
 
-        // Verify the service name attribute is pre-allocated correctly
-        assert_eq!(instrumentation.service_name.key.as_str(), "service.name");
-        assert_eq!(
-            instrumentation.service_name.value.as_str(),
-            "my_test_service"
-        );
+        assert_eq!(instrumentation.service_name, "my_test_service");
     }
 }
