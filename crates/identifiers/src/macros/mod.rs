@@ -111,8 +111,8 @@ mod tests {
             let inner = Buf32::new(data);
 
             // TreeHash should be the same as inner type (transparent)
-            let wrapper_hash = TreeHash::<Sha256Hasher>::tree_hash_root(&wrapper);
-            let inner_hash = TreeHash::<Sha256Hasher>::tree_hash_root(&inner);
+            let wrapper_hash = TreeHash::tree_hash_root::<Sha256Hasher>(&wrapper);
+            let inner_hash = TreeHash::tree_hash_root::<Sha256Hasher>(&inner);
             assert_eq!(wrapper_hash, inner_hash);
         }
 
