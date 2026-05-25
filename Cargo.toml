@@ -31,8 +31,8 @@ strata-crypto = { path = "crates/crypto" }
 strata-identifiers = { path = "crates/identifiers" }
 strata-l1-txfmt = { path = "crates/l1proto/txfmt" }
 strata-logging = { path = "crates/logging" }
-strata-metrics = { path = "crates/metrics" }
 strata-merkle = { path = "crates/merkle" }
+strata-metrics = { path = "crates/metrics" }
 strata-msg-fmt = { path = "crates/msg-fmt" }
 strata-predicate = { path = "crates/predicate" }
 strata-service = { path = "crates/service" }
@@ -40,13 +40,13 @@ strata-ssz-tests = { path = "crates/ssz-tests" }
 strata-tasks = { path = "crates/tasks" }
 
 # SSZ dependencies
-ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
-ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
-ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
-ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
-ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
-tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
-tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
 
 # External dependencies
 anyhow = "1"
@@ -66,7 +66,9 @@ metrics-exporter-otel = "0.3"
 metrics-exporter-prometheus = { version = "0.16", default-features = false, features = [
   "http-listener",
 ] }
-metrics-util = { version = "0.20", default-features = false, features = ["layers"] }
+metrics-util = { version = "0.20", default-features = false, features = [
+  "layers",
+] }
 musig2 = "0.1"
 num_enum = "0.7"
 opentelemetry = "0.31"

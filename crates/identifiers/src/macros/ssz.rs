@@ -33,7 +33,7 @@
 ///
 /// Use this for structs annotated with `#[ssz(struct_behaviour = "container")]`
 /// whose fields are all fixed-size. Generates:
-/// - Generic `TreeHash<H>` implementation
+/// - `TreeHash` implementation
 /// - `SszTypeInfo` implementation (computes fixed size from field types)
 /// - A `{Type}Ref` view type with `DecodeView`, `SszTypeInfo`, `TreeHash`, and `ToOwnedSsz`
 ///
@@ -57,7 +57,7 @@ macro_rules! impl_ssz_fixed_container {
     ($type:ident, [$($field:ident: $field_ty:ty),+ $(,)?]) => {
         ::paste::paste! {
             // TreeHash implementation
-            impl<H: ::tree_hash::TreeHashDigest> ::tree_hash::TreeHash<H> for $type {
+            impl ::tree_hash::TreeHash for $type {
                 fn tree_hash_type() -> ::tree_hash::TreeHashType {
                     ::tree_hash::TreeHashType::Container
                 }
@@ -70,14 +70,14 @@ macro_rules! impl_ssz_fixed_container {
                     unreachable!("Container should never be packed")
                 }
 
-                fn tree_hash_root(&self) -> H::Output {
+                fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
                     let mut hasher = ::tree_hash::MerkleHasher::<H>::with_leaves(
                         $crate::impl_ssz_fixed_container!(@count $($field),+)
                     );
                     $(
                         hasher
                             .write(
-                                <_ as ::tree_hash::TreeHash<H>>::tree_hash_root(&self.$field)
+                                <$field_ty as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.$field)
                                     .as_ref(),
                             )
                             .expect("tree hash derive should not apply too many leaves");
@@ -127,21 +127,21 @@ macro_rules! impl_ssz_fixed_container {
                 }
             }
 
-            impl<'a, H: ::tree_hash::TreeHashDigest> ::tree_hash::TreeHash<H> for [<$type Ref>]<'a> {
+            impl<'a> ::tree_hash::TreeHash for [<$type Ref>]<'a> {
                 fn tree_hash_type() -> ::tree_hash::TreeHashType {
-                    <$type as ::tree_hash::TreeHash<H>>::tree_hash_type()
+                    <$type as ::tree_hash::TreeHash>::tree_hash_type()
                 }
 
                 fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
-                    <$type as ::tree_hash::TreeHash<H>>::tree_hash_packed_encoding(&self.inner)
+                    <$type as ::tree_hash::TreeHash>::tree_hash_packed_encoding(&self.inner)
                 }
 
                 fn tree_hash_packing_factor() -> usize {
-                    <$type as ::tree_hash::TreeHash<H>>::tree_hash_packing_factor()
+                    <$type as ::tree_hash::TreeHash>::tree_hash_packing_factor()
                 }
 
-                fn tree_hash_root(&self) -> H::Output {
-                    <$type as ::tree_hash::TreeHash<H>>::tree_hash_root(&self.inner)
+                fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
+                    <$type as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.inner)
                 }
             }
 
@@ -203,21 +203,21 @@ macro_rules! impl_ssz_transparent_wrapper {
         }
 
         // Manual TreeHash implementation for transparent wrapper
-        impl<H: ::tree_hash::TreeHashDigest> ::tree_hash::TreeHash<H> for $wrapper {
+        impl ::tree_hash::TreeHash for $wrapper {
             fn tree_hash_type() -> ::tree_hash::TreeHashType {
-                <$inner as ::tree_hash::TreeHash<H>>::tree_hash_type()
+                <$inner as ::tree_hash::TreeHash>::tree_hash_type()
             }
 
             fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
-                <$inner as ::tree_hash::TreeHash<H>>::tree_hash_packed_encoding(&self.0)
+                <$inner as ::tree_hash::TreeHash>::tree_hash_packed_encoding(&self.0)
             }
 
             fn tree_hash_packing_factor() -> usize {
-                <$inner as ::tree_hash::TreeHash<H>>::tree_hash_packing_factor()
+                <$inner as ::tree_hash::TreeHash>::tree_hash_packing_factor()
             }
 
-            fn tree_hash_root(&self) -> H::Output {
-                <$inner as ::tree_hash::TreeHash<H>>::tree_hash_root(&self.0)
+            fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
+                <$inner as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.0)
             }
         }
     };
@@ -272,21 +272,21 @@ macro_rules! impl_ssz_transparent_byte_array_wrapper {
         }
 
         // Manual TreeHash implementation for transparent wrapper
-        impl<H: ::tree_hash::TreeHashDigest> ::tree_hash::TreeHash<H> for $wrapper {
+        impl ::tree_hash::TreeHash for $wrapper {
             fn tree_hash_type() -> ::tree_hash::TreeHashType {
-                <[u8; $len] as ::tree_hash::TreeHash<H>>::tree_hash_type()
+                <[u8; $len] as ::tree_hash::TreeHash>::tree_hash_type()
             }
 
             fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
-                <[u8; $len] as ::tree_hash::TreeHash<H>>::tree_hash_packed_encoding(&self.0)
+                <[u8; $len] as ::tree_hash::TreeHash>::tree_hash_packed_encoding(&self.0)
             }
 
             fn tree_hash_packing_factor() -> usize {
-                <[u8; $len] as ::tree_hash::TreeHash<H>>::tree_hash_packing_factor()
+                <[u8; $len] as ::tree_hash::TreeHash>::tree_hash_packing_factor()
             }
 
-            fn tree_hash_root(&self) -> H::Output {
-                <[u8; $len] as ::tree_hash::TreeHash<H>>::tree_hash_root(&self.0)
+            fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
+                <[u8; $len] as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.0)
             }
         }
 
