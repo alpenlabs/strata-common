@@ -38,10 +38,10 @@ sp1-verifier = "6.1.0"
 zkaleido.workspace = true
 
 [features]
-default = ["serde", "borsh"]
-serde = ["dep:serde", "dep:hex"]
-borsh = ["dep:borsh"]
+default = ["all-verifiers"]
+all-verifiers = ["schnorr", "sp1-groth16"]
 arbitrary = ["dep:arbitrary"]
+borsh = ["dep:borsh"]
 schnorr = ["dep:k256", "dep:signature"]
+serde = ["dep:serde", "dep:hex"]
 sp1-groth16 = ["dep:zkaleido-sp1-groth16-verifier"]
-all = ["schnorr", "sp1-groth16"]
