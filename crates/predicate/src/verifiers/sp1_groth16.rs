@@ -15,7 +15,8 @@ use crate::verifier::PredicateVerifier;
 /// parsing and proof verification.
 ///
 /// ## Predicate Format
-/// - **Condition**: Borsh-serialized `SP1Groth16Verifier` (verifying key + program ID)
+/// - **Condition**: Canonically-encoded `SP1Groth16Verifier` (verifying key + program ID),
+///   as produced by `to_uncompressed_bytes` and parsed by `SP1Groth16Verifier::parse`
 /// - **Witness**: Groth16 proof bytes; multiple encodings accepted by `Sp1Groth16Proof::parse`
 /// - **Claim**: SP1 public values bytes
 #[derive(Debug, Default)]
