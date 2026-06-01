@@ -25,6 +25,8 @@ mod error;
 mod ext;
 mod hasher;
 mod mmr;
+#[cfg(feature = "node_store")]
+pub mod node_store;
 mod proof;
 mod traits;
 mod tree;
