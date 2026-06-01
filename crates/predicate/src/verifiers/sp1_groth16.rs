@@ -15,7 +15,8 @@ use crate::verifier::PredicateVerifier;
 /// parsing and proof verification.
 ///
 /// ## Predicate Format
-/// - **Condition**: Borsh-serialized `SP1Groth16Verifier` (verifying key + program ID)
+/// - **Condition**: Canonically-encoded `SP1Groth16Verifier` (verifying key + program ID), as
+///   produced by `to_uncompressed_bytes` and parsed by `SP1Groth16Verifier::parse`
 /// - **Witness**: Groth16 proof bytes; multiple encodings accepted by `Sp1Groth16Proof::parse`
 /// - **Claim**: SP1 public values bytes
 #[derive(Debug, Default)]
@@ -26,9 +27,9 @@ impl PredicateVerifier for Sp1Groth16Verifier {
     type Witness = Sp1Groth16Proof;
 
     fn parse_condition(&self, condition: &[u8]) -> PredicateResult<Self::Condition> {
-        borsh::from_slice(condition).map_err(|e| PredicateError::ConditionParsingFailed {
+        Sp1Verifier::parse(condition).map_err(|e| PredicateError::ConditionParsingFailed {
             id: PredicateTypeId::Sp1Groth16,
-            reason: format!("failed to parse sp1 groth16 verifying key: {e}"),
+            reason: e.to_string(),
         })
     }
 
@@ -76,7 +77,7 @@ mod tests {
         )
         .unwrap();
 
-        let condition = borsh::to_vec(&verifier).unwrap();
+        let condition = verifier.to_uncompressed_bytes();
         let claim = proof_data.receipt().public_values().as_bytes().to_vec();
         let witness = proof_data.receipt().proof().as_bytes().to_vec();
 

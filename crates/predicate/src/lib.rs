@@ -67,22 +67,27 @@
 //!   Used for testing and placeholder scenarios.
 //!
 //! - **Schnorr BIP-340** ([`PredicateTypeId::Bip340Schnorr`] = 10): Schnorr signature verification
-//!   using BIP-340 standard. Expects 32-byte x-only public keys. *Requires the `verify-schnorr`
-//!   feature.*
+//!   using BIP-340 standard. Expects 32-byte x-only public keys. *Requires the `schnorr` feature.*
 //!
 //! - **SP1 Groth16 Verifier** ([`PredicateTypeId::Sp1Groth16`] = 20): Zero-knowledge proof
-//!   verification for SP1-generated Groth16 proofs. *Requires the `verify-sp1-groth16` feature.*
+//!   verification for SP1-generated Groth16 proofs. *Requires the `sp1-groth16` feature.*
 //!
 //! ## Feature Flags
 //!
+//! By default only the verifiers (`all-verifiers`) are enabled; serialization features must be
+//! opted into explicitly.
+//!
 //! ### Serialization
-//! - `serde`: Enables Serialize/Deserialize implementations (default)
-//! - `borsh`: Enables Borsh serialization support (default)
+//! - `serde`: Enables Serialize/Deserialize implementations
+//! - `borsh`: Enables Borsh serialization support
 //!
 //! ### Verification
-//! - `verify-schnorr`: Enables Schnorr BIP-340 signature verification
-//! - `verify-sp1-groth16`: Enables SP1 Groth16 zero-knowledge proof verification
-//! - `verify-all`: Enables all verification backends (convenience feature)
+//! - `schnorr`: Enables Schnorr BIP-340 signature verification
+//! - `sp1-groth16`: Enables SP1 Groth16 zero-knowledge proof verification
+//! - `all-verifiers`: Enables all verification backends (default)
+//!
+//! ### Other
+//! - `arbitrary`: Derives `Arbitrary` implementations for property testing
 //!
 //! **Note**: The base [`verify_claim_witness`] function is always available and works with
 //! `AlwaysAccept` and `NeverAccept` predicates without any features. Specific verifier features
