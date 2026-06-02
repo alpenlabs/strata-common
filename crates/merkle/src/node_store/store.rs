@@ -130,10 +130,23 @@ where
     /// ancestors, and any leaf-count bump are written in a single
     /// [`commit`](MmrNodeStore::commit).
     ///
-    /// Errors with [`MmrError::NodeMissing`] if a required sibling is absent —
-    /// e.g. writing past the current end, which would leave a gap.
+    /// Errors with [`MmrError::LeafGap`] if `leaf_index` is past the append
+    /// point (`> leaf_count`), which would skip the leaves in between. A
+    /// [`MmrError::NodeMissing`] instead signals a corrupt store: a sibling
+    /// required by an in-range write is absent.
     fn put_leaf(&self, leaf_index: u64, value: MH::Hash) -> Result<(), MmrError<Self::Error>> {
         let old_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
+        // Only an overwrite (`< old_count`) or an append (`== old_count`) is
+        // valid. Writing further out would leave a hole that the sibling reads
+        // in `write_plan` don't always catch: an isolated height-0 peak (e.g.
+        // leaf 4 in a 5-leaf MMR) recomputes no ancestors, so the gap would
+        // commit silently. Reject the whole range explicitly.
+        if leaf_index > old_count {
+            return Err(MmrError::LeafGap {
+                index: leaf_index,
+                leaf_count: old_count,
+            });
+        }
         let new_count = old_count.max(leaf_index + 1);
 
         let mut writes =
@@ -309,14 +322,39 @@ mod tests {
     }
 
     #[test]
-    fn put_leaf_past_end_errors_on_gap() {
+    fn put_leaf_past_end_is_rejected() {
         let mmr = MemMmr::<Hash32>::default();
         append(&mmr, leaf(0));
-        // Writing at index 5 needs siblings that don't exist yet.
+        // Index 5 is well past the append point (1).
         assert!(matches!(
             put(&mmr, 5, leaf(5)),
-            Err(MmrError::NodeMissing(_))
+            Err(MmrError::LeafGap {
+                index: 5,
+                leaf_count: 1
+            })
         ));
+
+        // Regression: with 3 leaves, index 4 is the isolated height-0 peak of a
+        // 5-leaf MMR, so `write_plan` reads no sibling and would otherwise
+        // commit a gap (leaf 3 absent). The explicit range check must reject it
+        // and leave the store untouched.
+        let mmr = MemMmr::<Hash32>::default();
+        for i in 0..3 {
+            append(&mmr, leaf(i));
+        }
+        assert!(matches!(
+            put(&mmr, 4, leaf(4)),
+            Err(MmrError::LeafGap {
+                index: 4,
+                leaf_count: 3
+            })
+        ));
+        assert_eq!(count(&mmr), 3);
+        assert_eq!(read_leaf(&mmr, 4), None);
+
+        // The append point itself (== count) is still allowed.
+        put(&mmr, 3, leaf(3)).unwrap();
+        assert_eq!(count(&mmr), 4);
     }
 
     #[test]

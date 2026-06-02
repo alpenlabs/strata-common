@@ -27,4 +27,16 @@ pub enum MmrError<E> {
         /// The MMR size against which the request was made.
         leaf_count: u64,
     },
+
+    /// A leaf write was requested past the append point, which would skip the
+    /// leaves in between and leave a gap. The only writable indices are
+    /// `0..=leaf_count`: an existing index (overwrite) or exactly `leaf_count`
+    /// (append).
+    #[error("leaf write at {index} would leave a gap (leaf_count={leaf_count})")]
+    LeafGap {
+        /// The requested write index, past the append point.
+        index: u64,
+        /// The current leaf count — the highest writable index.
+        leaf_count: u64,
+    },
 }
