@@ -63,7 +63,7 @@ hex = { version = "0.4", features = ["serde"] }
 int-enum = "1"
 metrics = "0.24"
 metrics-exporter-otel = "0.3"
-metrics-exporter-prometheus = { version = "0.16", default-features = false, features = [
+metrics-exporter-prometheus = { version = "0.18", default-features = false, features = [
   "http-listener",
 ] }
 metrics-util = { version = "0.20", default-features = false, features = [
