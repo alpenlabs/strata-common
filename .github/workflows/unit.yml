@@ -34,7 +34,7 @@ jobs:
           rustup default stable
 
       - name: Install cargo-nextest and cargo-hack
-        uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2.75.17
+        uses: taiki-e/install-action@213ccc1a076163c093f914550b94feb90fab916d # v2.79.2
         with:
           tool: nextest,cargo-hack
 
