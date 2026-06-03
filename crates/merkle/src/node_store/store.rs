@@ -131,9 +131,10 @@ where
     /// [`commit`](MmrNodeStore::commit).
     ///
     /// Errors with [`MmrError::LeafGap`] if `leaf_index` is past the append
-    /// point (`> leaf_count`), which would skip the leaves in between. A
-    /// [`MmrError::NodeMissing`] instead signals a corrupt store: a sibling
-    /// required by an in-range write is absent.
+    /// point (`> leaf_count`), which would skip the leaves in between, and with
+    /// [`MmrError::MaxCapacity`] if the store is already at the `u64::MAX` leaf
+    /// ceiling. A [`MmrError::NodeMissing`] instead signals a corrupt store: a
+    /// sibling required by an in-range write is absent.
     fn put_leaf(&self, leaf_index: u64, value: MH::Hash) -> Result<(), MmrError<Self::Error>> {
         let old_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
         // Only an overwrite (`< old_count`) or an append (`== old_count`) is
@@ -147,7 +148,11 @@ where
                 leaf_count: old_count,
             });
         }
-        let new_count = old_count.max(leaf_index + 1);
+        // The writable range is `0..=old_count`, so the largest valid index is
+        // `u64::MAX - 1` (a leaf at `u64::MAX` would imply a `u64::MAX + 1`
+        // count). Reject a full store before the `+ 1` below overflows.
+        let next_count = leaf_index.checked_add(1).ok_or(MmrError::MaxCapacity)?;
+        let new_count = old_count.max(next_count);
 
         let mut writes =
             write_plan::<MH, _>(leaf_index, value, new_count, |pos| self.get_node(pos))?;
@@ -355,6 +360,28 @@ mod tests {
         // The append point itself (== count) is still allowed.
         put(&mmr, 3, leaf(3)).unwrap();
         assert_eq!(count(&mmr), 4);
+    }
+
+    #[test]
+    fn append_at_capacity_is_rejected() {
+        let mmr = MemMmr::<Hash32>::default();
+        // Drive the leaf count to the u64 ceiling without materializing leaves;
+        // append would then need index u64::MAX, whose `+ 1` overflows.
+        mmr.put_node(
+            NodePos::meta(NEXT_INDEX_TAG),
+            <Hash32 as MmrMetaPack>::pack_u64(u64::MAX),
+        )
+        .unwrap();
+        assert_eq!(count(&mmr), u64::MAX);
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::append_leaf(&mmr, leaf(0)),
+            Err(MmrError::MaxCapacity)
+        ));
+        // A direct put at the unwritable max index is rejected the same way.
+        assert!(matches!(
+            put(&mmr, u64::MAX, leaf(0)),
+            Err(MmrError::MaxCapacity)
+        ));
     }
 
     #[test]

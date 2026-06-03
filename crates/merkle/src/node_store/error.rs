@@ -39,4 +39,9 @@ pub enum MmrError<E> {
         /// The current leaf count — the highest writable index.
         leaf_count: u64,
     },
+
+    /// The MMR already holds the maximum `u64::MAX` leaves, so no further leaf
+    /// can be appended — the next index would overflow `u64`.
+    #[error("MMR has reached max capacity")]
+    MaxCapacity,
 }
