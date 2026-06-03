@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn test_conversions() {
-        let bytes = [b'S', b'T', b'R', b'A'];
+        let bytes = *b"STRA";
         let magic: MagicBytes = bytes.into();
         let back: [u8; 4] = magic.into();
         assert_eq!(bytes, back);
