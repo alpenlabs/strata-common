@@ -5,13 +5,13 @@
 //! position computation (no I/O) and assembly so the store can batch the fetch.
 //!
 //! Node hashing is supplied by the caller's [`MerkleHasher`], so a node store
-//! produces proofs that verify against the same compact-peaks accumulators the
-//! rest of the crate builds with that hasher.
+//! produces proofs that verify against the same compact-peaks accumulators
+//! `strata-merkle` builds with that hasher.
+
+use strata_merkle::{MerkleHash, MerkleHasher, MerkleProof};
 
 use super::error::MmrError;
 use super::index::{LeafPos, NodePos, peak_for_leaf};
-use crate::hasher::{MerkleHash, MerkleHasher};
-use crate::proof::MerkleProof;
 
 /// Computes the nodes to write when setting `leaf` at `leaf_index` in an MMR
 /// that has (or will have) `leaf_count` leaves.

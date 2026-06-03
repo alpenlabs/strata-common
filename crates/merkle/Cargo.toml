@@ -31,9 +31,6 @@ proptest.workspace = true
 default = ["borsh", "codec", "serde"]
 borsh = ["dep:borsh"]
 codec = ["dep:strata-codec"]
-# Reusable node-storing MMR: persists every node so proofs are O(log n) with no
-# leaf replay. Generic over the hasher; pulls in no extra dependencies.
-node_store = []
 serde = ["dep:serde"]
 ssz = [
   "dep:ssz",

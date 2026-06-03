@@ -7,13 +7,14 @@
 //! proof-level API ([`StoredMmr`]) is derived on top.
 //!
 //! The store is storage- and namespace-agnostic (one backend instance == one
-//! MMR) and generic over the [`MerkleHasher`](crate::MerkleHasher) used to
-//! combine nodes: proofs are assembled as [`MerkleProof`](crate::MerkleProof)
-//! and verify against the same compact-peaks accumulators
-//! ([`Mmr`](crate::Mmr)) the rest of the crate builds with that hasher.
+//! MMR) and generic over the [`MerkleHasher`](strata_merkle::MerkleHasher) used
+//! to combine nodes: proofs are assembled as
+//! [`MerkleProof`](strata_merkle::MerkleProof) and verify against the same
+//! compact-peaks accumulators ([`Mmr`](strata_merkle::Mmr)) that `strata-merkle`
+//! builds with that hasher.
 //!
-//! Leaf counts and indices are `u64`, matching the crate-wide MMR entry ceiling
-//! documented on [`MmrState`](crate::MmrState).
+//! Leaf counts and indices are `u64`, matching the MMR entry ceiling documented
+//! on [`MmrState`](strata_merkle::MmrState).
 
 mod algorithm;
 mod error;

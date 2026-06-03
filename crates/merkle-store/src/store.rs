@@ -1,10 +1,10 @@
 //! The storage backend trait and the derived MMR API.
 
+use strata_merkle::{MerkleHash, MerkleHasher, MerkleProof};
+
 use super::algorithm::{assemble_proof, proof_positions, write_plan};
 use super::error::MmrError;
 use super::index::NodePos;
-use crate::hasher::{MerkleHash, MerkleHasher};
-use crate::proof::MerkleProof;
 
 /// Reserved metadata tag holding the leaf count (== next leaf index).
 const NEXT_INDEX_TAG: u64 = 0;
@@ -231,12 +231,10 @@ mod tests {
     use std::ops::Range;
 
     use proptest::prelude::*;
+    use strata_merkle::{CompactMmr64, MerkleProof, Mmr, Sha256Hasher};
 
     use super::*;
-    use crate::legacy_compact_mmr::CompactMmr64;
-    use crate::node_store::memory::MemMmr;
-    use crate::proof::MerkleProof;
-    use crate::{Mmr, Sha256Hasher};
+    use crate::memory::MemMmr;
 
     type Hash32 = [u8; 32];
 

@@ -4,9 +4,10 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
+use strata_merkle::MerkleHash;
+
 use super::index::NodePos;
 use super::store::MmrNodeStore;
-use crate::hasher::MerkleHash;
 
 /// A non-persistent [`MmrNodeStore`] backed by a `BTreeMap`.
 #[derive(Debug)]
