@@ -28,15 +28,17 @@ pub trait MmrMetaPack: MerkleHash {
 impl<const N: usize> MmrMetaPack for [u8; N] {
     fn pack_u64(value: u64) -> Self {
         // Every real hash is at least 8 bytes; the count rides in the leading 8.
+        // Big-endian keeps every multi-byte integer in this module encoded the
+        // same way as `NodePos::to_key`.
         let mut bytes = [0u8; N];
-        bytes[..8].copy_from_slice(&value.to_le_bytes());
+        bytes[..8].copy_from_slice(&value.to_be_bytes());
         bytes
     }
 
     fn unpack_u64(&self) -> u64 {
         let mut bytes = [0u8; 8];
         bytes.copy_from_slice(&self[..8]);
-        u64::from_le_bytes(bytes)
+        u64::from_be_bytes(bytes)
     }
 }
 
