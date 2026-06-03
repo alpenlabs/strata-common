@@ -12,6 +12,7 @@ members = [
   "crates/logging",
   "crates/metrics",
   "crates/merkle",
+  "crates/merkle-store",
   "crates/msg-fmt",
   "crates/predicate",
   "crates/service",
@@ -32,6 +33,7 @@ strata-identifiers = { path = "crates/identifiers" }
 strata-l1-txfmt = { path = "crates/l1proto/txfmt" }
 strata-logging = { path = "crates/logging" }
 strata-merkle = { path = "crates/merkle" }
+strata-merkle-node-store = { path = "crates/merkle-store" }
 strata-metrics = { path = "crates/metrics" }
 strata-msg-fmt = { path = "crates/msg-fmt" }
 strata-predicate = { path = "crates/predicate" }

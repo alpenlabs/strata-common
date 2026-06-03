@@ -4121,6 +4121,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-merkle-node-store"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "strata-merkle",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-metrics"
 version = "0.1.0"
 dependencies = [
