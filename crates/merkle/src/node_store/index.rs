@@ -49,6 +49,22 @@ impl NodePos {
         self.index.is_multiple_of(2)
     }
 
+    /// Returns true if this node is the right child of its parent.
+    pub fn is_right_child(self) -> bool {
+        !self.is_left_child()
+    }
+
+    /// Returns this node's `(left, right)` children, or `None` if it is a leaf
+    /// (height 0) and has none.
+    pub fn children(self) -> Option<(Self, Self)> {
+        let child_height = self.height.checked_sub(1)?;
+        let left_index = self.index << 1;
+        Some((
+            Self::new(child_height, left_index),
+            Self::new(child_height, left_index + 1),
+        ))
+    }
+
     /// Returns this node's sibling (same height, index toggled).
     pub fn sibling(self) -> Self {
         Self {
@@ -90,15 +106,24 @@ impl LeafPos {
     }
 
     /// Returns this leaf's position in the node tree (height 0).
-    pub fn node_pos(self) -> NodePos {
+    pub fn to_node_pos(self) -> NodePos {
         NodePos::new(0, self.0)
     }
 }
 
+impl From<LeafPos> for NodePos {
+    fn from(leaf: LeafPos) -> Self {
+        leaf.to_node_pos()
+    }
+}
+
 /// Size (in leaves) of the highest perfect mountain that fits in `leaves`.
+///
+/// This is the largest power of two `<= leaves`, i.e. `2^floor(log2(leaves))`.
+/// (`next_power_of_two` rounds the other way, to the smallest power `>=`.)
 fn highest_mountain_size(leaves: u64) -> u64 {
     debug_assert!(leaves > 0, "highest_mountain_size: leaves must be > 0");
-    1u64 << (63 - leaves.leading_zeros())
+    1u64 << leaves.ilog2()
 }
 
 /// Returns the peak positions for an MMR of `leaf_count` leaves, left to right.
@@ -173,6 +198,29 @@ mod tests {
     }
 
     #[test]
+    fn children_invert_parent_and_leaves_have_none() {
+        let node = NodePos::new(3, 5);
+        let (left, right) = node.children().expect("internal node has children");
+        assert_eq!(left, NodePos::new(2, 10));
+        assert_eq!(right, NodePos::new(2, 11));
+        assert_eq!(left.parent(), node);
+        assert_eq!(right.parent(), node);
+        assert!(left.is_left_child());
+        assert!(right.is_right_child());
+
+        // A leaf is height 0 and has no children.
+        assert_eq!(NodePos::new(0, 7).children(), None);
+    }
+
+    #[test]
+    fn leaf_pos_converts_to_node_pos() {
+        let leaf = LeafPos::new(9);
+        let expected = NodePos::new(0, 9);
+        assert_eq!(leaf.to_node_pos(), expected);
+        assert_eq!(NodePos::from(leaf), expected);
+    }
+
+    #[test]
     fn meta_slot_never_collides_with_real_nodes() {
         let meta = NodePos::meta(0).to_key();
         // No real node (height well under META_HEIGHT) shares the meta key.
@@ -188,6 +236,8 @@ mod tests {
             prop_assert_eq!(node.parent(), NodePos::new(height + 1, index >> 1));
             prop_assert_eq!(node.sibling(), NodePos::new(height, index ^ 1));
             prop_assert_eq!(node.is_left_child(), index % 2 == 0);
+            prop_assert_eq!(node.is_right_child(), index % 2 == 1);
+            prop_assert_eq!(node.is_left_child(), !node.is_right_child());
             // Sibling is its own inverse.
             prop_assert_eq!(node.sibling().sibling(), node);
         }
@@ -218,7 +268,7 @@ mod tests {
             prop_assert!(peak_positions(leaf_count).contains(&peak));
 
             // Walking up from the leaf reaches exactly that peak.
-            let mut cur = LeafPos::new(leaf_index).node_pos();
+            let mut cur = LeafPos::new(leaf_index).to_node_pos();
             let mut steps = 0u32;
             while cur != peak {
                 cur = cur.parent();

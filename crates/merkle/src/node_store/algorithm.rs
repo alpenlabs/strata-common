@@ -36,7 +36,7 @@ where
     MH: MerkleHasher,
 {
     let peak_pos = peak_for_leaf(leaf_index, leaf_count);
-    let mut current_pos = LeafPos::new(leaf_index).node_pos();
+    let mut current_pos = LeafPos::new(leaf_index).to_node_pos();
     let mut current_hash = leaf;
     let mut writes = vec![(current_pos, current_hash)];
 
@@ -68,7 +68,7 @@ where
 pub fn proof_positions(leaf_index: u64, leaf_count: u64) -> Vec<NodePos> {
     let peak_pos = peak_for_leaf(leaf_index, leaf_count);
     let mut positions = Vec::new();
-    let mut current_pos = LeafPos::new(leaf_index).node_pos();
+    let mut current_pos = LeafPos::new(leaf_index).to_node_pos();
 
     while current_pos != peak_pos {
         positions.push(current_pos.sibling());
