@@ -226,7 +226,7 @@ macro_rules! impl_ssz_transparent_wrapper {
 /// Describes how a wrapper type's SSZ encoding is delegated to another,
 /// well-defined SSZ type.
 ///
-/// Implementing this trait and invoking [`impl_ssz_via_delegate!`] gives a
+/// Implementing this trait and invoking `impl_ssz_via_delegate!` gives a
 /// wrapper type [`ssz::Encode`]/[`ssz::Decode`] impls that are *correct by
 /// construction*: the byte layout is determined entirely by the
 /// [`Delegate`](SszDelegate::Delegate) type — a generated SSZ container,
