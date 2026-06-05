@@ -31,3 +31,15 @@ class ThresholdConfigUpdateSsz(Container):
     remove_members: List[Bytes33, MAX_SIGNERS]
     ### New minimum number of signatures required (always >= 1).
     new_threshold: uint8
+
+### SSZ delegate for a single indexed ECDSA signature.
+class IndexedSignatureSsz(Container):
+    ### Index of the signer in the threshold config keys array.
+    index: uint8
+    ### 65-byte recoverable ECDSA signature (header || r || s).
+    signature: Vector[uint8, 65]
+
+### SSZ delegate for a set of indexed signatures (one per signer at most).
+class SignatureSetSsz(Container):
+    ### Indexed signatures, at most one per signer.
+    signatures: List[IndexedSignatureSsz, MAX_SIGNERS]

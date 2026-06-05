@@ -8,10 +8,11 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize};
 use ssz::DecodeError;
 use ssz_derive::{Decode, Encode};
+use ssz_primitives::FixedBytes;
 use strata_identifiers::{Buf32, SszDelegate, impl_borsh_via_ssz, impl_ssz_via_delegate};
 use strata_l1_txfmt::TagData;
 
-use crate::ssz_generated::ssz::btc::L1PayloadSsz;
+use crate::ssz_generated::ssz::btc::{BlobSpecSsz, L1PayloadSsz, PayloadIntentSsz, PayloadSpecSsz};
 
 /// DA destination identifier. This will eventually be used to enable
 /// storing payloads on alternative availability schemes.
@@ -64,8 +65,6 @@ impl<'a> Arbitrary<'a> for PayloadDest {
     BorshSerialize,
     Serialize,
     Deserialize,
-    Encode,
-    Decode,
 )]
 pub struct BlobSpec {
     /// Target settlement layer we're expecting the DA on.
@@ -75,6 +74,29 @@ pub struct BlobSpec {
     /// merkle root) that we expect to see committed to DA.
     commitment: Buf32,
 }
+
+// SSZ encoding delegates to the generated [`BlobSpecSsz`] container — correct by
+// construction rather than hand-rolled.
+impl SszDelegate for BlobSpec {
+    type Delegate = BlobSpecSsz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        BlobSpecSsz {
+            dest: self.dest.into(),
+            commitment: FixedBytes(self.commitment.0),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self {
+            dest: PayloadDest::try_from(delegate.dest)
+                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?,
+            commitment: Buf32::from(delegate.commitment),
+        })
+    }
+}
+
+impl_ssz_via_delegate!(BlobSpec);
 
 impl BlobSpec {
     /// The target we expect the DA payload to be stored on.
@@ -107,8 +129,6 @@ impl BlobSpec {
     BorshSerialize,
     Serialize,
     Deserialize,
-    Encode,
-    Decode,
 )]
 pub struct PayloadSpec {
     /// Target settlement layer we're expecting the DA on.
@@ -118,6 +138,29 @@ pub struct PayloadSpec {
     /// merkle root) that we expect to see committed to DA.
     commitment: Buf32,
 }
+
+// SSZ encoding delegates to the generated [`PayloadSpecSsz`] container — correct
+// by construction rather than hand-rolled.
+impl SszDelegate for PayloadSpec {
+    type Delegate = PayloadSpecSsz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        PayloadSpecSsz {
+            dest: self.dest.into(),
+            commitment: FixedBytes(self.commitment.0),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self {
+            dest: PayloadDest::try_from(delegate.dest)
+                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?,
+            commitment: Buf32::from(delegate.commitment),
+        })
+    }
+}
+
+impl_ssz_via_delegate!(PayloadSpec);
 
 impl PayloadSpec {
     /// The target we expect the DA payload to be stored on.
@@ -247,9 +290,7 @@ impl<'a> arbitrary::Arbitrary<'a> for L1Payload {
 /// about it.
 ///
 /// These are never stored on-chain.
-#[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Encode, Decode,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize)]
 // TODO: rename this to L1PayloadIntent and remove the dest field
 pub struct PayloadIntent {
     /// The destination for this payload.
@@ -261,6 +302,32 @@ pub struct PayloadIntent {
     /// Blob payload.
     payload: L1Payload,
 }
+
+// SSZ encoding delegates to the generated [`PayloadIntentSsz`] container, whose
+// `payload` field reuses the [`L1PayloadSsz`] delegate — correct by construction
+// rather than hand-rolled.
+impl SszDelegate for PayloadIntent {
+    type Delegate = PayloadIntentSsz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        PayloadIntentSsz {
+            dest: self.dest.into(),
+            commitment: FixedBytes(self.commitment.0),
+            payload: self.payload.into_delegate(),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self {
+            dest: PayloadDest::try_from(delegate.dest)
+                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?,
+            commitment: Buf32::from(delegate.commitment),
+            payload: L1Payload::from_delegate(delegate.payload)?,
+        })
+    }
+}
+
+impl_ssz_via_delegate!(PayloadIntent);
 
 impl PayloadIntent {
     /// Creates a new payload intent with a destination, commitment, and payload.

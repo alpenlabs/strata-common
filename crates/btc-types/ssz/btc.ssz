@@ -47,3 +47,28 @@ class L1PayloadSsz(Container):
     tx_type: uint8
     ### Auxiliary tag data (remaining tag bytes).
     aux_data: List[byte, MAX_AUX_DATA_LEN]
+
+### SSZ delegate for a DA blob spec (target + commitment).
+###
+### `dest` is the single-byte `PayloadDest` selector.
+class BlobSpecSsz(Container):
+    ### Target settlement layer selector.
+    dest: uint8
+    ### Commitment to the payload.
+    commitment: Bytes32
+
+### SSZ delegate for a DA payload spec (target + commitment).
+class PayloadSpecSsz(Container):
+    ### Target settlement layer selector.
+    dest: uint8
+    ### Commitment to the payload.
+    commitment: Bytes32
+
+### SSZ delegate for a payload intent (target + commitment + payload).
+class PayloadIntentSsz(Container):
+    ### Target settlement layer selector.
+    dest: uint8
+    ### Commitment to the payload.
+    commitment: Bytes32
+    ### The blob payload itself.
+    payload: L1PayloadSsz
