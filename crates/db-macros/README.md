@@ -37,6 +37,28 @@ pub trait TaskDb: Send + Sync + 'static {
 // let n = proxy.count_tasks_async().await?;
 ```
 
+## Tracing instrumentation
+
+Pass an optional `tracing_component = <string>` argument to instrument each call:
+
+```rust
+#[gen_proxy(error = DbError, tracing_component = "storage:task")]
+pub trait TaskDb: Send + Sync + 'static {
+    fn get_task(&self, key: Vec<u8>) -> DbResult<Option<Vec<u8>>>;
+}
+```
+
+When set, the underlying call is routed through a private, instrumented shim
+(`#[tracing::instrument(level = "trace", fields(component = "storage:task"))]`), so
+a span is produced for every variant, recording the method arguments and the
+component field — mirroring the legacy `inst_ops` shim instrumentation.
+
+For the `_async`/`_chan` variants the shim runs on a `spawn_blocking` thread, so the
+caller's current span (`tracing::Span::current()`) is captured and re-entered inside
+the task. The method's span is therefore parented to the async task that issued the
+call rather than orphaned on the blocking thread. Setting `tracing_component`
+requires the consuming crate to depend on `tracing`.
+
 ## Requirements & constraints
 
 - The `error = ...` type must implement `From<tokio::task::JoinError>` (a panic in

@@ -3,13 +3,17 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    FnArg, GenericArgument, ItemTrait, Pat, PatType, Path, PathArguments, ReturnType, TraitItem,
-    TraitItemFn, Type,
+    FnArg, GenericArgument, ItemTrait, LitStr, Pat, PatType, Path, PathArguments, ReturnType,
+    TraitItem, TraitItemFn, Type,
 };
 
 /// Expands the annotated trait into the original trait plus its proxy and receiver
 /// types.
-pub(crate) fn expand(error_ty: &Path, item: &ItemTrait) -> syn::Result<TokenStream> {
+pub(crate) fn expand(
+    error_ty: &Path,
+    tracing_component: Option<&LitStr>,
+    item: &ItemTrait,
+) -> syn::Result<TokenStream> {
     if !item.generics.params.is_empty() {
         return Err(syn::Error::new_spanned(
             &item.generics,
@@ -25,7 +29,14 @@ pub(crate) fn expand(error_ty: &Path, item: &ItemTrait) -> syn::Result<TokenStre
     let mut methods = TokenStream::new();
     for trait_item in &item.items {
         if let TraitItem::Fn(method) = trait_item
-            && let Some(tokens) = gen_method(method, trait_ident, &recv_ident, error_ty, vis)
+            && let Some(tokens) = gen_method(
+                method,
+                trait_ident,
+                &recv_ident,
+                error_ty,
+                tracing_component,
+                vis,
+            )
         {
             methods.extend(tokens);
         }
@@ -105,6 +116,7 @@ fn gen_method(
     trait_ident: &syn::Ident,
     recv_ident: &syn::Ident,
     error_ty: &Path,
+    tracing_component: Option<&LitStr>,
     vis: &syn::Visibility,
 ) -> Option<TokenStream> {
     let sig = &method.sig;
@@ -155,18 +167,77 @@ fn gen_method(
     let async_doc =
         format!("Async variant of `{trait_ident}::{name}`; awaits a spawned blocking task.");
 
-    Some(quote! {
-        #[doc = #blocking_doc]
-        #vis fn #blocking(&self, #(#arg_decls),*) -> #ret_ty {
-            self.inner.#name(#(#arg_names),*)
-        }
+    // Both the blocking and channel variants invoke the underlying trait method on the
+    // `dyn` instance. When a component is configured, that call goes through a private,
+    // instrumented shim (associated function taking `&dyn Trait`) so a span is produced
+    // for every variant while recording the method arguments and component field —
+    // mirroring the legacy `inst_ops` shims. When not instrumented, the call is made
+    // directly and `::tracing` is never referenced, keeping it an optional dependency.
+    //
+    // For the channel/async paths the shim runs on a `spawn_blocking` thread, so the
+    // caller's current span is captured and re-entered inside the task, parenting the
+    // method's span to the issuing async task rather than orphaning it on the blocking
+    // thread.
+    let name_str = name.to_string();
+    let shim_ident = format_ident!("__{}_shim", name);
 
-        #[doc = #chan_doc]
-        #vis fn #chan(&self, #(#arg_decls),*) -> #recv_ident<#success_ty, #error_ty> {
+    let (shim_fn, blocking_body, chan_body) = if let Some(component) = tracing_component {
+        let shim_fn = quote! {
+            #[::tracing::instrument(
+                level = "trace",
+                name = #name_str,
+                skip(inner),
+                fields(component = #component),
+            )]
+            fn #shim_ident(
+                inner: &(dyn #trait_ident + ::core::marker::Send + ::core::marker::Sync),
+                #(#arg_decls),*
+            ) -> #ret_ty {
+                inner.#name(#(#arg_names),*)
+            }
+        };
+
+        let blocking_body = quote! {
+            Self::#shim_ident(self.inner.as_ref(), #(#arg_names),*)
+        };
+
+        let chan_body = quote! {
+            let inner = ::std::sync::Arc::clone(&self.inner);
+            let parent_span = ::tracing::Span::current();
+            #recv_ident {
+                inner: self.handle.spawn_blocking(move || {
+                    parent_span.in_scope(move || Self::#shim_ident(inner.as_ref(), #(#arg_names),*))
+                }),
+            }
+        };
+
+        (Some(shim_fn), blocking_body, chan_body)
+    } else {
+        let blocking_body = quote! {
+            self.inner.#name(#(#arg_names),*)
+        };
+
+        let chan_body = quote! {
             let inner = ::std::sync::Arc::clone(&self.inner);
             #recv_ident {
                 inner: self.handle.spawn_blocking(move || inner.#name(#(#arg_names),*)),
             }
+        };
+
+        (None, blocking_body, chan_body)
+    };
+
+    Some(quote! {
+        #shim_fn
+
+        #[doc = #blocking_doc]
+        #vis fn #blocking(&self, #(#arg_decls),*) -> #ret_ty {
+            #blocking_body
+        }
+
+        #[doc = #chan_doc]
+        #vis fn #chan(&self, #(#arg_decls),*) -> #recv_ident<#success_ty, #error_ty> {
+            #chan_body
         }
 
         #[doc = #async_doc]
