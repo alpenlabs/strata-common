@@ -185,14 +185,14 @@ impl PayloadSpec {
 /// SSZ encoding bounds.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum L1PayloadError {
-    /// A single payload chunk is longer than [`MAX_PAYLOAD_CHUNK_LEN`].
+    /// A single payload chunk is longer than `MAX_PAYLOAD_CHUNK_LEN`.
     #[error("payload chunk of {len} bytes exceeds maximum of {MAX_PAYLOAD_CHUNK_LEN}")]
     ChunkTooLong {
         /// Length of the offending chunk.
         len: usize,
     },
 
-    /// The payload has more than [`MAX_PAYLOAD_CHUNKS`] chunks.
+    /// The payload has more than `MAX_PAYLOAD_CHUNKS` chunks.
     #[error("payload has {count} chunks, exceeding maximum of {MAX_PAYLOAD_CHUNKS}")]
     TooManyChunks {
         /// Number of chunks supplied.
@@ -227,8 +227,8 @@ impl L1Payload {
     /// # Errors
     ///
     /// Returns [`L1PayloadError`] if the data exceeds the SSZ encoding bounds:
-    /// any chunk longer than [`MAX_PAYLOAD_CHUNK_LEN`], or more than
-    /// [`MAX_PAYLOAD_CHUNKS`] chunks.
+    /// any chunk longer than `MAX_PAYLOAD_CHUNK_LEN`, or more than
+    /// `MAX_PAYLOAD_CHUNKS` chunks.
     pub fn new(payload: Vec<Vec<u8>>, tag: TagData) -> Result<Self, L1PayloadError> {
         if payload.len() > MAX_PAYLOAD_CHUNKS as usize {
             return Err(L1PayloadError::TooManyChunks {
