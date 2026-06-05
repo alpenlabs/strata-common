@@ -12,7 +12,10 @@ use ssz_primitives::FixedBytes;
 use strata_identifiers::{Buf32, SszDelegate, impl_borsh_via_ssz, impl_ssz_via_delegate};
 use strata_l1_txfmt::TagData;
 
-use crate::ssz_generated::ssz::btc::{BlobSpecSsz, L1PayloadSsz, PayloadIntentSsz, PayloadSpecSsz};
+use crate::ssz_generated::ssz::btc::{
+    BlobSpecSsz, L1PayloadSsz, MAX_PAYLOAD_CHUNK_LEN, MAX_PAYLOAD_CHUNKS, PayloadIntentSsz,
+    PayloadSpecSsz,
+};
 
 /// DA destination identifier. This will eventually be used to enable
 /// storing payloads on alternative availability schemes.
@@ -178,12 +181,36 @@ impl PayloadSpec {
     }
 }
 
+/// Error returned when constructing an [`L1Payload`] with data that exceeds the
+/// SSZ encoding bounds.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum L1PayloadError {
+    /// A single payload chunk is longer than [`MAX_PAYLOAD_CHUNK_LEN`].
+    #[error("payload chunk of {len} bytes exceeds maximum of {MAX_PAYLOAD_CHUNK_LEN}")]
+    ChunkTooLong {
+        /// Length of the offending chunk.
+        len: usize,
+    },
+
+    /// The payload has more than [`MAX_PAYLOAD_CHUNKS`] chunks.
+    #[error("payload has {count} chunks, exceeding maximum of {MAX_PAYLOAD_CHUNKS}")]
+    TooManyChunks {
+        /// Number of chunks supplied.
+        count: usize,
+    },
+}
+
 /// Data that is submitted to L1. This can be DA, Checkpoint, etc.
 ///
+/// The chunk bounds enforced by [`L1Payload::new`] mirror the SSZ container's
+/// length-bounded lists, so a constructed (or deserialized) `L1Payload` is
+/// always SSZ-encodable.
+///
 /// The serde representation flattens the [`TagData`] fields alongside the
-/// payload (`{payload, subproto_id, tx_type, aux_data}`); deserialization is
-/// validated by `TagData`'s own (validating) `Deserialize` impl.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+/// payload (`{payload, subproto_id, tx_type, aux_data}`); deserialization
+/// routes through [`L1Payload::new`] (and `TagData`'s own validating
+/// `Deserialize`) so the same invariants hold.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct L1Payload {
     /// Data payload.
     #[serde(rename = "payload")]
@@ -196,8 +223,25 @@ pub struct L1Payload {
 
 impl L1Payload {
     /// Creates a new L1 payload from data chunks and tag metadata.
-    pub fn new(payload: Vec<Vec<u8>>, tag: TagData) -> Self {
-        Self { data: payload, tag }
+    ///
+    /// # Errors
+    ///
+    /// Returns [`L1PayloadError`] if the data exceeds the SSZ encoding bounds:
+    /// any chunk longer than [`MAX_PAYLOAD_CHUNK_LEN`], or more than
+    /// [`MAX_PAYLOAD_CHUNKS`] chunks.
+    pub fn new(payload: Vec<Vec<u8>>, tag: TagData) -> Result<Self, L1PayloadError> {
+        if payload.len() > MAX_PAYLOAD_CHUNKS as usize {
+            return Err(L1PayloadError::TooManyChunks {
+                count: payload.len(),
+            });
+        }
+        if let Some(chunk) = payload
+            .iter()
+            .find(|chunk| chunk.len() > MAX_PAYLOAD_CHUNK_LEN as usize)
+        {
+            return Err(L1PayloadError::ChunkTooLong { len: chunk.len() });
+        }
+        Ok(Self { data: payload, tag })
     }
 
     /// Returns the data payload chunks.
@@ -208,6 +252,26 @@ impl L1Payload {
     /// Returns a reference to the tag metadata.
     pub fn tag(&self) -> &TagData {
         &self.tag
+    }
+}
+
+/// [`Deserialize`] is implemented manually to route through [`L1Payload::new`],
+/// enforcing the same chunk bounds that direct construction does.
+impl<'de> Deserialize<'de> for L1Payload {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Raw {
+            #[serde(rename = "payload")]
+            data: Vec<Vec<u8>>,
+            #[serde(flatten)]
+            tag: TagData,
+        }
+
+        let raw = Raw::deserialize(deserializer)?;
+        Self::new(raw.data, raw.tag).map_err(serde::de::Error::custom)
     }
 }
 
@@ -223,6 +287,8 @@ impl SszDelegate for L1Payload {
     type Delegate = L1PayloadSsz;
 
     fn into_delegate(self) -> Self::Delegate {
+        // These conversions cannot fail: `L1Payload::new` (and all decode paths)
+        // enforce the same bounds, so the type can never hold out-of-range data.
         let data = self
             .data
             .into_iter()
@@ -267,7 +333,18 @@ impl_ssz_via_delegate!(L1Payload);
 
 impl<'a> arbitrary::Arbitrary<'a> for L1Payload {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let data = Vec::<Vec<u8>>::arbitrary(u)?;
+        // Generate a bounded number of bounded chunks so the result is always a
+        // valid (SSZ-encodable) payload.
+        let num_chunks = u.int_in_range(0..=8)?;
+        let mut data = Vec::with_capacity(num_chunks);
+        for _ in 0..num_chunks {
+            let chunk_len = u.int_in_range(0..=64)?;
+            let mut chunk = Vec::with_capacity(chunk_len);
+            for _ in 0..chunk_len {
+                chunk.push(u8::arbitrary(u)?);
+            }
+            data.push(chunk);
+        }
 
         let subproto_id = u8::arbitrary(u)?;
         let tx_type = u8::arbitrary(u)?;
@@ -367,7 +444,8 @@ impl PayloadIntent {
 mod tests {
     use strata_l1_txfmt::TagData;
 
-    use crate::payload::L1Payload;
+    use crate::payload::{L1Payload, L1PayloadError};
+    use crate::ssz_generated::ssz::btc::{MAX_PAYLOAD_CHUNK_LEN, MAX_PAYLOAD_CHUNKS};
     use crate::test_helpers::ArbitraryGenerator;
 
     #[test]
@@ -393,7 +471,8 @@ mod tests {
         let payload = L1Payload::new(
             vec![vec![1, 2, 3]],
             TagData::new(5, 9, vec![0xAA, 0xBB]).unwrap(),
-        );
+        )
+        .unwrap();
         let value: serde_json::Value = serde_json::to_value(&payload).unwrap();
         let obj = value.as_object().unwrap();
 
@@ -405,5 +484,39 @@ mod tests {
             !obj.contains_key("tag"),
             "tag must be flattened, not nested"
         );
+    }
+
+    #[test]
+    fn test_l1_payload_new_rejects_long_chunk() {
+        let tag = TagData::new(1, 1, vec![]).unwrap();
+        let chunk = vec![0u8; MAX_PAYLOAD_CHUNK_LEN as usize + 1];
+        assert!(matches!(
+            L1Payload::new(vec![chunk], tag),
+            Err(L1PayloadError::ChunkTooLong { .. })
+        ));
+    }
+
+    #[test]
+    fn test_l1_payload_new_rejects_too_many_chunks() {
+        let tag = TagData::new(1, 1, vec![]).unwrap();
+        let chunks = vec![vec![]; MAX_PAYLOAD_CHUNKS as usize + 1];
+        assert!(matches!(
+            L1Payload::new(chunks, tag),
+            Err(L1PayloadError::TooManyChunks { .. })
+        ));
+    }
+
+    #[test]
+    fn test_l1_payload_deserialize_rejects_long_chunk() {
+        // A JSON payload with an over-long chunk must be rejected by the
+        // validating `Deserialize` rather than producing a panicking value.
+        let long = MAX_PAYLOAD_CHUNK_LEN as usize + 1;
+        let json = serde_json::json!({
+            "payload": [vec![0u8; long]],
+            "subproto_id": 1,
+            "tx_type": 1,
+            "aux_data": [],
+        });
+        assert!(serde_json::from_value::<L1Payload>(json).is_err());
     }
 }

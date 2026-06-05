@@ -2,11 +2,9 @@
 
 use std::collections::HashSet;
 use std::hash::{self, Hash};
-use std::io;
 use std::num::NonZero;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use ssz::DecodeError;
@@ -29,10 +27,10 @@ pub const MAX_SIGNERS: usize = 256;
 /// The threshold is stored as `NonZero<u8>` to enforce at the type level
 /// that it can never be zero.
 ///
-/// Note: [`Deserialize`] and [`BorshDeserialize`] are implemented manually
-/// to route through [`Self::try_new`], ensuring that deserialized values
-/// satisfy the same invariants.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, BorshSerialize)]
+/// Note: [`Deserialize`] is implemented manually to route through
+/// [`Self::try_new`], ensuring that deserialized values satisfy the same
+/// invariants.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ThresholdConfig {
     /// Public keys of all authorized signers.
     keys: Vec<CompressedPublicKey>,
@@ -54,15 +52,6 @@ impl<'de> Deserialize<'de> for ThresholdConfig {
 
         let raw = Raw::deserialize(deserializer)?;
         Self::try_new(raw.keys, raw.threshold).map_err(Error::custom)
-    }
-}
-
-/// [`BorshDeserialize`] is implemented manually to route through [`Self::try_new`].
-impl BorshDeserialize for ThresholdConfig {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let keys = Vec::<CompressedPublicKey>::deserialize_reader(reader)?;
-        let threshold = NonZero::<u8>::deserialize_reader(reader)?;
-        Self::try_new(keys, threshold).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 }
 
@@ -101,6 +90,8 @@ impl SszDelegate for ThresholdConfig {
     type Delegate = ThresholdConfigSsz;
 
     fn into_delegate(self) -> Self::Delegate {
+        // Cannot fail: `validate_update` (which gates every construction and
+        // mutation path) rejects configs with more than `MAX_SIGNERS` keys.
         let keys = self
             .keys
             .into_iter()
@@ -212,6 +203,17 @@ impl ThresholdConfig {
         let updated_size =
             self.keys.len() + update.add_members().len() - update.remove_members().len();
 
+        // Ensure the resulting member count stays within the SSZ-encodable bound.
+        // This is the single chokepoint for all construction/mutation/decode paths
+        // (`try_new`, `apply_update`, serde decode), so enforcing it here guarantees
+        // a `ThresholdConfig` can never hold more than `MAX_SIGNERS` keys.
+        if updated_size > MAX_SIGNERS {
+            return Err(ThresholdSignatureError::TooManySigners {
+                count: updated_size,
+                max: MAX_SIGNERS,
+            });
+        }
+
         if (update.new_threshold().get() as usize) > updated_size {
             return Err(ThresholdSignatureError::InvalidThreshold {
                 threshold: update.new_threshold().get(),
@@ -250,7 +252,7 @@ impl Hash for CompressedPublicKey {
 }
 
 /// Represents a change to the threshold configuration.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThresholdConfigUpdate {
     /// Public keys to add.
     add_members: Vec<CompressedPublicKey>,
@@ -371,6 +373,15 @@ mod tests {
         CompressedPublicKey::from(secp256k1::PublicKey::from_secret_key(&secp, &sk))
     }
 
+    /// Distinct key from a wider seed, for generating more than 255 unique keys.
+    fn make_key_n(i: u32) -> CompressedPublicKey {
+        let secp = Secp256k1::new();
+        let mut sk_bytes = [0u8; 32];
+        sk_bytes[28..32].copy_from_slice(&(i + 1).to_be_bytes());
+        let sk = SecretKey::from_slice(&sk_bytes).unwrap();
+        CompressedPublicKey::from(secp256k1::PublicKey::from_secret_key(&secp, &sk))
+    }
+
     #[test]
     fn test_config_creation() {
         let keys = vec![make_key(1), make_key(2), make_key(3)];
@@ -378,6 +389,27 @@ mod tests {
 
         assert_eq!(config.keys().len(), 3);
         assert_eq!(config.threshold(), 2);
+    }
+
+    #[test]
+    fn test_config_rejects_more_than_max_signers() {
+        // 257 distinct keys exceeds the MAX_SIGNERS = 256 cap.
+        let keys: Vec<_> = (0..=MAX_SIGNERS as u32).map(make_key_n).collect();
+        let result = ThresholdConfig::try_new(keys, NonZero::new(1).unwrap());
+        assert!(matches!(
+            result,
+            Err(ThresholdSignatureError::TooManySigners { .. })
+        ));
+    }
+
+    #[test]
+    fn test_config_deserialize_rejects_more_than_max_signers() {
+        // The validating `Deserialize` routes through `try_new`, so a JSON config
+        // with more than MAX_SIGNERS keys must be rejected rather than decoded into
+        // a value that later panics on SSZ encoding.
+        let keys: Vec<_> = (0..=MAX_SIGNERS as u32).map(make_key_n).collect();
+        let json = serde_json::json!({ "keys": keys, "threshold": 1 });
+        assert!(serde_json::from_value::<ThresholdConfig>(json).is_err());
     }
 
     #[test]
@@ -419,32 +451,11 @@ mod tests {
     }
 
     #[test]
-    fn test_config_borsh_roundtrip() {
-        let keys = vec![make_key(1), make_key(2)];
-        let config = ThresholdConfig::try_new(keys, NonZero::new(2).unwrap()).unwrap();
-
-        let encoded = borsh::to_vec(&config).unwrap();
-        let decoded: ThresholdConfig = borsh::from_slice(&encoded).unwrap();
-
-        assert_eq!(config, decoded);
-    }
-
-    #[test]
     fn test_config_serde_json_roundtrip_arbitrary() {
         let config: ThresholdConfig = ArbitraryGenerator::new().generate();
 
         let json = serde_json::to_string(&config).unwrap();
         let decoded: ThresholdConfig = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(config, decoded);
-    }
-
-    #[test]
-    fn test_config_borsh_roundtrip_arbitrary() {
-        let config: ThresholdConfig = ArbitraryGenerator::new().generate();
-
-        let encoded = borsh::to_vec(&config).unwrap();
-        let decoded: ThresholdConfig = borsh::from_slice(&encoded).unwrap();
 
         assert_eq!(config, decoded);
     }
