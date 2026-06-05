@@ -134,7 +134,7 @@ impl AccountSerial {
 
 impl fmt::Display for AccountSerial {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "serial:{}", &self.0)
+        write!(f, "serial:{}", self.0)
     }
 }
 

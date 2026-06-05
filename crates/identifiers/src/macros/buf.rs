@@ -171,4 +171,6 @@ macro_rules! impl_rbuf_fmt {
     };
 }
 
-pub(crate) use {impl_buf_core, impl_buf_fmt, impl_rbuf_fmt};
+pub(crate) use impl_buf_core;
+pub(crate) use impl_buf_fmt;
+pub(crate) use impl_rbuf_fmt;
