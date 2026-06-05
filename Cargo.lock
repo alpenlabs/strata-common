@@ -4051,6 +4051,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-db-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+ "tokio",
+]
+
+[[package]]
 name = "strata-identifiers"
 version = "0.1.0"
 dependencies = [
