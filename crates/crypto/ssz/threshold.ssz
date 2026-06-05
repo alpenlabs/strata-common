@@ -1,0 +1,33 @@
+# SSZ schema definitions for strata-crypto threshold-signature types.
+#
+# These containers are the canonical SSZ "delegate" representations for the
+# threshold-config wrapper types. The Rust wrappers implement `SszDelegate`
+# against the generated types and obtain their `Encode`/`Decode`/`TreeHash`
+# impls via `impl_ssz_via_delegate!`, so the layout is correct by construction.
+#
+# Signer public keys are modelled as raw 33-byte compressed points (`Bytes33`)
+# rather than the `CompressedPublicKey` wrapper: the wrapper's curve-point
+# validation is reapplied during `from_delegate`, which keeps the generated
+# container free of any dependency on the wrapper's trait impls.
+
+### Maximum number of signers in a threshold configuration.
+###
+### Matches the `MAX_SIGNERS` runtime cap (the signer index is a `u8`, so at
+### most 256 unique signers are addressable).
+MAX_SIGNERS = 256
+
+### SSZ delegate for a threshold-signature configuration.
+class ThresholdConfigSsz(Container):
+    ### Compressed public keys of all authorized signers.
+    keys: List[Bytes33, MAX_SIGNERS]
+    ### Minimum number of signatures required (always >= 1).
+    threshold: uint8
+
+### SSZ delegate for a threshold-configuration update.
+class ThresholdConfigUpdateSsz(Container):
+    ### Compressed public keys to add.
+    add_members: List[Bytes33, MAX_SIGNERS]
+    ### Compressed public keys to remove.
+    remove_members: List[Bytes33, MAX_SIGNERS]
+    ### New minimum number of signatures required (always >= 1).
+    new_threshold: uint8

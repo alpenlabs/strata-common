@@ -9,7 +9,7 @@ mod errors;
 mod signature;
 mod verification;
 
-pub use config::{ThresholdConfig, ThresholdConfigUpdate, MAX_SIGNERS};
+pub use config::{MAX_SIGNERS, ThresholdConfig, ThresholdConfigUpdate};
 pub use errors::ThresholdSignatureError;
 pub use signature::{IndexedSignature, SignatureSet};
 pub use verification::verify_threshold_signatures;

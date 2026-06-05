@@ -9,11 +9,13 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
-use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
-use ssz_derive::{Decode, Encode};
+use ssz::DecodeError;
+use ssz_primitives::FixedBytes;
+use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
 
 use super::ThresholdSignatureError;
 use crate::keys::compressed::CompressedPublicKey;
+use crate::ssz_generated::ssz::threshold::{ThresholdConfigSsz, ThresholdConfigUpdateSsz};
 
 /// Maximum number of signers allowed in a threshold configuration.
 ///
@@ -36,15 +38,6 @@ pub struct ThresholdConfig {
     keys: Vec<CompressedPublicKey>,
     /// Minimum number of signatures required (always >= 1).
     threshold: NonZero<u8>,
-}
-
-/// SSZ representation of a [ThresholdConfig].
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
-struct ThresholdConfigSsz {
-    /// Public keys of all authorized signers.
-    keys: Vec<CompressedPublicKey>,
-    /// Minimum number of signatures required (always >= 1).
-    threshold: u8,
 }
 
 /// [`Deserialize`] is implemented manually to route through [`Self::try_new`].
@@ -101,41 +94,40 @@ impl<'a> Arbitrary<'a> for ThresholdConfig {
     }
 }
 
-impl SszEncodeTrait for ThresholdConfig {
-    fn is_ssz_fixed_len() -> bool {
-        <ThresholdConfigSsz as SszEncodeTrait>::is_ssz_fixed_len()
-    }
+// SSZ encoding delegates to the generated [`ThresholdConfigSsz`] container, whose
+// `keys` field is a length-bounded `List[Bytes33, MAX_SIGNERS]` — correct by
+// construction rather than hand-rolled.
+impl SszDelegate for ThresholdConfig {
+    type Delegate = ThresholdConfigSsz;
 
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
+    fn into_delegate(self) -> Self::Delegate {
+        let keys = self
+            .keys
+            .into_iter()
+            .map(|key| FixedBytes(key.serialize()))
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("more than MAX_SIGNERS keys");
         ThresholdConfigSsz {
-            keys: self.keys.clone(),
+            keys,
             threshold: self.threshold.get(),
         }
-        .ssz_append(buf);
     }
 
-    fn ssz_bytes_len(&self) -> usize {
-        ThresholdConfigSsz {
-            keys: self.keys.clone(),
-            threshold: self.threshold.get(),
-        }
-        .ssz_bytes_len()
-    }
-}
-
-impl SszDecodeTrait for ThresholdConfig {
-    fn is_ssz_fixed_len() -> bool {
-        <ThresholdConfigSsz as SszDecodeTrait>::is_ssz_fixed_len()
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let decoded = ThresholdConfigSsz::from_ssz_bytes(bytes)?;
-        let threshold = NonZero::new(decoded.threshold)
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        let keys = delegate
+            .keys
+            .iter()
+            .map(|key| CompressedPublicKey::from_slice(&key.0))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
+        let threshold = NonZero::new(delegate.threshold)
             .ok_or_else(|| DecodeError::BytesInvalid("threshold must be non-zero".into()))?;
-        Self::try_new(decoded.keys, threshold)
-            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))
+        Self::try_new(keys, threshold).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
     }
 }
+
+impl_ssz_via_delegate!(ThresholdConfig);
 
 impl ThresholdConfig {
     /// Create a new threshold configuration.
@@ -268,17 +260,6 @@ pub struct ThresholdConfigUpdate {
     new_threshold: NonZero<u8>,
 }
 
-/// SSZ representation of a [ThresholdConfigUpdate].
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
-struct ThresholdConfigUpdateSsz {
-    /// Public keys of all authorized signers.
-    add_members: Vec<CompressedPublicKey>,
-    /// Public keys to remove.
-    remove_members: Vec<CompressedPublicKey>,
-    /// Minimum number of signatures required (always >= 1).
-    new_threshold: u8,
-}
-
 impl ThresholdConfigUpdate {
     /// Creates a new threshold configuration update.
     pub fn new(
@@ -337,46 +318,43 @@ impl<'a> Arbitrary<'a> for ThresholdConfigUpdate {
     }
 }
 
-impl SszEncodeTrait for ThresholdConfigUpdate {
-    fn is_ssz_fixed_len() -> bool {
-        <ThresholdConfigUpdateSsz as SszEncodeTrait>::is_ssz_fixed_len()
-    }
+// SSZ encoding delegates to the generated [`ThresholdConfigUpdateSsz`] container,
+// whose member lists are length-bounded `List[Bytes33, MAX_SIGNERS]` — correct by
+// construction rather than hand-rolled.
+impl SszDelegate for ThresholdConfigUpdate {
+    type Delegate = ThresholdConfigUpdateSsz;
 
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
+    fn into_delegate(self) -> Self::Delegate {
+        let to_bytes_list = |keys: Vec<CompressedPublicKey>| {
+            keys.into_iter()
+                .map(|key| FixedBytes(key.serialize()))
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("more than MAX_SIGNERS members")
+        };
         ThresholdConfigUpdateSsz {
-            add_members: self.add_members.clone(),
-            remove_members: self.remove_members.clone(),
+            add_members: to_bytes_list(self.add_members),
+            remove_members: to_bytes_list(self.remove_members),
             new_threshold: self.new_threshold.get(),
         }
-        .ssz_append(buf);
     }
 
-    fn ssz_bytes_len(&self) -> usize {
-        ThresholdConfigUpdateSsz {
-            add_members: self.add_members.clone(),
-            remove_members: self.remove_members.clone(),
-            new_threshold: self.new_threshold.get(),
-        }
-        .ssz_bytes_len()
-    }
-}
-
-impl SszDecodeTrait for ThresholdConfigUpdate {
-    fn is_ssz_fixed_len() -> bool {
-        <ThresholdConfigUpdateSsz as SszDecodeTrait>::is_ssz_fixed_len()
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let decoded = ThresholdConfigUpdateSsz::from_ssz_bytes(bytes)?;
-        let new_threshold = NonZero::new(decoded.new_threshold)
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        let from_bytes_list = |keys: &ssz_types::VariableList<FixedBytes<33>, 256>| {
+            keys.iter()
+                .map(|key| CompressedPublicKey::from_slice(&key.0))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))
+        };
+        let add_members = from_bytes_list(&delegate.add_members)?;
+        let remove_members = from_bytes_list(&delegate.remove_members)?;
+        let new_threshold = NonZero::new(delegate.new_threshold)
             .ok_or_else(|| DecodeError::BytesInvalid("threshold must be non-zero".into()))?;
-        Ok(Self::new(
-            decoded.add_members,
-            decoded.remove_members,
-            new_threshold,
-        ))
+        Ok(Self::new(add_members, remove_members, new_threshold))
     }
 }
+
+impl_ssz_via_delegate!(ThresholdConfigUpdate);
 
 #[cfg(test)]
 mod tests {
@@ -469,5 +447,96 @@ mod tests {
         let decoded: ThresholdConfig = borsh::from_slice(&encoded).unwrap();
 
         assert_eq!(config, decoded);
+    }
+
+    #[test]
+    fn test_config_ssz_byte_layout() {
+        use ssz::Encode;
+
+        let keys = vec![make_key(1), make_key(2), make_key(3)];
+        let config = ThresholdConfig::try_new(keys.clone(), NonZero::new(2).unwrap()).unwrap();
+
+        // Byte layout of the `keys || threshold` container: a 4-byte offset to the
+        // variable `keys` list and the 1-byte `threshold` make up the 5-byte fixed
+        // part, followed by the 33-byte compressed keys concatenated.
+        let mut expected = Vec::new();
+        expected.extend_from_slice(&5u32.to_le_bytes()); // offset to keys
+        expected.push(2); // threshold
+        for key in &keys {
+            expected.extend_from_slice(&key.serialize());
+        }
+        assert_eq!(config.as_ssz_bytes(), expected);
+    }
+
+    /// Strategy producing a valid [`ThresholdConfig`] with distinct keys and a
+    /// threshold within range.
+    fn arb_threshold_config() -> impl proptest::strategy::Strategy<Value = ThresholdConfig> {
+        use proptest::prelude::*;
+
+        (1usize..=8)
+            .prop_flat_map(|n| (Just(n), 1u8..=(n as u8)))
+            .prop_map(|(n, threshold)| {
+                let keys = (0..n).map(|i| make_key(i as u8 + 1)).collect::<Vec<_>>();
+                ThresholdConfig::try_new(keys, NonZero::new(threshold).unwrap()).unwrap()
+            })
+    }
+
+    /// Strategy producing a [`ThresholdConfigUpdate`] with distinct add/remove sets.
+    fn arb_threshold_update() -> impl proptest::strategy::Strategy<Value = ThresholdConfigUpdate> {
+        use proptest::prelude::*;
+
+        (0usize..=4, 0usize..=4).prop_map(|(add, remove)| {
+            let add_members = (0..add).map(|i| make_key(i as u8 + 1)).collect::<Vec<_>>();
+            let remove_members = (0..remove)
+                .map(|i| make_key(i as u8 + 100))
+                .collect::<Vec<_>>();
+            ThresholdConfigUpdate::new(add_members, remove_members, NonZero::new(1).unwrap())
+        })
+    }
+
+    // SSZ roundtrip + deterministic tree-hash property tests. Each lives in its
+    // own module because `ssz_proptest!` defines fixed test-function names.
+    mod config_ssz {
+        use strata_ssz_tests::ssz_proptest;
+
+        use super::*;
+
+        ssz_proptest!(ThresholdConfig, arb_threshold_config());
+    }
+
+    mod update_ssz {
+        use strata_ssz_tests::ssz_proptest;
+
+        use super::*;
+
+        ssz_proptest!(ThresholdConfigUpdate, arb_threshold_update());
+    }
+
+    #[test]
+    fn test_config_ssz_rejects_non_curve_point() {
+        use ssz::Decode;
+
+        // A well-formed container whose single 33-byte key is not a valid point.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&5u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&[0u8; 33]);
+
+        assert!(ThresholdConfig::from_ssz_bytes(&bytes).is_err());
+    }
+
+    #[test]
+    fn test_config_tree_hash_matches_delegate() {
+        use tree_hash::{Sha256Hasher, TreeHash};
+
+        let config =
+            ThresholdConfig::try_new(vec![make_key(1), make_key(2)], NonZero::new(2).unwrap())
+                .unwrap();
+
+        // The wrapper's tree hash root must equal that of its SSZ delegate.
+        let wrapper_root = TreeHash::tree_hash_root::<Sha256Hasher>(&config);
+        let delegate_root =
+            TreeHash::tree_hash_root::<Sha256Hasher>(&config.clone().into_delegate());
+        assert_eq!(wrapper_root, delegate_root);
     }
 }

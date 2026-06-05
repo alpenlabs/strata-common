@@ -46,5 +46,7 @@ pub use exec::{EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment, Hash}
 pub use l1::L1BlockCommitmentRef;
 pub use l1::{L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
 #[cfg(feature = "ssz")]
+pub use macros::ssz::SszDelegate;
+#[cfg(feature = "ssz")]
 pub use ol::OLBlockCommitmentRef;
 pub use ol::{Epoch, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId, OLTxId, Slot};

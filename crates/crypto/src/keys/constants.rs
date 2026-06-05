@@ -5,9 +5,9 @@
 
 use std::sync::LazyLock;
 
-use bitcoin::bip32::ChildNumber;
 use bitcoin::XOnlyPublicKey;
-use secp256k1::hashes::{sha256, Hash};
+use bitcoin::bip32::ChildNumber;
+use secp256k1::hashes::{Hash, sha256};
 
 /// Strata base index for keys.
 ///

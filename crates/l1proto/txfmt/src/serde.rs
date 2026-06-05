@@ -2,8 +2,9 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize, de};
 
-use crate::MagicBytes;
 use crate::magic::MAGIC_BYTES_LEN;
+use crate::types::{SubprotocolId, TxType};
+use crate::{MagicBytes, TagData};
 
 impl Serialize for MagicBytes {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
@@ -56,9 +57,61 @@ impl<'de> Deserialize<'de> for MagicBytes {
     }
 }
 
+impl Serialize for TagData {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+
+        let mut st = s.serialize_struct("TagData", 3)?;
+        st.serialize_field("subproto_id", &self.subproto_id())?;
+        st.serialize_field("tx_type", &self.tx_type())?;
+        st.serialize_field("aux_data", self.aux_data())?;
+        st.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for TagData {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        // Route reconstruction through `TagData::new` so deserialized values are
+        // validated (e.g. the auxiliary-data length bound) instead of trusting
+        // the input verbatim.
+        #[derive(Deserialize)]
+        struct Helper {
+            subproto_id: SubprotocolId,
+            tx_type: TxType,
+            aux_data: Vec<u8>,
+        }
+
+        let helper = Helper::deserialize(d)?;
+        TagData::new(helper.subproto_id, helper.tx_type, helper.aux_data).map_err(de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_tag_data_json_roundtrip() {
+        let tag = TagData::new(3, 7, vec![1, 2, 3, 4]).unwrap();
+        let json = serde_json::to_string(&tag).unwrap();
+        assert_eq!(
+            json,
+            r#"{"subproto_id":3,"tx_type":7,"aux_data":[1,2,3,4]}"#
+        );
+        let back: TagData = serde_json::from_str(&json).unwrap();
+        assert_eq!(tag, back);
+    }
+
+    #[test]
+    fn test_tag_data_deserialize_rejects_oversized_aux() {
+        // 75 bytes exceeds MAX_AUX_LEN (74), so deserialization must fail.
+        let aux: Vec<u8> = vec![0; 75];
+        let json = format!(
+            r#"{{"subproto_id":0,"tx_type":0,"aux_data":{}}}"#,
+            serde_json::to_string(&aux).unwrap()
+        );
+        assert!(serde_json::from_str::<TagData>(&json).is_err());
+    }
 
     #[test]
     fn test_human_readable_roundtrip() {

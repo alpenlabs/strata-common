@@ -16,67 +16,43 @@ use bitcoin::{
 use bitcoin_bosd::Descriptor;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
+use ssz::DecodeError;
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_identifiers::{Buf32, impl_ssz_transparent_wrapper};
+use strata_identifiers::{Buf32, SszDelegate, impl_ssz_transparent_wrapper, impl_ssz_via_delegate};
 
 use crate::ParseError;
+use crate::ssz_generated::ssz::btc::{BitcoinOutPointSsz, BitcoinScriptSsz, BitcoinTxOutSsz};
 
 const HASH_SIZE: usize = 32;
-const BITCOIN_OUTPOINT_LEN: usize = 36;
 const BITCOIN_TXID_LEN: usize = 32;
 
 /// L1 output reference.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct BitcoinOutPoint(pub OutPoint);
 
-impl SszEncodeTrait for BitcoinOutPoint {
-    fn is_ssz_fixed_len() -> bool {
-        true
-    }
+// SSZ encoding delegates to the generated [`BitcoinOutPointSsz`] container, which
+// lays the fixed-size `txid` and `vout` out per the SSZ spec — correct by
+// construction rather than hand-rolled.
+impl SszDelegate for BitcoinOutPoint {
+    type Delegate = BitcoinOutPointSsz;
 
-    fn ssz_fixed_len() -> usize {
-        BITCOIN_OUTPOINT_LEN
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(&self.0.txid.to_byte_array());
-        buf.extend_from_slice(&self.0.vout.to_le_bytes());
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        <Self as SszEncodeTrait>::ssz_fixed_len()
-    }
-}
-
-impl SszDecodeTrait for BitcoinOutPoint {
-    fn is_ssz_fixed_len() -> bool {
-        true
-    }
-
-    fn ssz_fixed_len() -> usize {
-        BITCOIN_OUTPOINT_LEN
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        if bytes.len() != <Self as SszDecodeTrait>::ssz_fixed_len() {
-            return Err(DecodeError::InvalidByteLength {
-                len: bytes.len(),
-                expected: <Self as SszDecodeTrait>::ssz_fixed_len(),
-            });
+    fn into_delegate(self) -> Self::Delegate {
+        BitcoinOutPointSsz {
+            txid: self.0.txid.to_byte_array().into(),
+            vout: self.0.vout,
         }
+    }
 
-        let txid = Txid::from_slice(&bytes[..BITCOIN_TXID_LEN])
-            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
-        let vout = u32::from_le_bytes(
-            bytes[BITCOIN_TXID_LEN..<Self as SszDecodeTrait>::ssz_fixed_len()]
-                .try_into()
-                .expect("slice length is checked above"),
-        );
-        Ok(Self(OutPoint { txid, vout }))
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self(OutPoint {
+            txid: Txid::from_byte_array(delegate.txid.0),
+            vout: delegate.vout,
+        }))
     }
 }
+
+impl_ssz_via_delegate!(BitcoinOutPoint);
 
 impl From<OutPoint> for BitcoinOutPoint {
     fn from(value: OutPoint) -> Self {
@@ -321,38 +297,21 @@ impl BitcoinAmount {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitcoinTxid(Txid);
 
-impl SszEncodeTrait for BitcoinTxid {
-    fn is_ssz_fixed_len() -> bool {
-        true
+// Delegates SSZ encoding to the upstream `[u8; 32]` impl so the layout is correct
+// by construction (a single fixed-size byte vector) rather than hand-rolled.
+impl SszDelegate for BitcoinTxid {
+    type Delegate = [u8; BITCOIN_TXID_LEN];
+
+    fn into_delegate(self) -> Self::Delegate {
+        self.0.to_byte_array()
     }
 
-    fn ssz_fixed_len() -> usize {
-        BITCOIN_TXID_LEN
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(&self.0.to_byte_array());
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        <Self as SszEncodeTrait>::ssz_fixed_len()
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self(Txid::from_byte_array(delegate)))
     }
 }
 
-impl SszDecodeTrait for BitcoinTxid {
-    fn is_ssz_fixed_len() -> bool {
-        true
-    }
-
-    fn ssz_fixed_len() -> usize {
-        BITCOIN_TXID_LEN
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let serialized = <[u8; BITCOIN_TXID_LEN]>::from_ssz_bytes(bytes)?;
-        Ok(Self(Txid::from_byte_array(serialized)))
-    }
-}
+impl_ssz_via_delegate!(BitcoinTxid);
 
 impl From<Txid> for BitcoinTxid {
     fn from(value: Txid) -> Self {
@@ -433,33 +392,34 @@ impl<'a> Arbitrary<'a> for BitcoinTxid {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitcoinTxOut(TxOut);
 
-impl SszEncodeTrait for BitcoinTxOut {
-    fn is_ssz_fixed_len() -> bool {
-        false
+// SSZ encoding delegates to the generated [`BitcoinTxOutSsz`] container, which
+// lays out the fixed-size `value` and the length-bounded `script_pubkey`
+// (`List[byte, MAX_SCRIPT_SIZE]`) per the SSZ spec. The script bound is enforced
+// by the generated `VariableList` type rather than a hand-written impl.
+impl SszDelegate for BitcoinTxOut {
+    type Delegate = BitcoinTxOutSsz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        BitcoinTxOutSsz {
+            value: self.0.value.to_sat(),
+            script_pubkey: self
+                .0
+                .script_pubkey
+                .to_bytes()
+                .try_into()
+                .expect("scriptPubKey exceeds MAX_SCRIPT_SIZE"),
+        }
     }
 
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        (self.0.value.to_sat(), self.0.script_pubkey.to_bytes()).ssz_append(buf);
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        (self.0.value.to_sat(), self.0.script_pubkey.to_bytes()).ssz_bytes_len()
-    }
-}
-
-impl SszDecodeTrait for BitcoinTxOut {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let (value, script_pubkey): (u64, Vec<u8>) = <(u64, Vec<u8>)>::from_ssz_bytes(bytes)?;
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
         Ok(Self(TxOut {
-            value: Amount::from_sat(value),
-            script_pubkey: ScriptBuf::from(script_pubkey),
+            value: Amount::from_sat(delegate.value),
+            script_pubkey: ScriptBuf::from(delegate.script_pubkey.to_vec()),
         }))
     }
 }
+
+impl_ssz_via_delegate!(BitcoinTxOut);
 
 impl BitcoinTxOut {
     /// Returns a reference to the inner [`TxOut`].
@@ -738,29 +698,25 @@ impl<'a> arbitrary::Arbitrary<'a> for RawBitcoinTx {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BitcoinScriptBuf(ScriptBuf);
 
-impl SszEncodeTrait for BitcoinScriptBuf {
-    fn is_ssz_fixed_len() -> bool {
-        false
+// SSZ encoding delegates to [`BitcoinScriptSsz`] (`List[byte, MAX_SCRIPT_SIZE]`),
+// the generated length-bounded byte list, so the layout and bound are correct by
+// construction rather than hand-rolled.
+impl SszDelegate for BitcoinScriptBuf {
+    type Delegate = BitcoinScriptSsz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        self.0
+            .to_bytes()
+            .try_into()
+            .expect("script exceeds MAX_SCRIPT_SIZE")
     }
 
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        self.0.to_bytes().ssz_append(buf);
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        self.0.to_bytes().ssz_bytes_len()
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self(ScriptBuf::from(delegate.to_vec())))
     }
 }
 
-impl SszDecodeTrait for BitcoinScriptBuf {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        Vec::<u8>::from_ssz_bytes(bytes).map(|bytes| Self(ScriptBuf::from(bytes)))
-    }
-}
+impl_ssz_via_delegate!(BitcoinScriptBuf);
 
 impl BitcoinScriptBuf {
     /// Returns a reference to the inner [`ScriptBuf`].
@@ -918,6 +874,27 @@ mod tests {
 
             prop_assert_eq!(decoded, tx_out);
         }
+    }
+
+    #[test]
+    fn bitcoin_outpoint_ssz_byte_layout() {
+        // Guards the wire format: 32-byte txid followed by little-endian vout.
+        let outpoint = BitcoinOutPoint(OutPoint {
+            txid: Txid::from_byte_array([0xAB; 32]),
+            vout: 0x01020304,
+        });
+
+        let mut expected = vec![0xAB; 32];
+        expected.extend_from_slice(&0x01020304u32.to_le_bytes());
+
+        assert_eq!(outpoint.as_ssz_bytes(), expected);
+    }
+
+    #[test]
+    fn bitcoin_txid_ssz_byte_layout() {
+        // Guards the wire format: the raw 32-byte txid with no length prefix.
+        let txid = BitcoinTxid::from(Txid::from_byte_array([0xCD; 32]));
+        assert_eq!(txid.as_ssz_bytes(), vec![0xCD; 32]);
     }
 
     #[test]
