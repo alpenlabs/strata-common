@@ -2,9 +2,11 @@
 
 use strata_merkle::{MerkleHash, MerkleHasher, MerkleProof};
 
-use super::algorithm::{assemble_proof, proof_positions, write_plan};
+use super::algorithm::{
+    assemble_proof, proof_positions, prune_after_positions, prune_before_positions, write_plan,
+};
 use super::error::MmrError;
-use super::index::NodePos;
+use super::index::{LeafPos, NodePos};
 
 /// Reserved metadata tag holding the leaf count (== next leaf index).
 const NEXT_INDEX_TAG: u64 = 0;
@@ -84,6 +86,48 @@ pub trait MmrNodeStore {
             self.put_node(*pos, *value)?;
         }
         Ok(())
+    }
+}
+
+/// A [`MmrNodeStore`] that can also delete nodes, unlocking the pruning
+/// operations on [`StoredMmr`] ([`prune_before`](StoredMmr::prune_before) /
+/// [`prune_after`](StoredMmr::prune_after)).
+///
+/// Opt-in and separate from [`MmrNodeStore`] so append-only backends (which
+/// cannot delete) are unaffected: an implementor adds only
+/// [`delete_node`](Self::delete_node); [`delete_nodes`](Self::delete_nodes) and
+/// [`prune_commit`](Self::prune_commit) have correct defaults a backend may
+/// override for batching/atomicity.
+pub trait PrunableNodeStore: MmrNodeStore {
+    /// Removes the node at `pos`.
+    ///
+    /// Idempotent: removing a node that is absent is not an error.
+    fn delete_node(&self, pos: NodePos) -> Result<(), Self::Error>;
+
+    /// Removes several nodes in one call.
+    ///
+    /// The default loops [`delete_node`](Self::delete_node); backends with a
+    /// native multi-delete should override it for a single round-trip.
+    fn delete_nodes(&self, positions: &[NodePos]) -> Result<(), Self::Error> {
+        for pos in positions {
+            self.delete_node(*pos)?;
+        }
+        Ok(())
+    }
+
+    /// Applies `writes` and `deletes` together — the transactional primitive
+    /// for pruning, mirroring [`commit`](MmrNodeStore::commit) for writes.
+    ///
+    /// The default is non-atomic (commit, then delete); transactional backends
+    /// should override it so a truncation's leaf-count bump and node deletions
+    /// land in a single transaction.
+    fn prune_commit(
+        &self,
+        writes: &[(NodePos, Self::Hash)],
+        deletes: &[NodePos],
+    ) -> Result<(), Self::Error> {
+        self.commit(writes)?;
+        self.delete_nodes(deletes)
     }
 }
 
@@ -216,6 +260,74 @@ where
         }
         Ok(())
     }
+
+    /// Prunes every node strictly before `before`, retaining only the peaks of
+    /// the first `before.index()` leaves.
+    ///
+    /// Those peaks are the minimal set still required to prove leaves at or
+    /// after `before` and to keep appending, so both continue to work; proofs
+    /// for the *pruned* leaves afterward fail with [`MmrError::NodeMissing`].
+    /// The leaf count is unchanged. A `before` of `0` prunes nothing; one equal
+    /// to the leaf count compacts the whole MMR down to its current peaks.
+    ///
+    /// Errors with [`MmrError::LeafOutOfRange`] if `before` is past the append
+    /// point (`> leaf_count`).
+    ///
+    /// Requires a [`PrunableNodeStore`] backend.
+    //
+    // TODO: a stored `pruned_before` watermark would let proof generation for a
+    // pruned leaf return a dedicated error instead of `NodeMissing`, which a
+    // caller can't currently tell apart from genuine corruption.
+    fn prune_before(&self, before: LeafPos) -> Result<(), MmrError<Self::Error>>
+    where
+        Self: PrunableNodeStore,
+    {
+        let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
+        let before_index = before.index();
+        if before_index > leaf_count {
+            return Err(MmrError::LeafOutOfRange {
+                index: before_index,
+                leaf_count,
+            });
+        }
+        let deletes = prune_before_positions(before_index);
+        self.prune_commit(&[], &deletes).map_err(MmrError::Backend)
+    }
+
+    /// Truncates the MMR to its first `after.index()` leaves, removing that leaf
+    /// and every leaf after it together with their now-unreachable ancestors,
+    /// and updates the stored leaf count.
+    ///
+    /// The retained nodes are exactly those of a freshly built MMR of
+    /// `after.index()` leaves (a surviving node covers the same leaves, so its
+    /// stored hash is unchanged), so the truncated store behaves identically to
+    /// one that was only ever that size. An `after` equal to the leaf count is a
+    /// no-op (nothing past the end); one of `0` empties the store.
+    ///
+    /// Errors with [`MmrError::LeafOutOfRange`] if `after` is past the append
+    /// point (`> leaf_count`).
+    ///
+    /// Requires a [`PrunableNodeStore`] backend.
+    fn prune_after(&self, after: LeafPos) -> Result<(), MmrError<Self::Error>>
+    where
+        Self: PrunableNodeStore,
+    {
+        let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
+        let keep = after.index();
+        if keep > leaf_count {
+            return Err(MmrError::LeafOutOfRange {
+                index: keep,
+                leaf_count,
+            });
+        }
+        if keep == leaf_count {
+            return Ok(());
+        }
+        let deletes = prune_after_positions(keep, leaf_count);
+        let count_write = (NodePos::meta(NEXT_INDEX_TAG), MH::Hash::pack_u64(keep));
+        self.prune_commit(&[count_write], &deletes)
+            .map_err(MmrError::Backend)
+    }
 }
 
 impl<MH, T> StoredMmr<MH> for T
@@ -262,6 +374,14 @@ mod tests {
 
     fn proof_at_size(store: &MemMmr<Hash32>, index: u64, size: u64) -> MerkleProof<Hash32> {
         StoredMmr::<Sha256Hasher>::generate_proof_at_size(store, index, size).unwrap()
+    }
+
+    fn prune_before(store: &MemMmr<Hash32>, before: u64) {
+        StoredMmr::<Sha256Hasher>::prune_before(store, LeafPos::new(before)).unwrap();
+    }
+
+    fn prune_after(store: &MemMmr<Hash32>, after: u64) {
+        StoredMmr::<Sha256Hasher>::prune_after(store, LeafPos::new(after)).unwrap();
     }
 
     /// Deterministic distinct leaf for the concrete (non-property) tests.
@@ -395,6 +515,227 @@ mod tests {
         assert_eq!(count(&mmr), 8);
     }
 
+    // ---- pruning ----
+
+    /// `prune_after(k)` deletes exactly the out-of-range nodes, leaving a store
+    /// whose surviving nodes and leaf count match a fresh `k`-leaf build, for
+    /// every `(n, k)` in a small exhaustive grid.
+    #[test]
+    fn prune_after_matches_fresh_build() {
+        for n in 1..=16u64 {
+            for k in 0..=n {
+                let leaves: Vec<Hash32> = (0..n).map(leaf).collect();
+
+                let pruned = MemMmr::<Hash32>::default();
+                for value in &leaves {
+                    append(&pruned, *value);
+                }
+                prune_after(&pruned, k);
+
+                let fresh = MemMmr::<Hash32>::default();
+                for value in &leaves[..k as usize] {
+                    append(&fresh, *value);
+                }
+
+                assert_eq!(count(&pruned), k, "leaf_count n={n} k={k}");
+                if k < n {
+                    assert_eq!(read_leaf(&pruned, k), None, "dropped leaf n={n} k={k}");
+                }
+                for idx in 0..k {
+                    assert_eq!(
+                        proof_at_size(&pruned, idx, k).cohashes(),
+                        proof_at_size(&fresh, idx, k).cohashes(),
+                        "n={n} k={k} idx={idx}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Appending after a `prune_after` rolls forward exactly as if the truncated
+    /// leaves had never existed.
+    #[test]
+    fn prune_after_then_append_matches_continuous_build() {
+        let leaves: Vec<Hash32> = (0..10).map(leaf).collect();
+        let store = MemMmr::<Hash32>::default();
+        for value in &leaves {
+            append(&store, *value);
+        }
+        prune_after(&store, 6);
+
+        let extra: Vec<Hash32> = (100..105).map(leaf).collect();
+        for value in &extra {
+            append(&store, *value);
+        }
+
+        let reference = MemMmr::<Hash32>::default();
+        for value in leaves[..6].iter().chain(extra.iter()) {
+            append(&reference, *value);
+        }
+
+        let total = 6 + extra.len() as u64;
+        assert_eq!(count(&store), total);
+        for idx in 0..total {
+            assert_eq!(
+                proof_at_size(&store, idx, total).cohashes(),
+                proof_at_size(&reference, idx, total).cohashes(),
+                "idx={idx}"
+            );
+        }
+    }
+
+    /// `prune_before(k)` removes exactly the descendants of the prefix peaks and
+    /// leaves the rest intact: leaf count is unchanged and every leaf in
+    /// `[k, n)` still verifies against the reference.
+    #[test]
+    fn prune_before_deletes_exactly_the_descendants() {
+        for n in 1..=16u64 {
+            for k in 0..=n {
+                let leaves: Vec<Hash32> = (0..n).map(leaf).collect();
+                let store = MemMmr::<Hash32>::default();
+                for value in &leaves {
+                    append(&store, *value);
+                }
+
+                let deletes = prune_before_positions(k);
+                for pos in &deletes {
+                    assert!(
+                        store.get_node(*pos).unwrap().is_some(),
+                        "pre n={n} k={k} {pos:?}"
+                    );
+                }
+
+                prune_before(&store, k);
+                assert_eq!(count(&store), n, "leaf_count unchanged n={n} k={k}");
+
+                for pos in &deletes {
+                    assert!(
+                        store.get_node(*pos).unwrap().is_none(),
+                        "post n={n} k={k} {pos:?}"
+                    );
+                }
+
+                let reference = reference_mmr(&leaves);
+                for idx in k..n {
+                    let proof = proof_at_size(&store, idx, n);
+                    assert!(
+                        reference.verify::<Sha256Hasher>(&proof, &leaves[idx as usize]),
+                        "verify n={n} k={k} idx={idx}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A leaf whose node was pruned by `prune_before` can no longer be proven,
+    /// while a leaf at/after the cut still can.
+    #[test]
+    fn prune_before_makes_pruned_leaf_unprovable() {
+        let leaves: Vec<Hash32> = (0..4).map(leaf).collect();
+        let store = MemMmr::<Hash32>::default();
+        for value in &leaves {
+            append(&store, *value);
+        }
+        // Peaks of the first 2 leaves are [(1,0)]; this drops leaves 0 and 1.
+        prune_before(&store, 2);
+
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::generate_proof_at_size(&store, 0, 4),
+            Err(MmrError::NodeMissing(_))
+        ));
+
+        let reference = reference_mmr(&leaves);
+        let proof = proof_at_size(&store, 2, 4);
+        assert!(reference.verify::<Sha256Hasher>(&proof, &leaf(2)));
+    }
+
+    /// `prune_before(leaf_count)` compacts the whole MMR to its current peaks,
+    /// and appends afterward still roll forward correctly.
+    #[test]
+    fn prune_before_full_compaction_keeps_only_peaks() {
+        let n = 6u64; // peaks: (2,0), (1,2)
+        let leaves: Vec<Hash32> = (0..n).map(leaf).collect();
+        let store = MemMmr::<Hash32>::default();
+        for value in &leaves {
+            append(&store, *value);
+        }
+        prune_before(&store, n);
+        assert_eq!(count(&store), n);
+
+        for pos in crate::peak_positions(n) {
+            assert!(store.get_node(pos).unwrap().is_some(), "peak {pos:?} kept");
+        }
+        for pos in prune_before_positions(n) {
+            assert!(
+                store.get_node(pos).unwrap().is_none(),
+                "non-peak {pos:?} gone"
+            );
+        }
+
+        let extra = [leaf(100), leaf(101)];
+        for value in &extra {
+            append(&store, *value);
+        }
+        let reference = MemMmr::<Hash32>::default();
+        for value in leaves.iter().chain(extra.iter()) {
+            append(&reference, *value);
+        }
+        let total = n + extra.len() as u64;
+        // Only the newly appended leaves remain provable after full compaction.
+        for idx in n..total {
+            assert_eq!(
+                proof_at_size(&store, idx, total).cohashes(),
+                proof_at_size(&reference, idx, total).cohashes(),
+                "idx={idx}"
+            );
+        }
+    }
+
+    /// Boundary inputs: no-op prunes, emptying, and out-of-range rejection.
+    #[test]
+    fn prune_boundaries() {
+        let leaves: Vec<Hash32> = (0..5).map(leaf).collect();
+        let store = MemMmr::<Hash32>::default();
+        for value in &leaves {
+            append(&store, *value);
+        }
+
+        // prune_before(0) and prune_after(leaf_count) change nothing.
+        prune_before(&store, 0);
+        prune_after(&store, 5);
+        assert_eq!(count(&store), 5);
+        let reference = reference_mmr(&leaves);
+        for idx in 0..5 {
+            assert!(reference.verify::<Sha256Hasher>(&proof_at_size(&store, idx, 5), &leaf(idx)));
+        }
+
+        // prune_after(0) empties the store.
+        prune_after(&store, 0);
+        assert_eq!(count(&store), 0);
+        assert_eq!(read_leaf(&store, 0), None);
+
+        // A cut past the append point is rejected, leaving the store untouched.
+        let store = MemMmr::<Hash32>::default();
+        for value in leaves.iter().take(3) {
+            append(&store, *value);
+        }
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::prune_before(&store, LeafPos::new(4)),
+            Err(MmrError::LeafOutOfRange {
+                index: 4,
+                leaf_count: 3
+            })
+        ));
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::prune_after(&store, LeafPos::new(4)),
+            Err(MmrError::LeafOutOfRange {
+                index: 4,
+                leaf_count: 3
+            })
+        ));
+        assert_eq!(count(&store), 3);
+    }
+
     /// Exhaustive, deterministic parity for small sizes: our proof's cohashes
     /// and index are identical to `strata-merkle`'s replay-based proof, and it
     /// verifies (while a tampered leaf does not). This is the load-bearing
@@ -509,6 +850,50 @@ mod tests {
             }
             let after = proof_at_size(&mmr, index, size);
             prop_assert_eq!(before.cohashes(), after.cohashes());
+        }
+
+        /// `prune_after(k)` leaves a store indistinguishable from a fresh
+        /// `k`-leaf build: same leaf count and same proof for every kept leaf.
+        #[test]
+        fn prune_after_equals_fresh_build((leaves, size, _index) in leaves_and_query(1..64)) {
+            let k = size;
+            let pruned = MemMmr::<Hash32>::default();
+            for value in &leaves {
+                append(&pruned, *value);
+            }
+            prune_after(&pruned, k);
+
+            let fresh = MemMmr::<Hash32>::default();
+            for value in &leaves[..k as usize] {
+                append(&fresh, *value);
+            }
+
+            prop_assert_eq!(count(&pruned), k);
+            for idx in 0..k {
+                let pruned_proof = proof_at_size(&pruned, idx, k);
+                let fresh_proof = proof_at_size(&fresh, idx, k);
+                prop_assert_eq!(pruned_proof.cohashes(), fresh_proof.cohashes());
+            }
+        }
+
+        /// After `prune_before(k)` every leaf in `[k, n)` still verifies against
+        /// the reference and the leaf count is unchanged.
+        #[test]
+        fn prune_before_preserves_suffix_proofs((leaves, size, _index) in leaves_and_query(1..64)) {
+            let n = leaves.len() as u64;
+            let k = size;
+            let store = MemMmr::<Hash32>::default();
+            for value in &leaves {
+                append(&store, *value);
+            }
+            prune_before(&store, k);
+
+            prop_assert_eq!(count(&store), n);
+            let reference = reference_mmr(&leaves);
+            for idx in k..n {
+                let proof = proof_at_size(&store, idx, n);
+                prop_assert!(reference.verify::<Sha256Hasher>(&proof, &leaves[idx as usize]));
+            }
         }
     }
 }

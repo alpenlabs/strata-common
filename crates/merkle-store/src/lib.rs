@@ -22,8 +22,10 @@ mod index;
 mod memory;
 mod store;
 
-pub use algorithm::{assemble_proof, proof_positions, write_plan};
+pub use algorithm::{
+    assemble_proof, proof_positions, prune_after_positions, prune_before_positions, write_plan,
+};
 pub use error::MmrError;
 pub use index::{LeafPos, NodePos, peak_for_leaf, peak_positions};
 pub use memory::MemMmr;
-pub use store::{MmrMetaPack, MmrNodeStore, StoredMmr};
+pub use store::{MmrMetaPack, MmrNodeStore, PrunableNodeStore, StoredMmr};

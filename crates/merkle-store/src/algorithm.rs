@@ -11,7 +11,7 @@
 use strata_merkle::{MerkleHash, MerkleHasher, MerkleProof};
 
 use super::error::MmrError;
-use super::index::{LeafPos, NodePos, peak_for_leaf};
+use super::index::{LeafPos, NodePos, peak_for_leaf, peak_positions};
 
 /// Computes the nodes to write when setting `leaf` at `leaf_index` in an MMR
 /// that has (or will have) `leaf_count` leaves.
@@ -82,4 +82,49 @@ pub fn proof_positions(leaf_index: u64, leaf_count: u64) -> Vec<NodePos> {
 /// order (the order returned by [`proof_positions`]).
 pub fn assemble_proof<H: MerkleHash>(leaf_index: u64, cohashes: Vec<H>) -> MerkleProof<H> {
     MerkleProof::from_cohashes(cohashes, leaf_index)
+}
+
+/// Positions to delete to prune everything strictly before leaf `before`,
+/// keeping only the peaks of the first `before` leaves.
+///
+/// Returns the proper descendants of each peak in [`peak_positions`]`(before)` —
+/// exactly the nodes whose leaf-coverage lies entirely in `[0, before)`, minus
+/// the peaks themselves, which are retained so later leaves stay provable and
+/// appends keep working. Empty when `before == 0`.
+// TODO: materializes the full position list; for very large prunes this could
+// be an iterator so the backend can delete in bounded-memory chunks.
+pub fn prune_before_positions(before: u64) -> Vec<NodePos> {
+    let mut positions = Vec::new();
+    for peak in peak_positions(before) {
+        let peak_height = peak.height();
+        let peak_index = peak.index();
+        for height in 0..peak_height {
+            // Each descendant level widens the peak's index by 2 per step down.
+            let span = 1u64 << (peak_height - height);
+            for index in (peak_index * span)..((peak_index + 1) * span) {
+                positions.push(NodePos::new(height, index));
+            }
+        }
+    }
+    positions
+}
+
+/// Positions to delete to truncate an MMR from `leaf_count` leaves down to
+/// `keep` leaves.
+///
+/// Returns every node present at `leaf_count` but not at `keep`: at each height
+/// `h`, the indices in `[keep >> h, leaf_count >> h)` (a node `(h, i)` exists at
+/// a given count iff `i < count >> h`). Empty when `keep >= leaf_count`.
+// TODO: materializes the full position list; for very large prunes this could
+// be an iterator so the backend can delete in bounded-memory chunks.
+pub fn prune_after_positions(keep: u64, leaf_count: u64) -> Vec<NodePos> {
+    let mut positions = Vec::new();
+    let mut height = 0u8;
+    while (leaf_count >> height) > 0 {
+        for index in (keep >> height)..(leaf_count >> height) {
+            positions.push(NodePos::new(height, index));
+        }
+        height += 1;
+    }
+    positions
 }

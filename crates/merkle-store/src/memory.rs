@@ -7,7 +7,7 @@ use std::convert::Infallible;
 use strata_merkle::MerkleHash;
 
 use super::index::NodePos;
-use super::store::MmrNodeStore;
+use super::store::{MmrNodeStore, PrunableNodeStore};
 
 /// A non-persistent [`MmrNodeStore`] backed by a `BTreeMap`.
 #[derive(Debug)]
@@ -33,6 +33,13 @@ impl<H: MerkleHash> MmrNodeStore for MemMmr<H> {
 
     fn put_node(&self, pos: NodePos, value: H) -> Result<(), Infallible> {
         self.nodes.borrow_mut().insert(pos, value);
+        Ok(())
+    }
+}
+
+impl<H: MerkleHash> PrunableNodeStore for MemMmr<H> {
+    fn delete_node(&self, pos: NodePos) -> Result<(), Infallible> {
+        self.nodes.borrow_mut().remove(&pos);
         Ok(())
     }
 }
