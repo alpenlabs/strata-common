@@ -136,7 +136,7 @@ impl ThresholdConfig {
             keys: vec![],
             threshold,
         };
-        let update = ThresholdConfigUpdate::new(keys, vec![], threshold);
+        let update = ThresholdConfigUpdate::try_new(keys, vec![], threshold)?;
         config.apply_update(&update)?;
         Ok(config)
     }
@@ -264,16 +264,32 @@ pub struct ThresholdConfigUpdate {
 
 impl ThresholdConfigUpdate {
     /// Creates a new threshold configuration update.
-    pub fn new(
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThresholdSignatureError::TooManySigners`] if either the add or
+    /// remove list holds more than [`MAX_SIGNERS`] members. Each list is bounded
+    /// independently because the SSZ delegate encodes them as separate
+    /// `List[_, MAX_SIGNERS]`s; without this check an oversized update would panic
+    /// when SSZ-encoded or tree-hashed.
+    pub fn try_new(
         add_members: Vec<CompressedPublicKey>,
         remove_members: Vec<CompressedPublicKey>,
         new_threshold: NonZero<u8>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ThresholdSignatureError> {
+        for list in [&add_members, &remove_members] {
+            if list.len() > MAX_SIGNERS {
+                return Err(ThresholdSignatureError::TooManySigners {
+                    count: list.len(),
+                    max: MAX_SIGNERS,
+                });
+            }
+        }
+        Ok(Self {
             add_members,
             remove_members,
             new_threshold,
-        }
+        })
     }
 
     /// Returns the public keys to add.
@@ -305,18 +321,24 @@ impl ThresholdConfigUpdate {
 
 impl<'a> Arbitrary<'a> for ThresholdConfigUpdate {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let add_members = Vec::<CompressedPublicKey>::arbitrary(u)?;
-        let remove_members = Vec::<CompressedPublicKey>::arbitrary(u)?;
-        // Generate a threshold between 1 and max(1, len(add_members))
-        let max_threshold = add_members.len().max(1);
-        let threshold_u8 = u.int_in_range(1..=(max_threshold as u8))?;
+        // Keep the member lists small and well under MAX_SIGNERS so the generated
+        // update is always SSZ-encodable (and the `as u8` threshold cast below
+        // cannot overflow).
+        let gen_members = |u: &mut arbitrary::Unstructured<'a>| {
+            let count = u.int_in_range(0..=4)?;
+            (0..count)
+                .map(|_| CompressedPublicKey::arbitrary(u))
+                .collect::<arbitrary::Result<Vec<_>>>()
+        };
+        let add_members = gen_members(u)?;
+        let remove_members = gen_members(u)?;
+        // Generate a threshold between 1 and max(1, len(add_members)).
+        let max_threshold = add_members.len().max(1) as u8;
+        let threshold_u8 = u.int_in_range(1..=max_threshold)?;
         // Safe: threshold_u8 is always >= 1
         let new_threshold = NonZero::new(threshold_u8).expect("threshold is always >= 1");
-        Ok(Self {
-            add_members,
-            remove_members,
-            new_threshold,
-        })
+        Self::try_new(add_members, remove_members, new_threshold)
+            .map_err(|_| arbitrary::Error::IncorrectFormat)
     }
 }
 
@@ -352,7 +374,10 @@ impl SszDelegate for ThresholdConfigUpdate {
         let remove_members = from_bytes_list(&delegate.remove_members)?;
         let new_threshold = NonZero::new(delegate.new_threshold)
             .ok_or_else(|| DecodeError::BytesInvalid("threshold must be non-zero".into()))?;
-        Ok(Self::new(add_members, remove_members, new_threshold))
+        // Cannot fail: the delegate's member lists are `List[_, MAX_SIGNERS]`, so
+        // neither can exceed the bound `try_new` checks.
+        Self::try_new(add_members, remove_members, new_threshold)
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))
     }
 }
 
@@ -428,7 +453,8 @@ mod tests {
         let mut config = ThresholdConfig::try_new(keys, NonZero::new(2).unwrap()).unwrap();
 
         let update =
-            ThresholdConfigUpdate::new(vec![make_key(3)], vec![], NonZero::new(2).unwrap());
+            ThresholdConfigUpdate::try_new(vec![make_key(3)], vec![], NonZero::new(2).unwrap())
+                .unwrap();
         config.apply_update(&update).unwrap();
 
         assert_eq!(config.keys().len(), 3);
@@ -443,7 +469,8 @@ mod tests {
         let mut config =
             ThresholdConfig::try_new(vec![k1, k2, k3], NonZero::new(2).unwrap()).unwrap();
 
-        let update = ThresholdConfigUpdate::new(vec![], vec![k2], NonZero::new(2).unwrap());
+        let update =
+            ThresholdConfigUpdate::try_new(vec![], vec![k2], NonZero::new(2).unwrap()).unwrap();
         config.apply_update(&update).unwrap();
 
         assert_eq!(config.keys().len(), 2);
@@ -501,7 +528,8 @@ mod tests {
             let remove_members = (0..remove)
                 .map(|i| make_key(i as u8 + 100))
                 .collect::<Vec<_>>();
-            ThresholdConfigUpdate::new(add_members, remove_members, NonZero::new(1).unwrap())
+            ThresholdConfigUpdate::try_new(add_members, remove_members, NonZero::new(1).unwrap())
+                .unwrap()
         })
     }
 

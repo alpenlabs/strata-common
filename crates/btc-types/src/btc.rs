@@ -22,10 +22,28 @@ use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_identifiers::{Buf32, SszDelegate, impl_ssz_transparent_wrapper, impl_ssz_via_delegate};
 
 use crate::ParseError;
-use crate::ssz_generated::ssz::btc::{BitcoinOutPointSsz, BitcoinScriptSsz, BitcoinTxOutSsz};
+use crate::ssz_generated::ssz::btc::{
+    BitcoinOutPointSsz, BitcoinScriptSsz, BitcoinTxOutSsz, MAX_SCRIPT_SIZE,
+};
 
 const HASH_SIZE: usize = 32;
 const BITCOIN_TXID_LEN: usize = 32;
+
+/// Validates that a Bitcoin script fits within the SSZ-encodable bound
+/// (`MAX_SCRIPT_SIZE`).
+///
+/// This is the single chokepoint enforced by every fallible constructor and
+/// deserialization path of [`BitcoinTxOut`] and [`BitcoinScriptBuf`], so that an
+/// instance can never hold a script that would overflow the SSZ `script_pubkey`
+/// list and panic during encoding/tree-hashing.
+fn check_script_size(len: usize) -> Result<(), ParseError> {
+    let max = MAX_SCRIPT_SIZE as usize;
+    if len > max {
+        Err(ParseError::ScriptTooLarge { size: len, max })
+    } else {
+        Ok(())
+    }
+}
 
 /// L1 output reference.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -389,8 +407,27 @@ impl<'a> Arbitrary<'a> for BitcoinTxid {
 }
 
 /// A wrapper around [`bitcoin::TxOut`] that implements some additional traits.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// The wrapped script is guaranteed to be at most `MAX_SCRIPT_SIZE` bytes: every
+/// constructor and deserialization path routes through [`check_script_size`], so
+/// the SSZ encoding below can never overflow its `script_pubkey` list.
+///
+/// Note: [`Deserialize`] is implemented manually to enforce that invariant on
+/// deserialized values, mirroring the fallible [`TryFrom<TxOut>`] constructor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BitcoinTxOut(TxOut);
+
+/// [`Deserialize`] routes through [`BitcoinTxOut::try_from`] so the
+/// `MAX_SCRIPT_SIZE` invariant holds for deserialized values.
+impl<'de> Deserialize<'de> for BitcoinTxOut {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let tx_out = TxOut::deserialize(deserializer)?;
+        Self::try_from(tx_out).map_err(serde::de::Error::custom)
+    }
+}
 
 // SSZ encoding delegates to the generated [`BitcoinTxOutSsz`] container, which
 // lays out the fixed-size `value` and the length-bounded `script_pubkey`
@@ -402,6 +439,8 @@ impl SszDelegate for BitcoinTxOut {
     fn into_delegate(self) -> Self::Delegate {
         BitcoinTxOutSsz {
             value: self.0.value.to_sat(),
+            // Cannot fail: every construction/deserialization path validates the
+            // script against `MAX_SCRIPT_SIZE` via `check_script_size`.
             script_pubkey: self
                 .0
                 .script_pubkey
@@ -428,9 +467,14 @@ impl BitcoinTxOut {
     }
 }
 
-impl From<TxOut> for BitcoinTxOut {
-    fn from(value: TxOut) -> Self {
-        Self(value)
+impl TryFrom<TxOut> for BitcoinTxOut {
+    type Error = ParseError;
+
+    /// Wraps a [`TxOut`], rejecting outputs whose `script_pubkey` exceeds
+    /// `MAX_SCRIPT_SIZE` so the wrapper's SSZ encoding can never panic.
+    fn try_from(value: TxOut) -> Result<Self, Self::Error> {
+        check_script_size(value.script_pubkey.len())?;
+        Ok(Self(value))
     }
 }
 
@@ -461,8 +505,10 @@ impl BorshDeserialize for BitcoinTxOut {
         // Deserialize the value (u64)
         let value = u64::deserialize_reader(reader)?;
 
-        // Deserialize the script_pubkey (ScriptBuf)
+        // Deserialize the script_pubkey (ScriptBuf), rejecting over-long scripts
+        // so the wrapper's `MAX_SCRIPT_SIZE` invariant holds.
         let script_len = u64::deserialize_reader(reader)? as usize;
+        check_script_size(script_len).map_err(io::Error::other)?;
         let mut script_bytes = vec![0u8; script_len];
         reader.read_exact(&mut script_bytes)?;
         let script_pubkey = ScriptBuf::from(script_bytes);
@@ -695,6 +741,10 @@ impl<'a> arbitrary::Arbitrary<'a> for RawBitcoinTx {
 }
 
 /// SSZ-compatible wrapper around Bitcoin's [`ScriptBuf`].
+///
+/// The wrapped script is guaranteed to be at most `MAX_SCRIPT_SIZE` bytes: every
+/// constructor and deserialization path routes through [`check_script_size`], so
+/// the SSZ encoding below can never overflow its byte list.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BitcoinScriptBuf(ScriptBuf);
 
@@ -705,6 +755,8 @@ impl SszDelegate for BitcoinScriptBuf {
     type Delegate = BitcoinScriptSsz;
 
     fn into_delegate(self) -> Self::Delegate {
+        // Cannot fail: every construction/deserialization path validates the
+        // script against `MAX_SCRIPT_SIZE` via `check_script_size`.
         self.0
             .to_bytes()
             .try_into()
@@ -725,9 +777,14 @@ impl BitcoinScriptBuf {
     }
 }
 
-impl From<ScriptBuf> for BitcoinScriptBuf {
-    fn from(value: ScriptBuf) -> Self {
-        Self(value)
+impl TryFrom<ScriptBuf> for BitcoinScriptBuf {
+    type Error = ParseError;
+
+    /// Wraps a [`ScriptBuf`], rejecting scripts that exceed `MAX_SCRIPT_SIZE` so
+    /// the wrapper's SSZ encoding can never panic.
+    fn try_from(value: ScriptBuf) -> Result<Self, Self::Error> {
+        check_script_size(value.len())?;
+        Ok(Self(value))
     }
 }
 
@@ -744,7 +801,10 @@ impl BorshSerialize for BitcoinScriptBuf {
 // Implement BorshDeserialize for BitcoinScriptBuf
 impl BorshDeserialize for BitcoinScriptBuf {
     fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
+        // Reject over-long scripts before allocating so the wrapper's
+        // `MAX_SCRIPT_SIZE` invariant holds.
         let script_len = u32::deserialize_reader(reader)? as usize;
+        check_script_size(script_len).map_err(io::Error::other)?;
         let mut script_bytes = vec![0u8; script_len];
         reader.read_exact(&mut script_bytes)?;
         let script_pubkey = ScriptBuf::from(script_bytes);
