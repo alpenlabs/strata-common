@@ -409,11 +409,11 @@ impl<'a> Arbitrary<'a> for BitcoinTxid {
 /// A wrapper around [`bitcoin::TxOut`] that implements some additional traits.
 ///
 /// The wrapped script is guaranteed to be at most `MAX_SCRIPT_SIZE` bytes: every
-/// constructor and deserialization path routes through [`check_script_size`], so
+/// constructor and deserialization path routes through `check_script_size`, so
 /// the SSZ encoding below can never overflow its `script_pubkey` list.
 ///
 /// Note: [`Deserialize`] is implemented manually to enforce that invariant on
-/// deserialized values, mirroring the fallible [`TryFrom<TxOut>`] constructor.
+/// deserialized values, mirroring the fallible `TryFrom<TxOut>` constructor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BitcoinTxOut(TxOut);
 
@@ -743,7 +743,7 @@ impl<'a> arbitrary::Arbitrary<'a> for RawBitcoinTx {
 /// SSZ-compatible wrapper around Bitcoin's [`ScriptBuf`].
 ///
 /// The wrapped script is guaranteed to be at most `MAX_SCRIPT_SIZE` bytes: every
-/// constructor and deserialization path routes through [`check_script_size`], so
+/// constructor and deserialization path routes through `check_script_size`, so
 /// the SSZ encoding below can never overflow its byte list.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BitcoinScriptBuf(ScriptBuf);
@@ -839,8 +839,9 @@ mod tests {
 
     use super::{
         BitcoinAmount, BitcoinOutPoint, BitcoinScriptBuf, BitcoinTxOut, BitcoinTxid,
-        BitcoinXOnlyPublicKey, BorshDeserialize, BorshSerialize, RawBitcoinTx,
+        BitcoinXOnlyPublicKey, BorshDeserialize, BorshSerialize, MAX_SCRIPT_SIZE, RawBitcoinTx,
     };
+    use crate::ParseError;
     use crate::test_helpers::ArbitraryGenerator;
 
     #[test]
@@ -1017,6 +1018,92 @@ mod tests {
             scriptbuf.0, deserialized_scriptbuf.0,
             "original and deserialized scriptbuf must be the same"
         );
+    }
+
+    /// A script one byte larger than the SSZ-encodable maximum.
+    fn oversized_script() -> ScriptBuf {
+        ScriptBuf::from_bytes(vec![0u8; MAX_SCRIPT_SIZE as usize + 1])
+    }
+
+    #[test]
+    fn bitcoin_txout_try_from_enforces_script_bound() {
+        let max = MAX_SCRIPT_SIZE as usize;
+
+        // A script exactly at the bound is accepted.
+        let ok = TxOut {
+            value: Amount::from_sat(1),
+            script_pubkey: ScriptBuf::from_bytes(vec![0u8; max]),
+        };
+        assert!(BitcoinTxOut::try_from(ok).is_ok());
+
+        // One byte over the bound is rejected rather than producing a value that
+        // would panic when SSZ-encoded.
+        let too_big = TxOut {
+            value: Amount::from_sat(1),
+            script_pubkey: oversized_script(),
+        };
+        assert!(matches!(
+            BitcoinTxOut::try_from(too_big),
+            Err(ParseError::ScriptTooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn bitcoin_txout_serde_json_roundtrip() {
+        // The derived `Serialize` and manual `Deserialize` must agree on the wire
+        // format for an in-bound value.
+        let tx_out = BitcoinTxOut::try_from(TxOut {
+            value: Amount::from_sat(4321),
+            script_pubkey: ScriptBuf::from_bytes(vec![0x51, 0x21, 0xff]),
+        })
+        .unwrap();
+
+        let json = serde_json::to_string(&tx_out).unwrap();
+        let decoded: BitcoinTxOut = serde_json::from_str(&json).unwrap();
+        assert_eq!(tx_out, decoded);
+    }
+
+    #[test]
+    fn bitcoin_txout_deserialize_rejects_oversized_script() {
+        // The validating serde `Deserialize` rejects an over-long script instead
+        // of decoding a value that later panics on SSZ encoding.
+        let tx_out = TxOut {
+            value: Amount::from_sat(1),
+            script_pubkey: oversized_script(),
+        };
+        let json = serde_json::to_string(&tx_out).unwrap();
+        assert!(serde_json::from_str::<BitcoinTxOut>(&json).is_err());
+    }
+
+    #[test]
+    fn bitcoin_txout_borsh_rejects_oversized_script() {
+        // Hand-craft a borsh header (value || script_len) claiming an over-long
+        // script; the length is rejected before any allocation.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0u64.to_le_bytes()); // value
+        buf.extend_from_slice(&(MAX_SCRIPT_SIZE + 1).to_le_bytes()); // script_len
+        assert!(BitcoinTxOut::deserialize(&mut &buf[..]).is_err());
+    }
+
+    #[test]
+    fn bitcoin_scriptbuf_try_from_enforces_script_bound() {
+        let max = MAX_SCRIPT_SIZE as usize;
+
+        let ok = ScriptBuf::from_bytes(vec![0u8; max]);
+        assert!(BitcoinScriptBuf::try_from(ok).is_ok());
+
+        assert!(matches!(
+            BitcoinScriptBuf::try_from(oversized_script()),
+            Err(ParseError::ScriptTooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn bitcoin_scriptbuf_borsh_rejects_oversized_script() {
+        // Hand-craft a borsh header (script_len) claiming an over-long script.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&(MAX_SCRIPT_SIZE as u32 + 1).to_le_bytes());
+        assert!(BitcoinScriptBuf::deserialize(&mut &buf[..]).is_err());
     }
 
     // Property-based tests for BitcoinAmount SSZ serialization

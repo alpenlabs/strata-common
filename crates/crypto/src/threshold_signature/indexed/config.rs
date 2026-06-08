@@ -438,6 +438,28 @@ mod tests {
     }
 
     #[test]
+    fn test_update_rejects_more_than_max_signers() {
+        // Each member list is bounded independently to MAX_SIGNERS, so a standalone
+        // update with an over-long add (or remove) list is rejected rather than
+        // constructed into a value that later panics on SSZ encoding.
+        let oversized: Vec<_> = (0..=MAX_SIGNERS as u32).map(make_key_n).collect();
+
+        let add_too_big =
+            ThresholdConfigUpdate::try_new(oversized.clone(), vec![], NonZero::new(1).unwrap());
+        assert!(matches!(
+            add_too_big,
+            Err(ThresholdSignatureError::TooManySigners { .. })
+        ));
+
+        let remove_too_big =
+            ThresholdConfigUpdate::try_new(vec![], oversized, NonZero::new(1).unwrap());
+        assert!(matches!(
+            remove_too_big,
+            Err(ThresholdSignatureError::TooManySigners { .. })
+        ));
+    }
+
+    #[test]
     fn test_config_threshold_exceeds_keys() {
         let keys = vec![make_key(1), make_key(2)];
         let result = ThresholdConfig::try_new(keys, NonZero::new(3).unwrap());
