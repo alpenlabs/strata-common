@@ -55,6 +55,9 @@
 //!   identifier argument patterns, and return a `Result`-shaped type (a path such as `Result<T, E>`
 //!   or `DbResult<T>` carrying at least one generic type argument) get proxy variants. Other
 //!   methods remain trait-only.
+//! - A qualifying method can be explicitly opted out of proxying by annotating it with
+//!   `#[gen_proxy(skip)]`; the method then remains trait-only and the marker attribute is stripped
+//!   from the emitted trait.
 
 use proc_macro::TokenStream;
 use syn::parse::{Parse, ParseStream};

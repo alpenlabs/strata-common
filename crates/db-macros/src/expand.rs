@@ -3,8 +3,8 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    FnArg, GenericArgument, ItemTrait, LitStr, Pat, PatType, Path, PathArguments, ReturnType,
-    TraitItem, TraitItemFn, Type,
+    Attribute, FnArg, GenericArgument, ItemTrait, LitStr, Pat, PatType, Path, PathArguments,
+    ReturnType, TraitItem, TraitItemFn, Type,
 };
 
 /// Expands the annotated trait into the original trait plus its proxy and receiver
@@ -39,6 +39,16 @@ pub(crate) fn expand(
             )
         {
             methods.extend(tokens);
+        }
+    }
+
+    // Re-emit the trait with any `#[gen_proxy(skip)]` helper attributes stripped from its
+    // methods. These are inert markers consumed above; leaving them in place would make the
+    // compiler try to resolve `gen_proxy` as an attribute macro on the trait method and fail.
+    let mut item = item.clone();
+    for trait_item in &mut item.items {
+        if let TraitItem::Fn(method) = trait_item {
+            method.attrs.retain(|attr| !is_skip_attr(attr));
         }
     }
 
@@ -119,6 +129,11 @@ fn gen_method(
     tracing_component: Option<&LitStr>,
     vis: &syn::Visibility,
 ) -> Option<TokenStream> {
+    // An explicit `#[gen_proxy(skip)]` opts the method out of proxying entirely.
+    if method.attrs.iter().any(is_skip_attr) {
+        return None;
+    }
+
     let sig = &method.sig;
 
     // Only plain, non-generic, synchronous methods are proxied.
@@ -245,6 +260,21 @@ fn gen_method(
             self.#chan(#(#arg_names),*).recv().await
         }
     })
+}
+
+/// Returns `true` if `attr` is the `#[gen_proxy(skip)]` opt-out marker.
+fn is_skip_attr(attr: &Attribute) -> bool {
+    if !attr.path().is_ident("gen_proxy") {
+        return false;
+    }
+    let mut is_skip = false;
+    let _ = attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("skip") {
+            is_skip = true;
+        }
+        Ok(())
+    });
+    is_skip
 }
 
 /// Returns the first generic type argument of the last path segment of `ty`, used to

@@ -43,6 +43,12 @@ trait CounterDb: Send + Sync + 'static {
     /// Panics (exercises the `JoinError` mapping path).
     fn boom(&self) -> DbResult<u64>;
 
+    /// Qualifies for proxying but is explicitly opted out via `#[gen_proxy(skip)]`,
+    /// so only the trait method exists (no `*_blocking`/`*_async`/`*_chan` variants).
+    #[gen_proxy(skip)]
+    #[expect(dead_code, reason = "skipped and unused")]
+    fn skipped(&self) -> DbResult<u64>;
+
     /// A non-`&self` method that should be left trait-only, not proxied.
     ///
     /// It carries `where Self: Sized` so the trait stays object-safe (the proxy
@@ -80,6 +86,10 @@ impl CounterDb for MemCounter {
 
     fn boom(&self) -> DbResult<u64> {
         panic!("boom")
+    }
+
+    fn skipped(&self) -> DbResult<u64> {
+        Ok(42)
     }
 }
 

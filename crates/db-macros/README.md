@@ -70,5 +70,7 @@ requires the consuming crate to depend on `tracing`.
 - Only methods that take `&self`, are non-`async`, have no method-level generics,
   use plain identifier argument patterns, and return a `Result`-shaped type get
   proxy variants. Other methods remain trait-only.
+- Annotate a method with `#[gen_proxy(skip)]` to explicitly leave it trait-only even
+  if it would otherwise qualify; the marker is stripped from the emitted trait.
 - For the `_async`/`_chan` variants, arguments and the success type must be
   `Send + 'static` (a `spawn_blocking` requirement). `_blocking` has no such bound.
