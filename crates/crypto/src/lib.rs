@@ -2,9 +2,11 @@
 
 // `ssz_primitives` (FixedBytes), `tree_hash`, and `tree_hash_derive` are
 // referenced by the generated SSZ delegate types in `ssz_generated`.
+use ssz_primitives as _;
 #[cfg(test)]
 use strata_ssz_tests as _;
-use {ssz_primitives as _, tree_hash as _, tree_hash_derive as _};
+use tree_hash as _;
+use tree_hash_derive as _;
 
 /// SSZ delegate types generated from `ssz/threshold.ssz`.
 #[allow(unreachable_pub, missing_docs, reason = "generated code")]

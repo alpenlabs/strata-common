@@ -2,7 +2,8 @@
 
 // `ssz_primitives` (FixedBytes) and `ssz_types` (VariableList) are referenced by
 // the generated SSZ delegate types in `ssz_generated`.
-use {ssz_primitives as _, ssz_types as _};
+use ssz_primitives as _;
+use ssz_types as _;
 
 /// SSZ delegate types generated from `ssz/btc.ssz`.
 #[allow(unreachable_pub, missing_docs, reason = "generated code")]
