@@ -2,7 +2,7 @@
 //!
 //! The [`macro@gen_proxy`] attribute is attached to a trait `Foo` and generates a
 //! `FooProxy` handle that offloads each trait method onto a Tokio blocking task via
-//! [`tokio::runtime::Handle::spawn_blocking`], exposing async, blocking, and
+//! `tokio::runtime::Handle::spawn_blocking`, exposing async, blocking, and
 //! channel-style variants of every method.
 //!
 //! # Example
@@ -40,15 +40,14 @@
 //! - `tracing_component = <string>` (optional): when set, each method's blocking work is wrapped in
 //!   a `#[tracing::instrument(level = "trace", fields(component = <string>))]` span (mirroring the
 //!   legacy `inst_ops` shim instrumentation). For the async and channel variants, the caller's
-//!   current span ([`tracing::Span::current`]) is captured and re-entered inside the
-//!   `spawn_blocking` task, so the method's span is parented to the async task that issued the call
-//!   rather than orphaned on the blocking thread. Requires the consuming crate to depend on
-//!   `tracing`.
+//!   current span (`tracing::Span::current`) is captured and re-entered inside the `spawn_blocking`
+//!   task, so the method's span is parented to the async task that issued the call rather than
+//!   orphaned on the blocking thread. Requires the consuming crate to depend on `tracing`.
 //!
 //! # Requirements
 //!
-//! - The error type passed to `error = ...` must implement `From<`[`tokio::task::JoinError`]`>`
-//!   (this surfaces a panic in the blocking task as an error from the async/channel variants).
+//! - The error type passed to `error = ...` must implement `From<tokio::task::JoinError>` (this
+//!   surfaces a panic in the blocking task as an error from the async/channel variants).
 //! - The generated code references `::tokio`, so the consuming crate must depend on `tokio`. When
 //!   `tracing_component` is set, it also references `::tracing`.
 //! - Only methods that take `&self`, are non-`async`, have no method-level generics, use plain
