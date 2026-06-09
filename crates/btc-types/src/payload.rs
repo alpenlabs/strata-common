@@ -2,16 +2,20 @@
 //!
 //! These types don't care about the *purpose* of the payloads, we only care about what's in them.
 
-use std::io;
-
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use serde::{Deserialize, Serialize, de};
-use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
+use serde::{Deserialize, Serialize};
+use ssz::DecodeError;
 use ssz_derive::{Decode, Encode};
-use strata_identifiers::Buf32;
+use ssz_primitives::FixedBytes;
+use strata_identifiers::{Buf32, SszDelegate, impl_borsh_via_ssz, impl_ssz_via_delegate};
 use strata_l1_txfmt::TagData;
+
+use crate::ssz_generated::ssz::btc::{
+    BlobSpecSsz, L1PayloadSsz, MAX_PAYLOAD_CHUNK_LEN, MAX_PAYLOAD_CHUNKS, PayloadIntentSsz,
+    PayloadSpecSsz,
+};
 
 /// DA destination identifier. This will eventually be used to enable
 /// storing payloads on alternative availability schemes.
@@ -64,8 +68,6 @@ impl<'a> Arbitrary<'a> for PayloadDest {
     BorshSerialize,
     Serialize,
     Deserialize,
-    Encode,
-    Decode,
 )]
 pub struct BlobSpec {
     /// Target settlement layer we're expecting the DA on.
@@ -75,6 +77,29 @@ pub struct BlobSpec {
     /// merkle root) that we expect to see committed to DA.
     commitment: Buf32,
 }
+
+// SSZ encoding delegates to the generated [`BlobSpecSsz`] container — correct by
+// construction rather than hand-rolled.
+impl SszDelegate for BlobSpec {
+    type Delegate = BlobSpecSsz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        BlobSpecSsz {
+            dest: self.dest.into(),
+            commitment: FixedBytes(self.commitment.0),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self {
+            dest: PayloadDest::try_from(delegate.dest)
+                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?,
+            commitment: Buf32::from(delegate.commitment),
+        })
+    }
+}
+
+impl_ssz_via_delegate!(BlobSpec);
 
 impl BlobSpec {
     /// The target we expect the DA payload to be stored on.
@@ -107,8 +132,6 @@ impl BlobSpec {
     BorshSerialize,
     Serialize,
     Deserialize,
-    Encode,
-    Decode,
 )]
 pub struct PayloadSpec {
     /// Target settlement layer we're expecting the DA on.
@@ -118,6 +141,29 @@ pub struct PayloadSpec {
     /// merkle root) that we expect to see committed to DA.
     commitment: Buf32,
 }
+
+// SSZ encoding delegates to the generated [`PayloadSpecSsz`] container — correct
+// by construction rather than hand-rolled.
+impl SszDelegate for PayloadSpec {
+    type Delegate = PayloadSpecSsz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        PayloadSpecSsz {
+            dest: self.dest.into(),
+            commitment: FixedBytes(self.commitment.0),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self {
+            dest: PayloadDest::try_from(delegate.dest)
+                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?,
+            commitment: Buf32::from(delegate.commitment),
+        })
+    }
+}
+
+impl_ssz_via_delegate!(PayloadSpec);
 
 impl PayloadSpec {
     /// The target we expect the DA payload to be stored on.
@@ -135,36 +181,67 @@ impl PayloadSpec {
     }
 }
 
+/// Error returned when constructing an [`L1Payload`] with data that exceeds the
+/// SSZ encoding bounds.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum L1PayloadError {
+    /// A single payload chunk is longer than `MAX_PAYLOAD_CHUNK_LEN`.
+    #[error("payload chunk of {len} bytes exceeds maximum of {MAX_PAYLOAD_CHUNK_LEN}")]
+    ChunkTooLong {
+        /// Length of the offending chunk.
+        len: usize,
+    },
+
+    /// The payload has more than `MAX_PAYLOAD_CHUNKS` chunks.
+    #[error("payload has {count} chunks, exceeding maximum of {MAX_PAYLOAD_CHUNKS}")]
+    TooManyChunks {
+        /// Number of chunks supplied.
+        count: usize,
+    },
+}
+
 /// Data that is submitted to L1. This can be DA, Checkpoint, etc.
-#[derive(Clone, Debug, Eq, PartialEq)]
+///
+/// The chunk bounds enforced by [`L1Payload::new`] mirror the SSZ container's
+/// length-bounded lists, so a constructed (or deserialized) `L1Payload` is
+/// always SSZ-encodable.
+///
+/// The serde representation flattens the [`TagData`] fields alongside the
+/// payload (`{payload, subproto_id, tx_type, aux_data}`); deserialization
+/// routes through [`L1Payload::new`] (and `TagData`'s own validating
+/// `Deserialize`) so the same invariants hold.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct L1Payload {
     /// Data payload.
+    #[serde(rename = "payload")]
     data: Vec<Vec<u8>>,
 
     /// Transaction type.
+    #[serde(flatten)]
     tag: TagData,
-}
-
-/// SSZ representation of a [L1Payload].
-#[derive(Clone, Debug, Eq, PartialEq, Encode, Decode)]
-struct L1PayloadSsz {
-    /// Data payload.
-    data: Vec<Vec<u8>>,
-
-    /// Subprotocol ID (first 8 bits of the [`TagData`]).
-    subproto_id: u8,
-
-    /// Transaction type (second 8 bits of the [`TagData`]).
-    tx_type: u8,
-
-    /// Auxiliary data (remaining bytes of the [`TagData`]).
-    aux_data: Vec<u8>,
 }
 
 impl L1Payload {
     /// Creates a new L1 payload from data chunks and tag metadata.
-    pub fn new(payload: Vec<Vec<u8>>, tag: TagData) -> Self {
-        Self { data: payload, tag }
+    ///
+    /// # Errors
+    ///
+    /// Returns [`L1PayloadError`] if the data exceeds the SSZ encoding bounds:
+    /// any chunk longer than `MAX_PAYLOAD_CHUNK_LEN`, or more than
+    /// `MAX_PAYLOAD_CHUNKS` chunks.
+    pub fn new(payload: Vec<Vec<u8>>, tag: TagData) -> Result<Self, L1PayloadError> {
+        if payload.len() > MAX_PAYLOAD_CHUNKS as usize {
+            return Err(L1PayloadError::TooManyChunks {
+                count: payload.len(),
+            });
+        }
+        if let Some(chunk) = payload
+            .iter()
+            .find(|chunk| chunk.len() > MAX_PAYLOAD_CHUNK_LEN as usize)
+        {
+            return Err(L1PayloadError::ChunkTooLong { len: chunk.len() });
+        }
+        Ok(Self { data: payload, tag })
     }
 
     /// Returns the data payload chunks.
@@ -178,127 +255,96 @@ impl L1Payload {
     }
 }
 
-impl BorshSerialize for L1Payload {
-    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        // Serialize payload Vec<Vec<u8>>
-        BorshSerialize::serialize(&self.data, writer)?;
-
-        // Serialize TagData fields
-        BorshSerialize::serialize(&self.tag.subproto_id(), writer)?;
-        BorshSerialize::serialize(&self.tag.tx_type(), writer)?;
-        BorshSerialize::serialize(&self.tag.aux_data().to_vec(), writer)?;
-
-        Ok(())
-    }
-}
-
-impl BorshDeserialize for L1Payload {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        // Deserialize payload Vec<Vec<u8>>
-        let data = Vec::<Vec<u8>>::deserialize_reader(reader)?;
-
-        // Deserialize TagData fields
-        let subproto_id = u8::deserialize_reader(reader)?;
-        let tx_type = u8::deserialize_reader(reader)?;
-        let aux_data = Vec::<u8>::deserialize_reader(reader)?;
-
-        let tag = TagData::new(subproto_id, tx_type, aux_data).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Invalid TagData: {}", e),
-            )
-        })?;
-
-        Ok(Self { data, tag })
-    }
-}
-
-impl SszEncodeTrait for L1Payload {
-    fn is_ssz_fixed_len() -> bool {
-        <L1PayloadSsz as SszEncodeTrait>::is_ssz_fixed_len()
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        L1PayloadSsz {
-            data: self.data.clone(),
-            subproto_id: self.tag.subproto_id(),
-            tx_type: self.tag.tx_type(),
-            aux_data: self.tag.aux_data().to_vec(),
-        }
-        .ssz_append(buf);
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        L1PayloadSsz {
-            data: self.data.clone(),
-            subproto_id: self.tag.subproto_id(),
-            tx_type: self.tag.tx_type(),
-            aux_data: self.tag.aux_data().to_vec(),
-        }
-        .ssz_bytes_len()
-    }
-}
-
-impl SszDecodeTrait for L1Payload {
-    fn is_ssz_fixed_len() -> bool {
-        <L1PayloadSsz as SszDecodeTrait>::is_ssz_fixed_len()
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let decoded = L1PayloadSsz::from_ssz_bytes(bytes)?;
-        let tag = TagData::new(decoded.subproto_id, decoded.tx_type, decoded.aux_data)
-            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
-        Ok(Self {
-            data: decoded.data,
-            tag,
-        })
-    }
-}
-
-// REVIEW: serde serialize/deserialize is only needed for the strata-dbtool
-impl Serialize for L1Payload {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("L1Payload", 4)?;
-        state.serialize_field("payload", &self.data)?;
-        state.serialize_field("subproto_id", &self.tag.subproto_id())?;
-        state.serialize_field("tx_type", &self.tag.tx_type())?;
-        state.serialize_field("aux_data", &self.tag.aux_data())?;
-        state.end()
-    }
-}
-
-// REVIEW: serde serialize/deserialize is only needed for the strata-dbtool
+/// [`Deserialize`] is implemented manually to route through [`L1Payload::new`],
+/// enforcing the same chunk bounds that direct construction does.
 impl<'de> Deserialize<'de> for L1Payload {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
-        struct Helper {
-            payload: Vec<Vec<u8>>,
-            subproto_id: u8,
-            tx_type: u8,
-            aux_data: Vec<u8>,
+        struct Raw {
+            #[serde(rename = "payload")]
+            data: Vec<Vec<u8>>,
+            #[serde(flatten)]
+            tag: TagData,
         }
 
-        Helper::deserialize(deserializer).and_then(|h| {
-            TagData::new(h.subproto_id, h.tx_type, h.aux_data)
-                .map(|tag| L1Payload {
-                    data: h.payload,
-                    tag,
-                })
-                .map_err(de::Error::custom)
-        })
+        let raw = Raw::deserialize(deserializer)?;
+        Self::new(raw.data, raw.tag).map_err(serde::de::Error::custom)
     }
 }
 
+// Borsh is implemented as a length-prefixed shim over the SSZ encoding, so it
+// inherits the same validation (bounded lists and `TagData::new`) on decode
+// rather than re-implementing it by hand.
+impl_borsh_via_ssz!(L1Payload);
+
+// SSZ encoding delegates to the generated [`L1PayloadSsz`] container, whose
+// length-bounded lists (`data`, `aux_data`) lay out the fixed/variable parts per
+// the SSZ spec — correct by construction rather than hand-rolled.
+impl SszDelegate for L1Payload {
+    type Delegate = L1PayloadSsz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        // These conversions cannot fail: `L1Payload::new` (and all decode paths)
+        // enforce the same bounds, so the type can never hold out-of-range data.
+        let data = self
+            .data
+            .into_iter()
+            .map(|chunk| {
+                chunk
+                    .try_into()
+                    .expect("payload chunk exceeds MAX_PAYLOAD_CHUNK_LEN")
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("payload has more than MAX_PAYLOAD_CHUNKS chunks");
+        L1PayloadSsz {
+            data,
+            subproto_id: self.tag.subproto_id(),
+            tx_type: self.tag.tx_type(),
+            aux_data: self
+                .tag
+                .aux_data()
+                .to_vec()
+                .try_into()
+                .expect("aux data exceeds MAX_AUX_DATA_LEN"),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        let tag = TagData::new(
+            delegate.subproto_id,
+            delegate.tx_type,
+            delegate.aux_data.to_vec(),
+        )
+        .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
+        let data = delegate
+            .data
+            .iter()
+            .map(|chunk| chunk.to_vec())
+            .collect::<Vec<Vec<u8>>>();
+        Ok(Self { data, tag })
+    }
+}
+
+impl_ssz_via_delegate!(L1Payload);
+
 impl<'a> arbitrary::Arbitrary<'a> for L1Payload {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let data = Vec::<Vec<u8>>::arbitrary(u)?;
+        // Generate a bounded number of bounded chunks so the result is always a
+        // valid (SSZ-encodable) payload.
+        let num_chunks = u.int_in_range(0..=8)?;
+        let mut data = Vec::with_capacity(num_chunks);
+        for _ in 0..num_chunks {
+            let chunk_len = u.int_in_range(0..=64)?;
+            let mut chunk = Vec::with_capacity(chunk_len);
+            for _ in 0..chunk_len {
+                chunk.push(u8::arbitrary(u)?);
+            }
+            data.push(chunk);
+        }
 
         let subproto_id = u8::arbitrary(u)?;
         let tx_type = u8::arbitrary(u)?;
@@ -321,9 +367,7 @@ impl<'a> arbitrary::Arbitrary<'a> for L1Payload {
 /// about it.
 ///
 /// These are never stored on-chain.
-#[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Encode, Decode,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize)]
 // TODO: rename this to L1PayloadIntent and remove the dest field
 pub struct PayloadIntent {
     /// The destination for this payload.
@@ -335,6 +379,32 @@ pub struct PayloadIntent {
     /// Blob payload.
     payload: L1Payload,
 }
+
+// SSZ encoding delegates to the generated [`PayloadIntentSsz`] container, whose
+// `payload` field reuses the [`L1PayloadSsz`] delegate — correct by construction
+// rather than hand-rolled.
+impl SszDelegate for PayloadIntent {
+    type Delegate = PayloadIntentSsz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        PayloadIntentSsz {
+            dest: self.dest.into(),
+            commitment: FixedBytes(self.commitment.0),
+            payload: self.payload.into_delegate(),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self {
+            dest: PayloadDest::try_from(delegate.dest)
+                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?,
+            commitment: Buf32::from(delegate.commitment),
+            payload: L1Payload::from_delegate(delegate.payload)?,
+        })
+    }
+}
+
+impl_ssz_via_delegate!(PayloadIntent);
 
 impl PayloadIntent {
     /// Creates a new payload intent with a destination, commitment, and payload.
@@ -372,7 +442,10 @@ impl PayloadIntent {
 
 #[cfg(test)]
 mod tests {
-    use crate::payload::L1Payload;
+    use strata_l1_txfmt::TagData;
+
+    use crate::payload::{L1Payload, L1PayloadError};
+    use crate::ssz_generated::ssz::btc::{MAX_PAYLOAD_CHUNK_LEN, MAX_PAYLOAD_CHUNKS};
     use crate::test_helpers::ArbitraryGenerator;
 
     #[test]
@@ -389,5 +462,61 @@ mod tests {
         let json = serde_json::to_string(&l1_payload).unwrap();
         let res: L1Payload = serde_json::from_str(&json).unwrap();
         assert_eq!(res, l1_payload);
+    }
+
+    #[test]
+    fn test_l1_payload_serde_flat_shape() {
+        // Guards the JSON layout: the tag fields are flattened alongside
+        // `payload` rather than nested, preserving the historical shape.
+        let payload = L1Payload::new(
+            vec![vec![1, 2, 3]],
+            TagData::new(5, 9, vec![0xAA, 0xBB]).unwrap(),
+        )
+        .unwrap();
+        let value: serde_json::Value = serde_json::to_value(&payload).unwrap();
+        let obj = value.as_object().unwrap();
+
+        assert_eq!(obj["payload"], serde_json::json!([[1, 2, 3]]));
+        assert_eq!(obj["subproto_id"], 5);
+        assert_eq!(obj["tx_type"], 9);
+        assert_eq!(obj["aux_data"], serde_json::json!([0xAA, 0xBB]));
+        assert!(
+            !obj.contains_key("tag"),
+            "tag must be flattened, not nested"
+        );
+    }
+
+    #[test]
+    fn test_l1_payload_new_rejects_long_chunk() {
+        let tag = TagData::new(1, 1, vec![]).unwrap();
+        let chunk = vec![0u8; MAX_PAYLOAD_CHUNK_LEN as usize + 1];
+        assert!(matches!(
+            L1Payload::new(vec![chunk], tag),
+            Err(L1PayloadError::ChunkTooLong { .. })
+        ));
+    }
+
+    #[test]
+    fn test_l1_payload_new_rejects_too_many_chunks() {
+        let tag = TagData::new(1, 1, vec![]).unwrap();
+        let chunks = vec![vec![]; MAX_PAYLOAD_CHUNKS as usize + 1];
+        assert!(matches!(
+            L1Payload::new(chunks, tag),
+            Err(L1PayloadError::TooManyChunks { .. })
+        ));
+    }
+
+    #[test]
+    fn test_l1_payload_deserialize_rejects_long_chunk() {
+        // A JSON payload with an over-long chunk must be rejected by the
+        // validating `Deserialize` rather than producing a panicking value.
+        let long = MAX_PAYLOAD_CHUNK_LEN as usize + 1;
+        let json = serde_json::json!({
+            "payload": [vec![0u8; long]],
+            "subproto_id": 1,
+            "tx_type": 1,
+            "aux_data": [],
+        });
+        assert!(serde_json::from_value::<L1Payload>(json).is_err());
     }
 }

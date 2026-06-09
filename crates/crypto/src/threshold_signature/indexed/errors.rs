@@ -75,6 +75,15 @@ pub enum ThresholdSignatureError {
     /// Invalid message hash.
     #[error("invalid message hash")]
     InvalidMessageHash,
+
+    /// The configuration would exceed the maximum number of signers.
+    #[error("too many signers (count {count}, max {max})")]
+    TooManySigners {
+        /// Number of signers the configuration would hold.
+        count: usize,
+        /// Maximum number of signers allowed ([`MAX_SIGNERS`](super::config::MAX_SIGNERS)).
+        max: usize,
+    },
 }
 
 impl From<secp256k1::Error> for ThresholdSignatureError {

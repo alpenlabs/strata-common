@@ -3,62 +3,61 @@ use std::io;
 use bitcoin::params::{MAINNET, Params};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
+use ssz::DecodeError;
+use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
 
 /// Wrapper around Bitcoin consensus [`Params`] with serialization support.
 #[derive(Debug, Clone)]
 pub struct BtcParams(Params);
 
-impl SszEncodeTrait for BtcParams {
-    fn is_ssz_fixed_len() -> bool {
-        true
-    }
-
-    fn ssz_fixed_len() -> usize {
-        1
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        let network_index = match self.0.network {
-            bitcoin::Network::Bitcoin => 0u8,
-            bitcoin::Network::Testnet => 1u8,
-            bitcoin::Network::Signet => 2u8,
-            bitcoin::Network::Regtest => 3u8,
-            _ => panic!("unsupported bitcoin network"),
-        };
-        buf.push(network_index);
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        <Self as SszEncodeTrait>::ssz_fixed_len()
-    }
+/// Maps a Bitcoin [`Network`](bitcoin::Network) to its SSZ selector index,
+/// preserving the historical encoding (Bitcoin=0, Testnet=1, Signet=2,
+/// Regtest=3).
+fn conv_network_to_selector(network: bitcoin::Network) -> Option<u8> {
+    Some(match network {
+        bitcoin::Network::Bitcoin => 0,
+        bitcoin::Network::Testnet => 1,
+        bitcoin::Network::Signet => 2,
+        bitcoin::Network::Regtest => 3,
+        _ => return None,
+    })
 }
 
-impl SszDecodeTrait for BtcParams {
-    fn is_ssz_fixed_len() -> bool {
-        true
+/// Inverse of [`conv_network_to_selector`].
+fn conv_selector_to_network(selector: u8) -> Option<bitcoin::Network> {
+    Some(match selector {
+        0 => bitcoin::Network::Bitcoin,
+        1 => bitcoin::Network::Testnet,
+        2 => bitcoin::Network::Signet,
+        3 => bitcoin::Network::Regtest,
+        _ => return None,
+    })
+}
+
+// SSZ encoding delegates to the upstream `u8` impl: the network is encoded as a
+// single selector byte, so the layout is correct by construction rather than
+// hand-rolled.
+//
+// NOTE: the ticket suggested modelling this as an SSZ `Union`. We deliberately
+// keep the one-byte selector instead — `ssz-gen`'s `Union` emits standard union
+// behaviour (a selector byte *plus* the serialized variant value), which would
+// widen the encoding to two bytes and change the wire format.
+impl SszDelegate for BtcParams {
+    type Delegate = u8;
+
+    fn into_delegate(self) -> Self::Delegate {
+        conv_network_to_selector(self.0.network).expect("unsupported bitcoin network")
     }
 
-    fn ssz_fixed_len() -> usize {
-        1
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let network_index = u8::from_ssz_bytes(bytes)?;
-        let network = match network_index {
-            0 => bitcoin::Network::Bitcoin,
-            1 => bitcoin::Network::Testnet,
-            2 => bitcoin::Network::Signet,
-            3 => bitcoin::Network::Regtest,
-            _ => {
-                return Err(DecodeError::BytesInvalid(format!(
-                    "invalid bitcoin network index {network_index}"
-                )));
-            }
-        };
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        let network = conv_selector_to_network(delegate).ok_or_else(|| {
+            DecodeError::BytesInvalid(format!("invalid bitcoin network index {delegate}"))
+        })?;
         Ok(Self::from(Params::from(network)))
     }
 }
+
+impl_ssz_via_delegate!(BtcParams);
 
 impl PartialEq for BtcParams {
     fn eq(&self, other: &Self) -> bool {
@@ -203,6 +202,23 @@ mod tests {
             let json_data = serde_json::to_string(&params).unwrap();
             let serde_result: BtcParams = serde_json::from_str(&json_data).unwrap();
             assert_eq!(params, serde_result);
+        }
+    }
+
+    #[test]
+    fn test_network_ssz_byte_layout() {
+        // Guards the wire format: a single selector byte per network, preserving the
+        // historical index mapping (Bitcoin=0, Testnet=1, Signet=2, Regtest=3).
+        let cases = [
+            (Network::Bitcoin, 0u8),
+            (Network::Testnet, 1u8),
+            (Network::Signet, 2u8),
+            (Network::Regtest, 3u8),
+        ];
+
+        for (network, expected) in cases {
+            let params = BtcParams::from(Params::from(network));
+            assert_eq!(params.as_ssz_bytes(), vec![expected]);
         }
     }
 

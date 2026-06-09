@@ -9,11 +9,11 @@ use std::ops::Deref;
 use arbitrary::{Arbitrary, Unstructured};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hex;
-use secp256k1::{Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1};
+use secp256k1::{Parity, PublicKey, SECP256K1, SecretKey, XOnlyPublicKey};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Serialize};
-use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
-use strata_identifiers::Buf32;
+use ssz::DecodeError;
+use strata_identifiers::{Buf32, SszDelegate, impl_ssz_via_delegate};
 
 /// Represents a secret key whose x-only public key has even parity.
 ///
@@ -58,40 +58,23 @@ impl From<EvenSecretKey> for SecretKey {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EvenPublicKey(PublicKey);
 
-impl SszEncodeTrait for EvenPublicKey {
-    fn is_ssz_fixed_len() -> bool {
-        true
+// Delegates SSZ encoding to the upstream `[u8; 32]` impl (the x-only serialization),
+// making the layout correct by construction rather than hand-rolled.
+impl SszDelegate for EvenPublicKey {
+    type Delegate = [u8; 32];
+
+    fn into_delegate(self) -> Self::Delegate {
+        self.0.x_only_public_key().0.serialize()
     }
 
-    fn ssz_fixed_len() -> usize {
-        32
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(&self.0.x_only_public_key().0.serialize());
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        <Self as SszEncodeTrait>::ssz_fixed_len()
-    }
-}
-
-impl SszDecodeTrait for EvenPublicKey {
-    fn is_ssz_fixed_len() -> bool {
-        true
-    }
-
-    fn ssz_fixed_len() -> usize {
-        32
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let serialized = <[u8; 32]>::from_ssz_bytes(bytes)?;
-        let x_only = XOnlyPublicKey::from_slice(&serialized)
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        let x_only = XOnlyPublicKey::from_slice(&delegate)
             .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
         Ok(PublicKey::from_x_only_public_key(x_only, Parity::Even).into())
     }
 }
+
+impl_ssz_via_delegate!(EvenPublicKey);
 
 impl Deref for EvenPublicKey {
     type Target = PublicKey;
@@ -225,10 +208,10 @@ pub fn even_kp((sk, pk): (SecretKey, PublicKey)) -> (EvenSecretKey, EvenPublicKe
 #[cfg(test)]
 mod tests {
     use borsh::{from_slice, to_vec};
-    use secp256k1::{Parity, PublicKey, SecretKey, SECP256K1};
+    use secp256k1::{Parity, PublicKey, SECP256K1, SecretKey};
     use strata_identifiers::Buf32;
 
-    use super::{even_kp, EvenPublicKey, EvenSecretKey};
+    use super::{EvenPublicKey, EvenSecretKey, even_kp};
 
     fn sample_secret_keys() -> (SecretKey, SecretKey) {
         let sk = SecretKey::from_slice(&[0x01; 32]).expect("valid secret key");
@@ -292,6 +275,32 @@ mod tests {
         let decoded = EvenPublicKey::try_from(buf).expect("valid x-only key");
 
         assert_eq!(even_pk, decoded);
+    }
+
+    #[test]
+    fn test_even_public_key_ssz_roundtrip_and_layout() {
+        use ssz::{Decode, Encode};
+
+        let (even_pk, _) = sample_public_keys();
+        let even_pk = EvenPublicKey::from(even_pk);
+
+        // Byte layout: the raw 32-byte x-only serialization with no length prefix.
+        let encoded = even_pk.as_ssz_bytes();
+        assert_eq!(
+            encoded,
+            even_pk.0.x_only_public_key().0.serialize().to_vec()
+        );
+        assert_eq!(encoded.len(), 32);
+
+        let decoded = EvenPublicKey::from_ssz_bytes(&encoded).expect("valid x-only key");
+        assert_eq!(even_pk, decoded);
+    }
+
+    #[test]
+    fn test_even_public_key_ssz_rejects_wrong_length() {
+        use ssz::Decode;
+        assert!(EvenPublicKey::from_ssz_bytes(&[0u8; 31]).is_err());
+        assert!(EvenPublicKey::from_ssz_bytes(&[0u8; 33]).is_err());
     }
 
     #[test]

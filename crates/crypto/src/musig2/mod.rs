@@ -6,4 +6,4 @@
 
 mod aggregation;
 
-pub use aggregation::{aggregate_schnorr_keys, Musig2Error};
+pub use aggregation::{Musig2Error, aggregate_schnorr_keys};

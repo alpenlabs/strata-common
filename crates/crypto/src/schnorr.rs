@@ -6,7 +6,7 @@ use std::ops::Deref;
 use borsh::{BorshDeserialize, BorshSerialize};
 use hex;
 use secp256k1::schnorr::Signature;
-use secp256k1::{Keypair, Message, Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1};
+use secp256k1::{Keypair, Message, Parity, PublicKey, SECP256K1, SecretKey, XOnlyPublicKey};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{Buf32, Buf64};
@@ -202,8 +202,8 @@ pub fn even_kp((sk, pk): (SecretKey, PublicKey)) -> (EvenSecretKey, EvenPublicKe
 
 #[cfg(test)]
 mod tests {
-    use rand::rngs::OsRng;
     use rand::Rng;
+    use rand::rngs::OsRng;
     use strata_identifiers::Buf32;
 
     use super::{sign_schnorr_sig, verify_schnorr_sig};
@@ -211,9 +211,9 @@ mod tests {
     #[test]
     #[cfg(not(target_os = "zkvm"))]
     fn test_schnorr_signature_pass() {
-        use secp256k1::{SecretKey, SECP256K1};
+        use secp256k1::{SECP256K1, SecretKey};
 
-        let msg: [u8; 32] = [(); 32].map(|_| OsRng.gen());
+        let msg: [u8; 32] = [(); 32].map(|_| OsRng.r#gen());
 
         let mut mod_msg = msg;
         mod_msg.swap(1, 2);

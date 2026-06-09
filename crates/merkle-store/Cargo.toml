@@ -12,5 +12,7 @@ strata-merkle = { path = "../merkle", default-features = false }
 thiserror.workspace = true
 
 [dev-dependencies]
-strata-merkle = { path = "../merkle", default-features = false, features = ["legacy_compact"] }
 proptest.workspace = true
+strata-merkle = { path = "../merkle", default-features = false, features = [
+  "legacy_compact",
+] }

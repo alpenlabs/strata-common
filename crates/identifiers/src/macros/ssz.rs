@@ -223,6 +223,148 @@ macro_rules! impl_ssz_transparent_wrapper {
     };
 }
 
+/// Describes how a wrapper type's SSZ encoding is delegated to another,
+/// well-defined SSZ type.
+///
+/// Implementing this trait and invoking `impl_ssz_via_delegate!` gives a
+/// wrapper type [`ssz::Encode`]/[`ssz::Decode`] impls that are *correct by
+/// construction*: the byte layout is determined entirely by the
+/// [`Delegate`](SszDelegate::Delegate) type — a generated SSZ container,
+/// `FixedBytes`, `VariableList`, a primitive, etc. — rather than by a
+/// hand-written impl that could violate the SSZ fixed-part/variable-part rules.
+///
+/// The delegate is the encoded form: [`into_delegate`](SszDelegate::into_delegate)
+/// projects a value into it for encoding, and
+/// [`from_delegate`](SszDelegate::from_delegate) reconstructs a value from a
+/// decoded delegate, validating any wrapper invariants the delegate type does
+/// not itself enforce.
+///
+/// # Example
+///
+/// ```ignore
+/// // `BitcoinOutPointSsz` is a derived/generated SSZ container.
+/// impl SszDelegate for BitcoinOutPoint {
+///     type Delegate = BitcoinOutPointSsz;
+///
+///     fn into_delegate(self) -> Self::Delegate {
+///         BitcoinOutPointSsz { txid: self.0.txid.to_byte_array(), vout: self.0.vout }
+///     }
+///
+///     fn from_delegate(d: Self::Delegate) -> Result<Self, ssz::DecodeError> {
+///         Ok(Self(OutPoint { txid: Txid::from_byte_array(d.txid), vout: d.vout }))
+///     }
+/// }
+///
+/// impl_ssz_via_delegate!(BitcoinOutPoint);
+/// ```
+pub trait SszDelegate: Sized {
+    /// The well-defined SSZ type this type's encoding delegates to.
+    type Delegate: ::ssz::Encode + ::ssz::Decode + ::tree_hash::TreeHash;
+
+    /// Projects `self` into its delegate representation for encoding.
+    fn into_delegate(self) -> Self::Delegate;
+
+    /// Reconstructs `Self` from a decoded delegate, validating any invariants
+    /// the wrapper enforces that the delegate type does not.
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, ::ssz::DecodeError>;
+}
+
+/// Generates [`ssz::Encode`], [`ssz::Decode`], and [`tree_hash::TreeHash`]
+/// implementations for a type that implements [`SszDelegate`], delegating the
+/// entire byte layout and merkleization to its
+/// [`Delegate`](SszDelegate::Delegate) type.
+///
+/// This is the "correct by construction" replacement for hand-written
+/// `Encode`/`Decode` impls: the wrapper supplies only the value-level conversion
+/// to/from a well-defined SSZ type via [`SszDelegate`], and this macro wires up
+/// the trait methods so the wrapper inherits the delegate's (spec-compliant)
+/// layout and tree-hash root verbatim. Because the tree hash is delegated too,
+/// the wrapper can be used as a field inside other SSZ containers.
+///
+/// # Requirements
+///
+/// The type must implement [`SszDelegate`] and [`Clone`] (the latter is used to
+/// project `&self` into the delegate when encoding or tree-hashing).
+///
+/// # Example
+///
+/// ```ignore
+/// impl SszDelegate for MyWrapper {
+///     type Delegate = MyWrapperSsz;
+///     fn into_delegate(self) -> Self::Delegate { /* … */ }
+///     fn from_delegate(d: Self::Delegate) -> Result<Self, ssz::DecodeError> { /* … */ }
+/// }
+///
+/// impl_ssz_via_delegate!(MyWrapper);
+/// ```
+#[macro_export]
+macro_rules! impl_ssz_via_delegate {
+    ($type:ty) => {
+        impl ::ssz::Encode for $type {
+            fn is_ssz_fixed_len() -> bool {
+                <<$type as $crate::SszDelegate>::Delegate as ::ssz::Encode>::is_ssz_fixed_len()
+            }
+
+            fn ssz_fixed_len() -> usize {
+                <<$type as $crate::SszDelegate>::Delegate as ::ssz::Encode>::ssz_fixed_len()
+            }
+
+            fn ssz_append(&self, buf: &mut ::std::vec::Vec<u8>) {
+                ::ssz::Encode::ssz_append(
+                    &$crate::SszDelegate::into_delegate(::core::clone::Clone::clone(self)),
+                    buf,
+                )
+            }
+
+            fn ssz_bytes_len(&self) -> usize {
+                ::ssz::Encode::ssz_bytes_len(&$crate::SszDelegate::into_delegate(
+                    ::core::clone::Clone::clone(self),
+                ))
+            }
+        }
+
+        impl ::ssz::Decode for $type {
+            fn is_ssz_fixed_len() -> bool {
+                <<$type as $crate::SszDelegate>::Delegate as ::ssz::Decode>::is_ssz_fixed_len()
+            }
+
+            fn ssz_fixed_len() -> usize {
+                <<$type as $crate::SszDelegate>::Delegate as ::ssz::Decode>::ssz_fixed_len()
+            }
+
+            fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ::ssz::DecodeError> {
+                let delegate =
+                    <<$type as $crate::SszDelegate>::Delegate as ::ssz::Decode>::from_ssz_bytes(
+                        bytes,
+                    )?;
+                <$type as $crate::SszDelegate>::from_delegate(delegate)
+            }
+        }
+
+        impl ::tree_hash::TreeHash for $type {
+            fn tree_hash_type() -> ::tree_hash::TreeHashType {
+                <<$type as $crate::SszDelegate>::Delegate as ::tree_hash::TreeHash>::tree_hash_type()
+            }
+
+            fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
+                ::tree_hash::TreeHash::tree_hash_packed_encoding(
+                    &$crate::SszDelegate::into_delegate(::core::clone::Clone::clone(self)),
+                )
+            }
+
+            fn tree_hash_packing_factor() -> usize {
+                <<$type as $crate::SszDelegate>::Delegate as ::tree_hash::TreeHash>::tree_hash_packing_factor()
+            }
+
+            fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
+                ::tree_hash::TreeHash::tree_hash_root::<H>(&$crate::SszDelegate::into_delegate(
+                    ::core::clone::Clone::clone(self),
+                ))
+            }
+        }
+    };
+}
+
 /// Generates SSZ view trait implementations for transparent wrappers around
 /// raw `[u8; N]` arrays.
 ///

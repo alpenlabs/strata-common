@@ -21,7 +21,13 @@ thiserror.workspace = true
 
 ssz.workspace = true
 ssz_derive.workspace = true
+ssz_primitives.workspace = true
+ssz_types.workspace = true
 tree_hash.workspace = true
+tree_hash_derive.workspace = true
+
+[build-dependencies]
+ssz_codegen.workspace = true
 
 [dev-dependencies]
 rand_core = { workspace = true, features = ["getrandom"] }

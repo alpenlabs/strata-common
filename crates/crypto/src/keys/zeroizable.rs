@@ -135,12 +135,12 @@ impl Deref for ZeroizedBuf32 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
+    use bitcoin::Network;
     use bitcoin::bip32::Xpriv;
     use bitcoin::secp256k1::SECP256K1;
-    use bitcoin::Network;
     use zeroize::Zeroize;
 
     use super::*;

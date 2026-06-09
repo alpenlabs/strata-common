@@ -1,5 +1,5 @@
 [package]
-edition = "2021"
+edition = "2024"
 name = "strata-crypto"
 version = "0.3.0-alpha.1"
 
@@ -20,8 +20,15 @@ serde.workspace = true
 sha2.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true
+ssz_primitives.workspace = true
+ssz_types.workspace = true
 thiserror.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
 zeroize.workspace = true
+
+[build-dependencies]
+ssz_codegen.workspace = true
 
 [dev-dependencies]
 bitcoin.workspace = true
@@ -29,6 +36,7 @@ proptest.workspace = true
 rand.workspace = true
 rand_core = { workspace = true, features = ["getrandom"] }
 serde_json.workspace = true
+strata-ssz-tests.workspace = true
 
 [features]
 default = []

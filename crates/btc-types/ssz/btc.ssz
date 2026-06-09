@@ -1,0 +1,74 @@
+# SSZ schema definitions for strata-btc-types wrapper types.
+#
+# These containers are the canonical SSZ "delegate" representations for the
+# Bitcoin wrapper types in this crate. The Rust wrappers implement `SszDelegate`
+# against the generated types and obtain their `Encode`/`Decode` impls via
+# `impl_ssz_via_delegate!`, so the wire layout is correct by construction (the
+# SSZ fixed-part/variable-part split is handled entirely by the generated code).
+
+### Maximum size of a Bitcoin scriptPubKey, in bytes (Bitcoin Core `MAX_SCRIPT_SIZE`).
+MAX_SCRIPT_SIZE = 10000
+
+### Maximum size of a single envelope payload chunk, in bytes
+### (Bitcoin `MAX_SCRIPT_ELEMENT_SIZE`).
+MAX_PAYLOAD_CHUNK_LEN = 520
+
+### Maximum number of envelope payload chunks
+### (`MAX_ENVELOPE_PAYLOAD_SIZE` / `MAX_SCRIPT_ELEMENT_SIZE`, rounded up).
+MAX_PAYLOAD_CHUNKS = 760
+
+### Maximum length of L1 tag auxiliary data, in bytes (`strata-l1-txfmt` `MAX_AUX_LEN`).
+MAX_AUX_DATA_LEN = 74
+
+### A Bitcoin locking script (scriptPubKey), bounded by the consensus script size.
+BitcoinScriptSsz = List[byte, MAX_SCRIPT_SIZE]
+
+### SSZ delegate for a Bitcoin outpoint (a reference to a specific tx output).
+class BitcoinOutPointSsz(Container):
+    ### Transaction ID the output belongs to.
+    txid: Bytes32
+    ### Index of the referenced output within that transaction.
+    vout: uint32
+
+### SSZ delegate for a Bitcoin transaction output.
+class BitcoinTxOutSsz(Container):
+    ### Output value, in satoshis.
+    value: uint64
+    ### Locking script (scriptPubKey).
+    script_pubkey: List[byte, MAX_SCRIPT_SIZE]
+
+### SSZ delegate for an L1 DA payload.
+class L1PayloadSsz(Container):
+    ### Payload data, split into envelope-sized chunks.
+    data: List[List[byte, MAX_PAYLOAD_CHUNK_LEN], MAX_PAYLOAD_CHUNKS]
+    ### Subprotocol ID (first byte of the tag metadata).
+    subproto_id: uint8
+    ### Transaction type (second byte of the tag metadata).
+    tx_type: uint8
+    ### Auxiliary tag data (remaining tag bytes).
+    aux_data: List[byte, MAX_AUX_DATA_LEN]
+
+### SSZ delegate for a DA blob spec (target + commitment).
+###
+### `dest` is the single-byte `PayloadDest` selector.
+class BlobSpecSsz(Container):
+    ### Target settlement layer selector.
+    dest: uint8
+    ### Commitment to the payload.
+    commitment: Bytes32
+
+### SSZ delegate for a DA payload spec (target + commitment).
+class PayloadSpecSsz(Container):
+    ### Target settlement layer selector.
+    dest: uint8
+    ### Commitment to the payload.
+    commitment: Bytes32
+
+### SSZ delegate for a payload intent (target + commitment + payload).
+class PayloadIntentSsz(Container):
+    ### Target settlement layer selector.
+    dest: uint8
+    ### Commitment to the payload.
+    commitment: Bytes32
+    ### The blob payload itself.
+    payload: L1PayloadSsz

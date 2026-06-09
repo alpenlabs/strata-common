@@ -7,7 +7,7 @@ pub(crate) mod buf;
 pub(crate) mod serde_impl;
 #[cfg(feature = "ssz")]
 #[macro_use]
-mod ssz;
+pub(crate) mod ssz;
 #[macro_use]
 mod wrapper;
 

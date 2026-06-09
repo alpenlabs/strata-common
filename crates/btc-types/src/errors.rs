@@ -20,6 +20,15 @@ pub enum ParseError {
     #[error("supplied script is invalid")]
     InvalidScript(#[from] address::FromScriptError),
 
+    /// The provided script exceeds the maximum encodable size.
+    #[error("script of {size} bytes exceeds the maximum of {max} bytes")]
+    ScriptTooLarge {
+        /// Size of the offending script, in bytes.
+        size: usize,
+        /// Maximum allowed script size, in bytes (`MAX_SCRIPT_SIZE`).
+        max: usize,
+    },
+
     /// The provided 32-byte buffer is not a valid point on the curve.
     #[error("not a valid point on the curve: {0}")]
     InvalidPoint(Buf32),

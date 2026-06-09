@@ -7,7 +7,8 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
-use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
+use ssz::DecodeError;
+use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
 
 /// A compressed secp256k1 public key (33 bytes).
 ///
@@ -25,38 +26,21 @@ use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CompressedPublicKey(PublicKey);
 
-impl SszEncodeTrait for CompressedPublicKey {
-    fn is_ssz_fixed_len() -> bool {
-        true
+// Delegates SSZ encoding to the upstream `[u8; 33]` impl (the 33-byte compressed
+// point), making the layout correct by construction rather than hand-rolled.
+impl SszDelegate for CompressedPublicKey {
+    type Delegate = [u8; 33];
+
+    fn into_delegate(self) -> Self::Delegate {
+        self.serialize()
     }
 
-    fn ssz_fixed_len() -> usize {
-        33
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(&self.serialize());
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        <Self as SszEncodeTrait>::ssz_fixed_len()
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Self::from_slice(&delegate).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
     }
 }
 
-impl SszDecodeTrait for CompressedPublicKey {
-    fn is_ssz_fixed_len() -> bool {
-        true
-    }
-
-    fn ssz_fixed_len() -> usize {
-        33
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let serialized = <[u8; 33]>::from_ssz_bytes(bytes)?;
-        Self::from_slice(&serialized).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
-    }
-}
+impl_ssz_via_delegate!(CompressedPublicKey);
 
 impl CompressedPublicKey {
     /// Create a new `CompressedPublicKey` from a byte slice.
@@ -207,5 +191,33 @@ mod tests {
         let invalid = [0u8; 33];
         let result = CompressedPublicKey::from_slice(&invalid);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_compressed_pubkey_ssz_roundtrip_and_layout() {
+        use secp256k1::{Secp256k1, SecretKey};
+        use ssz::{Decode, Encode};
+
+        let secp = Secp256k1::new();
+        let sk = SecretKey::from_slice(&[0x03; 32]).unwrap();
+        let pk = PublicKey::from_secret_key(&secp, &sk);
+        let compressed = CompressedPublicKey::from(pk);
+
+        // Byte layout: the raw 33-byte compressed point with no length prefix.
+        let encoded = compressed.as_ssz_bytes();
+        assert_eq!(encoded, compressed.serialize().to_vec());
+        assert_eq!(encoded.len(), 33);
+
+        let decoded = CompressedPublicKey::from_ssz_bytes(&encoded).unwrap();
+        assert_eq!(compressed, decoded);
+    }
+
+    #[test]
+    fn test_compressed_pubkey_ssz_rejects_invalid() {
+        use ssz::Decode;
+        // Wrong length.
+        assert!(CompressedPublicKey::from_ssz_bytes(&[0u8; 32]).is_err());
+        // Right length, not a valid curve point.
+        assert!(CompressedPublicKey::from_ssz_bytes(&[0u8; 33]).is_err());
     }
 }

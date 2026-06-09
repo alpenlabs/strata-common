@@ -3,9 +3,12 @@
 use std::collections::HashSet;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use ssz_derive::{Decode, Encode};
+use ssz::DecodeError;
+use ssz_primitives::FixedBytes;
+use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
 
 use super::ThresholdSignatureError;
+use crate::ssz_generated::ssz::threshold::{IndexedSignatureSsz, SignatureSetSsz};
 
 /// An ECDSA signature with its signer index.
 ///
@@ -27,7 +30,7 @@ use super::ThresholdSignatureError;
 /// The signer includes their own index (position in `ThresholdConfig::keys`) when creating
 /// an `IndexedSignature`. Verification uses that index to fetch the expected public key and
 /// compare it against the recovered key from the signature.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct IndexedSignature {
     /// Index of the signer in the ThresholdConfig keys array (0-255).
     index: u8,
@@ -83,16 +86,66 @@ impl IndexedSignature {
     }
 }
 
+// SSZ encoding delegates to the generated [`IndexedSignatureSsz`] container —
+// correct by construction rather than hand-rolled.
+impl SszDelegate for IndexedSignature {
+    type Delegate = IndexedSignatureSsz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        IndexedSignatureSsz {
+            index: self.index,
+            signature: FixedBytes(self.signature),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self {
+            index: delegate.index,
+            signature: delegate.signature.0,
+        })
+    }
+}
+
+impl_ssz_via_delegate!(IndexedSignature);
+
 /// A set of indexed ECDSA signatures for threshold verification.
 ///
 /// Signatures are guaranteed duplicate-free.
-#[derive(
-    Debug, Clone, PartialEq, Eq, Default, BorshSerialize, BorshDeserialize, Encode, Decode,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, BorshSerialize, BorshDeserialize)]
 pub struct SignatureSet {
     /// Sorted signatures by index, no duplicates.
     signatures: Vec<IndexedSignature>,
 }
+
+// SSZ encoding delegates to the generated [`SignatureSetSsz`] container, whose
+// `signatures` field is a length-bounded `List[IndexedSignatureSsz, MAX_SIGNERS]`.
+// `from_delegate` re-applies the duplicate-free invariant via [`SignatureSet::new`].
+impl SszDelegate for SignatureSet {
+    type Delegate = SignatureSetSsz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        let signatures = self
+            .signatures
+            .into_iter()
+            .map(SszDelegate::into_delegate)
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("more than MAX_SIGNERS signatures");
+        SignatureSetSsz { signatures }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        let signatures = delegate
+            .signatures
+            .iter()
+            .cloned()
+            .map(IndexedSignature::from_delegate)
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::new(signatures).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
+    }
+}
+
+impl_ssz_via_delegate!(SignatureSet);
 
 impl SignatureSet {
     /// Create a new signature set from a vector of indexed signatures.

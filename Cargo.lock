@@ -3971,13 +3971,17 @@ dependencies = [
  "serde",
  "serde_json",
  "ssz",
+ "ssz_codegen",
  "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-codec",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-ssz-tests",
  "thiserror 2.0.18",
  "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -4034,9 +4038,15 @@ dependencies = [
  "serde_json",
  "sha2",
  "ssz",
+ "ssz_codegen",
  "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-identifiers",
+ "strata-ssz-tests",
  "thiserror 2.0.18",
+ "tree_hash",
+ "tree_hash_derive",
  "zeroize",
 ]
 

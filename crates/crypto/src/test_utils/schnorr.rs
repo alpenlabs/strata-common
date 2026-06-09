@@ -1,6 +1,6 @@
 use musig2::{FirstRound, KeyAggContext, SecNonceSpices};
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use secp256k1::{PublicKey, Secp256k1, XOnlyPublicKey};
 use strata_identifiers::Buf32;
 
@@ -143,11 +143,11 @@ pub fn create_agg_pubkey_from_privkeys(operators_privkeys: &[EvenSecretKey]) -> 
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::TapNodeHash;
     use bitcoin::hashes::Hash;
     use bitcoin::key::TapTweak;
     use bitcoin::secp256k1::schnorr::Signature;
     use bitcoin::secp256k1::{self, Secp256k1};
-    use bitcoin::TapNodeHash;
     use rand::rngs::OsRng;
     use secp256k1::SecretKey;
 
