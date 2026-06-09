@@ -11,6 +11,11 @@ use super::index::{LeafPos, NodePos};
 /// Reserved metadata tag holding the leaf count (== next leaf index).
 const NEXT_INDEX_TAG: u64 = 0;
 
+/// Reserved metadata tag holding the prune watermark: every leaf below this
+/// index has been discarded by [`prune_before`](StoredMmr::prune_before) and can
+/// no longer be proven. Absent (the default) means `0` — nothing pruned.
+const PRUNED_BEFORE_TAG: u64 = 1;
+
 /// Reversible packing of a `u64` into a hash-sized metadata value.
 ///
 /// The node store keeps its leaf count in a reserved metadata slot that holds a
@@ -95,9 +100,8 @@ pub trait MmrNodeStore {
 ///
 /// Opt-in and separate from [`MmrNodeStore`] so append-only backends (which
 /// cannot delete) are unaffected: an implementor adds only
-/// [`delete_node`](Self::delete_node); [`delete_nodes`](Self::delete_nodes) and
-/// [`prune_commit`](Self::prune_commit) have correct defaults a backend may
-/// override for batching/atomicity.
+/// [`delete_node`](Self::delete_node); [`delete_nodes`](Self::delete_nodes) has
+/// a correct default a backend may override for a single round-trip.
 pub trait PrunableNodeStore: MmrNodeStore {
     /// Removes the node at `pos`.
     ///
@@ -108,26 +112,17 @@ pub trait PrunableNodeStore: MmrNodeStore {
     ///
     /// The default loops [`delete_node`](Self::delete_node); backends with a
     /// native multi-delete should override it for a single round-trip.
+    ///
+    /// The pruning operations pass the whole set of positions a prune removes —
+    /// a count that scales with how far back the cut reaches (a deep
+    /// [`prune_after`](StoredMmr::prune_after), for instance, can delete most of
+    /// the tree). A backend that cannot issue an arbitrarily large delete in one
+    /// go should chunk internally (e.g. `positions.chunks(N)`) to its own limit.
     fn delete_nodes(&self, positions: &[NodePos]) -> Result<(), Self::Error> {
         for pos in positions {
             self.delete_node(*pos)?;
         }
         Ok(())
-    }
-
-    /// Applies `writes` and `deletes` together — the transactional primitive
-    /// for pruning, mirroring [`commit`](MmrNodeStore::commit) for writes.
-    ///
-    /// The default is non-atomic (commit, then delete); transactional backends
-    /// should override it so a truncation's leaf-count bump and node deletions
-    /// land in a single transaction.
-    fn prune_commit(
-        &self,
-        writes: &[(NodePos, Self::Hash)],
-        deletes: &[NodePos],
-    ) -> Result<(), Self::Error> {
-        self.commit(writes)?;
-        self.delete_nodes(deletes)
     }
 }
 
@@ -149,6 +144,19 @@ where
     fn leaf_count(&self) -> Result<u64, MmrError<Self::Error>> {
         Ok(self
             .get_node(NodePos::meta(NEXT_INDEX_TAG))
+            .map_err(MmrError::Backend)?
+            .map(|h| h.unpack_u64())
+            .unwrap_or(0))
+    }
+
+    /// Returns the prune watermark: every leaf with index `< pruned_before` has
+    /// been discarded by [`prune_before`](Self::prune_before) and can no longer
+    /// be proven. `0` (the default) means nothing has been pruned.
+    ///
+    /// `O(1)`: reads the reserved watermark metadata slot.
+    fn pruned_before(&self) -> Result<u64, MmrError<Self::Error>> {
+        Ok(self
+            .get_node(NodePos::meta(PRUNED_BEFORE_TAG))
             .map_err(MmrError::Backend)?
             .map(|h| h.unpack_u64())
             .unwrap_or(0))
@@ -225,6 +233,11 @@ where
     /// append-only use, so the proof path for `leaf_index` in a
     /// size-`at_leaf_count` MMR walks the same nodes regardless of later
     /// appends.
+    ///
+    /// Errors with [`MmrError::Pruned`] if `leaf_index` is below the store's
+    /// prune watermark (see [`prune_before`](Self::prune_before)): the nodes
+    /// were deliberately discarded, so this is reported distinctly from a
+    /// [`MmrError::NodeMissing`] corruption.
     fn generate_proof_at_size(
         &self,
         leaf_index: u64,
@@ -234,6 +247,17 @@ where
             return Err(MmrError::LeafOutOfRange {
                 index: leaf_index,
                 leaf_count: at_leaf_count,
+            });
+        }
+
+        // A leaf below the watermark had its path discarded by `prune_before`;
+        // report that intent rather than letting the missing-node read below
+        // surface as `NodeMissing`, which a caller reads as corruption.
+        let pruned_before = <Self as StoredMmr<MH>>::pruned_before(self)?;
+        if leaf_index < pruned_before {
+            return Err(MmrError::Pruned {
+                index: leaf_index,
+                pruned_before,
             });
         }
 
@@ -262,22 +286,25 @@ where
     }
 
     /// Prunes every node strictly before `before`, retaining only the peaks of
-    /// the first `before.index()` leaves.
+    /// the first `before.index()` leaves, and raises the prune watermark.
     ///
     /// Those peaks are the minimal set still required to prove leaves at or
     /// after `before` and to keep appending, so both continue to work; proofs
-    /// for the *pruned* leaves afterward fail with [`MmrError::NodeMissing`].
-    /// The leaf count is unchanged. A `before` of `0` prunes nothing; one equal
-    /// to the leaf count compacts the whole MMR down to its current peaks.
+    /// for the *pruned* leaves afterward fail with [`MmrError::Pruned`]. The
+    /// leaf count is unchanged. A `before` of `0` prunes nothing; one equal to
+    /// the leaf count compacts the whole MMR down to its current peaks. The
+    /// watermark is monotonic: a `before` at or below the current watermark only
+    /// re-deletes already-pruned nodes and leaves the watermark untouched.
     ///
     /// Errors with [`MmrError::LeafOutOfRange`] if `before` is past the append
     /// point (`> leaf_count`).
     ///
+    /// Not a single atomic transaction: the node deletes and the watermark write
+    /// are separate calls, and the watermark is written last, so a crash
+    /// mid-prune leaves the watermark unchanged and re-running the same call
+    /// recomputes the identical (idempotent) delete set and completes.
+    ///
     /// Requires a [`PrunableNodeStore`] backend.
-    //
-    // TODO: a stored `pruned_before` watermark would let proof generation for a
-    // pruned leaf return a dedicated error instead of `NodeMissing`, which a
-    // caller can't currently tell apart from genuine corruption.
     fn prune_before(&self, before: LeafPos) -> Result<(), MmrError<Self::Error>>
     where
         Self: PrunableNodeStore,
@@ -290,8 +317,19 @@ where
                 leaf_count,
             });
         }
-        let deletes = prune_before_positions(before_index);
-        self.prune_commit(&[], &deletes).map_err(MmrError::Backend)
+        let positions: Vec<NodePos> = prune_before_positions(before_index).collect();
+        self.delete_nodes(&positions).map_err(MmrError::Backend)?;
+        // Raise the watermark last (monotonically), once the nodes are gone, so
+        // a leaf is never reported `Pruned` while its path is still present.
+        let watermark = <Self as StoredMmr<MH>>::pruned_before(self)?;
+        if before_index > watermark {
+            self.commit(&[(
+                NodePos::meta(PRUNED_BEFORE_TAG),
+                MH::Hash::pack_u64(before_index),
+            )])
+            .map_err(MmrError::Backend)?;
+        }
+        Ok(())
     }
 
     /// Truncates the MMR to its first `after.index()` leaves, removing that leaf
@@ -302,10 +340,17 @@ where
     /// `after.index()` leaves (a surviving node covers the same leaves, so its
     /// stored hash is unchanged), so the truncated store behaves identically to
     /// one that was only ever that size. An `after` equal to the leaf count is a
-    /// no-op (nothing past the end); one of `0` empties the store.
+    /// no-op (nothing past the end); one of `0` empties the store. If a prior
+    /// [`prune_before`](Self::prune_before) left the watermark above the new
+    /// count, it is clamped down to it.
     ///
     /// Errors with [`MmrError::LeafOutOfRange`] if `after` is past the append
     /// point (`> leaf_count`).
+    ///
+    /// Not a single atomic transaction: the node deletes and the leaf-count
+    /// write are separate calls, and the count is written last, so a crash
+    /// mid-prune leaves the count unchanged and re-running the same call
+    /// recomputes the identical (idempotent) delete set and completes.
     ///
     /// Requires a [`PrunableNodeStore`] backend.
     fn prune_after(&self, after: LeafPos) -> Result<(), MmrError<Self::Error>>
@@ -323,10 +368,17 @@ where
         if keep == leaf_count {
             return Ok(());
         }
-        let deletes = prune_after_positions(keep, leaf_count);
-        let count_write = (NodePos::meta(NEXT_INDEX_TAG), MH::Hash::pack_u64(keep));
-        self.prune_commit(&[count_write], &deletes)
-            .map_err(MmrError::Backend)
+        let positions: Vec<NodePos> = prune_after_positions(keep, leaf_count).collect();
+        self.delete_nodes(&positions).map_err(MmrError::Backend)?;
+        // Lower the leaf count last so an interrupted prune is resumable. Clamp
+        // the watermark to the new count in the same write, since no leaf at or
+        // above `keep` survives to be reported `Pruned`.
+        let mut writes = vec![(NodePos::meta(NEXT_INDEX_TAG), MH::Hash::pack_u64(keep))];
+        let watermark = <Self as StoredMmr<MH>>::pruned_before(self)?;
+        if watermark > keep {
+            writes.push((NodePos::meta(PRUNED_BEFORE_TAG), MH::Hash::pack_u64(keep)));
+        }
+        self.commit(&writes).map_err(MmrError::Backend)
     }
 }
 
@@ -597,7 +649,7 @@ mod tests {
                     append(&store, *value);
                 }
 
-                let deletes = prune_before_positions(k);
+                let deletes: Vec<NodePos> = prune_before_positions(k).collect();
                 for pos in &deletes {
                     assert!(
                         store.get_node(*pos).unwrap().is_some(),
@@ -627,8 +679,8 @@ mod tests {
         }
     }
 
-    /// A leaf whose node was pruned by `prune_before` can no longer be proven,
-    /// while a leaf at/after the cut still can.
+    /// A leaf below the watermark left by `prune_before` reports `Pruned`, while
+    /// a leaf at/after the cut still proves.
     #[test]
     fn prune_before_makes_pruned_leaf_unprovable() {
         let leaves: Vec<Hash32> = (0..4).map(leaf).collect();
@@ -638,15 +690,48 @@ mod tests {
         }
         // Peaks of the first 2 leaves are [(1,0)]; this drops leaves 0 and 1.
         prune_before(&store, 2);
+        assert_eq!(StoredMmr::<Sha256Hasher>::pruned_before(&store).unwrap(), 2);
 
-        assert!(matches!(
-            StoredMmr::<Sha256Hasher>::generate_proof_at_size(&store, 0, 4),
-            Err(MmrError::NodeMissing(_))
-        ));
+        for idx in 0..2 {
+            assert!(matches!(
+                StoredMmr::<Sha256Hasher>::generate_proof_at_size(&store, idx, 4),
+                Err(MmrError::Pruned {
+                    index,
+                    pruned_before: 2,
+                }) if index == idx
+            ));
+        }
 
         let reference = reference_mmr(&leaves);
         let proof = proof_at_size(&store, 2, 4);
         assert!(reference.verify::<Sha256Hasher>(&proof, &leaf(2)));
+    }
+
+    /// The watermark only ever rises under `prune_before`, and `prune_after`
+    /// clamps it down to a new, smaller leaf count.
+    #[test]
+    fn prune_watermark_is_monotonic_and_clamped() {
+        let store = MemMmr::<Hash32>::default();
+        for i in 0..8 {
+            append(&store, leaf(i));
+        }
+        let watermark = || StoredMmr::<Sha256Hasher>::pruned_before(&store).unwrap();
+
+        prune_before(&store, 3);
+        assert_eq!(watermark(), 3);
+        // A smaller cut re-deletes already-pruned nodes but never lowers it.
+        prune_before(&store, 1);
+        assert_eq!(watermark(), 3);
+        // A larger cut raises it.
+        prune_before(&store, 5);
+        assert_eq!(watermark(), 5);
+        // Truncating below the watermark clamps it to the surviving leaf count.
+        prune_after(&store, 4);
+        assert_eq!(count(&store), 4);
+        assert_eq!(watermark(), 4);
+        // Emptying resets it.
+        prune_after(&store, 0);
+        assert_eq!(watermark(), 0);
     }
 
     /// `prune_before(leaf_count)` compacts the whole MMR to its current peaks,

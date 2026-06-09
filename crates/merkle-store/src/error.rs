@@ -44,4 +44,17 @@ pub enum MmrError<E> {
     /// can be appended — the next index would overflow `u64`.
     #[error("MMR has reached max capacity")]
     MaxCapacity,
+
+    /// The requested leaf lies in the pruned prefix: it is below the store's
+    /// prune watermark, so the nodes needed to prove it have been discarded by
+    /// [`prune_before`](super::store::StoredMmr::prune_before). Unlike
+    /// [`NodeMissing`](Self::NodeMissing), this is an expected outcome of
+    /// pruning, not corruption.
+    #[error("leaf index {index} was pruned (pruned_before={pruned_before})")]
+    Pruned {
+        /// The requested leaf index, below the watermark.
+        index: u64,
+        /// The watermark: every leaf below this index has been pruned.
+        pruned_before: u64,
+    },
 }
