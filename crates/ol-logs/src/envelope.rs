@@ -152,9 +152,10 @@ mod tests {
     }
 
     fn snark_strategy() -> impl Strategy<Value = SnarkAccountUpdateLogData> {
+        // Full snark `extra_data` bound (1024); the envelope stays within `MAX_LOG_PAYLOAD_LEN`.
         (
             any::<u64>(),
-            prop::collection::vec(any::<u8>(), 0..=400usize),
+            prop::collection::vec(any::<u8>(), 0..=1024usize),
         )
             .prop_map(|(new_msg_idx, extra_data)| {
                 SnarkAccountUpdateLogData::new(new_msg_idx, extra_data)
@@ -169,6 +170,15 @@ mod tests {
             (account_strategy(), snark_strategy()).prop_map(|(serial, s)| Entry::Snark(serial, s)),
             account_strategy().prop_map(Entry::Empty),
         ]
+    }
+
+    /// `decode_log` surfaces a malformed (here, empty) envelope as `LogDecodeError::Envelope`,
+    /// rather than a codec error or type mismatch. This is the reconciled superset variant.
+    #[test]
+    fn decode_log_reports_envelope_error_on_malformed_input() {
+        let err = SimpleWithdrawalIntentLogData::decode_log(&[])
+            .expect_err("empty input is not a valid envelope");
+        assert!(matches!(err, LogDecodeError::Envelope(_)));
     }
 
     proptest! {

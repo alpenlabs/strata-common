@@ -1,6 +1,6 @@
 import strata_identifiers
 
-MAX_LOG_PAYLOAD_LEN = 1 << 9
+MAX_LOG_PAYLOAD_LEN = 1 << 12
 
 ### OL log entry emitted during block execution.
 class OLLog(Container):
