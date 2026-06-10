@@ -380,6 +380,34 @@ where
         }
         self.commit(&writes).map_err(MmrError::Backend)
     }
+
+    /// Removes the last leaf and returns its value, or `None` if the MMR is
+    /// already empty.
+    ///
+    /// The inverse of [`append_leaf`](Self::append_leaf), and a convenience over
+    /// [`prune_after`](Self::prune_after) at `leaf_count - 1`: it drops the final
+    /// leaf together with its now-unreachable ancestors and lowers the leaf count
+    /// by one.
+    ///
+    /// The returned value is the leaf hash read just before removal. It is `None`
+    /// when the store is empty, but also — distinct only by the count it leaves
+    /// behind — when a prior [`prune_before(leaf_count)`](Self::prune_before)
+    /// full-compaction had already discarded that leaf's hash even though the
+    /// count was non-zero; the pop still happens in that case.
+    ///
+    /// Requires a [`PrunableNodeStore`] backend.
+    fn pop_leaf(&self) -> Result<Option<MH::Hash>, MmrError<Self::Error>>
+    where
+        Self: PrunableNodeStore,
+    {
+        let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
+        let Some(last_index) = leaf_count.checked_sub(1) else {
+            return Ok(None);
+        };
+        let value = <Self as StoredMmr<MH>>::get_leaf(self, last_index)?;
+        <Self as StoredMmr<MH>>::prune_after(self, LeafPos::new(last_index))?;
+        Ok(value)
+    }
 }
 
 impl<MH, T> StoredMmr<MH> for T
@@ -434,6 +462,10 @@ mod tests {
 
     fn prune_after(store: &MemMmr<Hash32>, after: u64) {
         StoredMmr::<Sha256Hasher>::prune_after(store, LeafPos::new(after)).unwrap();
+    }
+
+    fn pop(store: &MemMmr<Hash32>) -> Option<Hash32> {
+        StoredMmr::<Sha256Hasher>::pop_leaf(store).unwrap()
     }
 
     /// Deterministic distinct leaf for the concrete (non-property) tests.
@@ -818,6 +850,57 @@ mod tests {
                 leaf_count: 3
             })
         ));
+        assert_eq!(count(&store), 3);
+    }
+
+    /// `pop_leaf` is the inverse of `append_leaf`: it returns the last value,
+    /// shrinks the count by one, and an empty store pops `None`. Repeated pops
+    /// unwind the MMR leaf-by-leaf, each leaving a store identical to one built
+    /// only up to that point.
+    #[test]
+    fn pop_leaf_unwinds_appends() {
+        let store = MemMmr::<Hash32>::default();
+        assert_eq!(pop(&store), None);
+
+        let n = 7u64;
+        for i in 0..n {
+            append(&store, leaf(i));
+        }
+
+        for k in (0..n).rev() {
+            assert_eq!(pop(&store), Some(leaf(k)), "popped value k={k}");
+            assert_eq!(count(&store), k, "count after pop k={k}");
+
+            let fresh = MemMmr::<Hash32>::default();
+            for i in 0..k {
+                append(&fresh, leaf(i));
+            }
+            for idx in 0..k {
+                assert_eq!(
+                    proof_at_size(&store, idx, k).cohashes(),
+                    proof_at_size(&fresh, idx, k).cohashes(),
+                    "k={k} idx={idx}"
+                );
+            }
+        }
+
+        // Fully drained, and popping past empty stays empty.
+        assert_eq!(count(&store), 0);
+        assert_eq!(pop(&store), None);
+    }
+
+    /// After a full `prune_before` compaction the last leaf's hash is gone, so
+    /// `pop_leaf` reports `None` yet still removes the leaf (count drops).
+    #[test]
+    fn pop_leaf_after_full_compaction_drops_count() {
+        let store = MemMmr::<Hash32>::default();
+        for i in 0..4 {
+            append(&store, leaf(i));
+        }
+        // Leaf 3 is a descendant of peak (1,2), so compaction discards its hash.
+        prune_before(&store, 4);
+        assert_eq!(read_leaf(&store, 3), None);
+        assert_eq!(pop(&store), None);
         assert_eq!(count(&store), 3);
     }
 
