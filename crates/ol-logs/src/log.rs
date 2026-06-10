@@ -108,7 +108,10 @@ mod tests {
     /// A payload of exactly `MAX_LOG_PAYLOAD_LEN` bytes is accepted.
     #[test]
     fn new_accepts_payload_at_max_len() {
-        let log = OLLog::new(AccountSerial::zero(), vec![0u8; MAX_LOG_PAYLOAD_LEN as usize]);
+        let log = OLLog::new(
+            AccountSerial::zero(),
+            vec![0u8; MAX_LOG_PAYLOAD_LEN as usize],
+        );
         assert_eq!(log.payload().len(), MAX_LOG_PAYLOAD_LEN as usize);
     }
 
@@ -116,7 +119,10 @@ mod tests {
     #[test]
     #[should_panic(expected = "payload too large")]
     fn new_panics_above_max_len() {
-        let _ = OLLog::new(AccountSerial::zero(), vec![0u8; MAX_LOG_PAYLOAD_LEN as usize + 1]);
+        let _ = OLLog::new(
+            AccountSerial::zero(),
+            vec![0u8; MAX_LOG_PAYLOAD_LEN as usize + 1],
+        );
     }
 
     /// A maximally-sized `SnarkAccountUpdateLogData` (the largest valid typed payload) fits within
@@ -130,8 +136,7 @@ mod tests {
             SnarkAccountUpdateLogData::new(u64::MAX, vec![0xff; 1024]).expect("within snark bound");
         let log = OLLog::from_log(AccountSerial::zero(), &snark).expect("max snark envelope fits");
 
-        let decoded: SnarkAccountUpdateLogData =
-            log.try_into_log().expect("round-trips back");
+        let decoded: SnarkAccountUpdateLogData = log.try_into_log().expect("round-trips back");
         assert_eq!(decoded, snark);
     }
 
