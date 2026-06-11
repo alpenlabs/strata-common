@@ -23,7 +23,7 @@ const SPECIAL_ACCT_ID_BYTE: usize = ACCT_ID_LEN - 1;
 type RawAccountId = [u8; ACCT_ID_LEN];
 
 /// Universal account identifier.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "ssz", derive(Decode, Encode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
@@ -69,6 +69,12 @@ impl AccountId {
 }
 
 impl fmt::Display for AccountId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&const_hex::display(&self.0), f)
+    }
+}
+
+impl fmt::Debug for AccountId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&const_hex::display(&self.0), f)
     }
@@ -144,7 +150,7 @@ crate::impl_ssz_transparent_wrapper!(AccountSerial, RawAccountSerial);
 type RawSubjectId = [u8; SUBJ_ID_LEN];
 
 /// Identifier for a "subject" within the scope of an execution environment.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "ssz", derive(Decode, Encode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
@@ -155,6 +161,12 @@ pub struct SubjectId(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] 
 impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
 
 impl fmt::Display for SubjectId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&const_hex::display(&self.0), f)
+    }
+}
+
+impl fmt::Debug for SubjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&const_hex::display(&self.0), f)
     }
@@ -260,6 +272,33 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
+
+    #[test]
+    fn account_id_debug_prints_hex() {
+        let account_id = AccountId::from([0xab; ACCT_ID_LEN]);
+
+        assert_eq!(format!("{account_id:?}"), format!("{account_id}"));
+        assert_eq!(
+            format!("{account_id:?}"),
+            "abababababababababababababababababababababababababababababababab"
+        );
+    }
+
+    #[test]
+    fn subject_id_debug_prints_hex() {
+        let subject_id = SubjectId::from([0xcd; SUBJ_ID_LEN]);
+
+        assert_eq!(format!("{subject_id:?}"), format!("{subject_id}"));
+        assert_eq!(
+            format!("{subject_id:?}"),
+            "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        );
+    }
+
+    #[test]
+    fn account_serial_debug_remains_derived() {
+        assert_eq!(format!("{:?}", AccountSerial::one()), "AccountSerial(1)");
+    }
 
     #[cfg(feature = "ssz")]
     mod account_id {
