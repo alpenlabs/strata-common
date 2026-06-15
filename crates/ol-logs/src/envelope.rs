@@ -81,20 +81,30 @@ pub trait OLLogType: Codec + Sized {
 
 /// Filters and decodes typed OL log payloads from a slice of [`OLLog`] entries.
 ///
-/// Yields successfully-decoded payloads of type `T`, skipping entries that don't match the optional
-/// `account_guard`, don't carry `T`'s type id, or whose envelope/body fails to decode. This is the
-/// shared "filter by type id (+ optional emitting account), decode the envelope body" pattern used
-/// by both asm's checkpoint verifier and strata's checkpoint consumers; the caller applies any
-/// further domain mapping (and hard-erroring) to the yielded payloads.
+/// Yields one item per entry that matches the optional `account_guard` **and** carries `T`'s type
+/// id: `Ok(payload)` on success, or `Err` if that matching log's envelope/body fails to decode.
+/// Entries that don't match the guard or carry a different type id are skipped silently — they are
+/// genuinely "not a `T`". A matching log that fails to decode is *not* skipped: a truncated or
+/// otherwise malformed withdrawal log must surface as an error so checkpoint verifiers can hard-fail
+/// rather than silently drop the intent (treating a malformed log as an absent one).
+///
+/// This is the shared "filter by type id (+ optional emitting account), decode the envelope body"
+/// pattern used by both asm's checkpoint verifier and strata's checkpoint consumers; the caller
+/// applies any further domain mapping to the yielded payloads.
 pub fn decode_typed_logs<'a, T: OLLogType>(
     logs: &'a [OLLog],
     account_guard: Option<AccountSerial>,
-) -> impl Iterator<Item = T> + 'a {
+) -> impl Iterator<Item = Result<T, LogDecodeError>> + 'a {
     logs.iter().filter_map(move |log| {
         if account_guard.is_some_and(|guard| guard != log.account_serial()) {
             return None;
         }
-        T::decode_log(log.payload()).ok()
+        match T::decode_log(log.payload()) {
+            // A different type id means this log simply isn't a `T`; skip it.
+            Err(LogDecodeError::TypeMismatch { .. }) => None,
+            // Success, or a malformed envelope/body on a type-matching log — surface both.
+            other => Some(other),
+        }
     })
 }
 
@@ -181,47 +191,103 @@ mod tests {
         assert!(matches!(err, LogDecodeError::Envelope(_)));
     }
 
+    /// A log whose msg-fmt prefix matches `T`'s type id but whose body is truncated must surface as
+    /// an `Err` from `decode_typed_logs`, not be silently dropped — otherwise a checkpoint verifier
+    /// cannot distinguish a malformed withdrawal log from an absent one and drops the intent.
+    #[test]
+    fn decode_typed_logs_surfaces_malformed_matching_log() {
+        let withdrawal = SimpleWithdrawalIntentLogData::new(1_000, vec![0xaa; 4], 7)
+            .expect("dest within bounds");
+        // Keep the type-id prefix (0x01, single byte) intact but lop a byte off the body so the
+        // envelope still parses as a withdrawal yet fails codec decoding.
+        let mut envelope = withdrawal.encode_log().expect("encode withdrawal envelope");
+        envelope.truncate(envelope.len() - 1);
+        let logs = [OLLog::new(BRIDGE, envelope)];
+
+        let results: Vec<Result<SimpleWithdrawalIntentLogData, _>> =
+            decode_typed_logs(&logs, Some(BRIDGE)).collect();
+
+        assert_eq!(results.len(), 1, "the matching log must not be skipped");
+        assert!(matches!(results[0], Err(LogDecodeError::Codec(_))));
+    }
+
+    /// Expected outcome of running `decode_typed_logs::<SimpleWithdrawalIntentLogData>` over one
+    /// [`Entry`], computed independently of the implementation.
+    #[derive(Debug, Clone)]
+    enum Expect {
+        /// Yields `Ok` with this decoded withdrawal payload.
+        Decoded(SimpleWithdrawalIntentLogData),
+        /// Yields `Err` — a guard-passing log that fails envelope/body decoding (an empty payload).
+        Error,
+        /// Yields nothing — filtered by the account guard or a non-matching type id.
+        Skipped,
+    }
+
+    /// Asserts the `Result`-yielding `decode_typed_logs` output matches the per-entry expectation,
+    /// in order. `Err` variants are compared by presence only (`LogDecodeError` isn't `PartialEq`).
+    fn assert_matches_expected(
+        actual: &[Result<SimpleWithdrawalIntentLogData, LogDecodeError>],
+        expected: &[Expect],
+    ) -> Result<(), TestCaseError> {
+        let expected: Vec<&Expect> = expected
+            .iter()
+            .filter(|e| !matches!(e, Expect::Skipped))
+            .collect();
+        prop_assert_eq!(actual.len(), expected.len());
+        for (got, want) in actual.iter().zip(expected) {
+            match (got, want) {
+                (Ok(w), Expect::Decoded(ew)) => prop_assert_eq!(w, ew),
+                (Err(_), Expect::Error) => {}
+                _ => prop_assert!(false, "outcome mismatch: {:?} vs {:?}", got, want),
+            }
+        }
+        Ok(())
+    }
+
     proptest! {
-        /// With a guard, only well-formed withdrawal logs from the guard account survive, in order.
+        /// With a guard, only well-formed withdrawal logs from the guard account decode; logs of a
+        /// different type id are skipped, while a malformed (empty) guard-account log surfaces as an
+        /// error rather than being silently dropped.
         #[test]
         fn decode_typed_logs_respects_type_and_account_guard(
             entries in prop::collection::vec(entry_strategy(), 0..16),
         ) {
             let logs: Vec<OLLog> = entries.iter().map(Entry::to_log).collect();
 
-            let expected: Vec<SimpleWithdrawalIntentLogData> = entries
+            let expected: Vec<Expect> = entries
                 .iter()
-                .filter_map(|e| match e {
-                    Entry::Withdrawal(serial, w) if *serial == BRIDGE => Some(w.clone()),
-                    _ => None,
+                .map(|e| match e {
+                    Entry::Withdrawal(serial, w) if *serial == BRIDGE => Expect::Decoded(w.clone()),
+                    Entry::Empty(serial) if *serial == BRIDGE => Expect::Error,
+                    _ => Expect::Skipped,
                 })
                 .collect();
 
-            let actual: Vec<SimpleWithdrawalIntentLogData> =
-                decode_typed_logs(&logs, Some(BRIDGE)).collect();
+            let actual: Vec<_> = decode_typed_logs(&logs, Some(BRIDGE)).collect();
 
-            prop_assert_eq!(actual, expected);
+            assert_matches_expected(&actual, &expected)?;
         }
 
-        /// Without a guard, every well-formed withdrawal log survives regardless of account.
+        /// Without a guard, every well-formed withdrawal log decodes regardless of account; snark
+        /// logs are skipped (type mismatch) and malformed (empty) logs surface as errors.
         #[test]
         fn decode_typed_logs_without_guard_keeps_all_withdrawals(
             entries in prop::collection::vec(entry_strategy(), 0..16),
         ) {
             let logs: Vec<OLLog> = entries.iter().map(Entry::to_log).collect();
 
-            let expected: Vec<SimpleWithdrawalIntentLogData> = entries
+            let expected: Vec<Expect> = entries
                 .iter()
-                .filter_map(|e| match e {
-                    Entry::Withdrawal(_, w) => Some(w.clone()),
-                    _ => None,
+                .map(|e| match e {
+                    Entry::Withdrawal(_, w) => Expect::Decoded(w.clone()),
+                    Entry::Snark(..) => Expect::Skipped,
+                    Entry::Empty(_) => Expect::Error,
                 })
                 .collect();
 
-            let actual: Vec<SimpleWithdrawalIntentLogData> =
-                decode_typed_logs(&logs, None).collect();
+            let actual: Vec<_> = decode_typed_logs(&logs, None).collect();
 
-            prop_assert_eq!(actual, expected);
+            assert_matches_expected(&actual, &expected)?;
         }
     }
 }
