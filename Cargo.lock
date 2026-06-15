@@ -4164,6 +4164,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-logs"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-msg-fmt",
+ "thiserror 2.0.18",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
 name = "strata-predicate"
 version = "0.1.0"
 dependencies = [
