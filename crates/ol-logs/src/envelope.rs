@@ -85,8 +85,8 @@ pub trait OLLogType: Codec + Sized {
 /// id: `Ok(payload)` on success, or `Err` if that matching log's envelope/body fails to decode.
 /// Entries that don't match the guard or carry a different type id are skipped silently — they are
 /// genuinely "not a `T`". A matching log that fails to decode is *not* skipped: a truncated or
-/// otherwise malformed withdrawal log must surface as an error so checkpoint verifiers can hard-fail
-/// rather than silently drop the intent (treating a malformed log as an absent one).
+/// otherwise malformed withdrawal log must surface as an error so checkpoint verifiers can
+/// hard-fail rather than silently drop the intent (treating a malformed log as an absent one).
 ///
 /// This is the shared "filter by type id (+ optional emitting account), decode the envelope body"
 /// pattern used by both asm's checkpoint verifier and strata's checkpoint consumers; the caller
