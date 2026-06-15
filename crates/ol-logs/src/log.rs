@@ -12,13 +12,23 @@ use crate::{LogDecodeError, OLLogType};
 impl OLLog {
     /// Creates a log entry from a raw payload.
     ///
-    /// Panics if `payload` exceeds [`MAX_LOG_PAYLOAD_LEN`]. Use [`OLLog::from_log`] to build one
-    /// from a typed payload via the msg-fmt envelope.
-    pub fn new(account_serial: AccountSerial, payload: Vec<u8>) -> Self {
-        Self {
+    /// Returns [`CodecError::OverflowContainer`] if `payload` exceeds [`MAX_LOG_PAYLOAD_LEN`]. Use
+    /// [`OLLog::from_log`] to build one from a typed payload via the msg-fmt envelope.
+    pub fn try_new(account_serial: AccountSerial, payload: Vec<u8>) -> Result<Self, CodecError> {
+        let payload = VariableList::new(payload).map_err(|_| CodecError::OverflowContainer)?;
+        Ok(Self {
             account_serial,
-            payload: VariableList::new(payload).expect("ol log: payload too large"),
-        }
+            payload,
+        })
+    }
+
+    /// Creates a log entry from a raw payload.
+    ///
+    /// Panics if `payload` exceeds [`MAX_LOG_PAYLOAD_LEN`]; use [`OLLog::try_new`] to handle the
+    /// oversize case gracefully. Use [`OLLog::from_log`] to build one from a typed payload via the
+    /// msg-fmt envelope.
+    pub fn new(account_serial: AccountSerial, payload: Vec<u8>) -> Self {
+        Self::try_new(account_serial, payload).expect("ol log: payload too large")
     }
 
     /// The account serial this log relates to.
@@ -34,12 +44,13 @@ impl OLLog {
     /// Builds a log whose payload is the msg-fmt envelope for a typed OL log.
     ///
     /// The payload is `TypeId(T::LOG_TYPE_ID) ++ codec(log)`, so consumers dispatch on the log type
-    /// via [`OLLog::try_into_log`].
+    /// via [`OLLog::try_into_log`]. Returns [`CodecError::OverflowContainer`] if the encoded
+    /// envelope exceeds [`MAX_LOG_PAYLOAD_LEN`].
     pub fn from_log<T: OLLogType>(
         account_serial: AccountSerial,
         log: &T,
     ) -> Result<Self, CodecError> {
-        Ok(Self::new(account_serial, log.encode_log()?))
+        Self::try_new(account_serial, log.encode_log()?)
     }
 
     /// Interprets the payload as a msg-fmt message, if it is a valid envelope.
@@ -123,6 +134,17 @@ mod tests {
             AccountSerial::zero(),
             vec![0u8; MAX_LOG_PAYLOAD_LEN as usize + 1],
         );
+    }
+
+    /// A payload over the cap surfaces as an error from `try_new` rather than panicking.
+    #[test]
+    fn try_new_rejects_payload_above_max_len() {
+        let err = OLLog::try_new(
+            AccountSerial::zero(),
+            vec![0u8; MAX_LOG_PAYLOAD_LEN as usize + 1],
+        )
+        .expect_err("payload over the cap should be rejected");
+        assert!(matches!(err, CodecError::OverflowContainer));
     }
 
     /// A maximally-sized `SnarkAccountUpdateLogData` (the largest valid typed payload) fits within
