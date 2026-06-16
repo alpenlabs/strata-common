@@ -59,8 +59,7 @@
 //!   from the emitted trait.
 
 use proc_macro::TokenStream;
-use syn::parse::{Parse, ParseStream};
-use syn::{ItemTrait, LitStr, Path, Token, parse_macro_input};
+use syn::{ItemTrait, parse_macro_input};
 // `tokio`/`tracing`/`tracing-subscriber` are dev-dependencies used only by the `tests/`
 // integration target; these keep the workspace `unused_crate_dependencies` lint happy for
 // the lib-test build.
@@ -68,6 +67,8 @@ use syn::{ItemTrait, LitStr, Path, Token, parse_macro_input};
 use {tokio as _, tracing as _, tracing_subscriber as _};
 
 mod expand;
+
+use expand::GenProxyArgs;
 
 /// Generates a `FooProxy` handle (and `FooRecv` result wrapper) for the annotated
 /// trait `Foo`.
@@ -83,52 +84,4 @@ pub fn gen_proxy(attr: TokenStream, item: TokenStream) -> TokenStream {
     expand::expand(&args.error, args.tracing_component.as_ref(), &item_trait)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
-}
-
-/// Parsed arguments for the [`macro@gen_proxy`] attribute.
-struct GenProxyArgs {
-    /// Required `error = <Path>`: the error type used by the trait's methods.
-    error: Path,
-    /// Optional `tracing_component = <string>`: instruments each method's blocking work.
-    tracing_component: Option<LitStr>,
-}
-
-impl Parse for GenProxyArgs {
-    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        let mut error: Option<Path> = None;
-        let mut tracing_component: Option<LitStr> = None;
-
-        while !input.is_empty() {
-            let key: syn::Ident = input.parse()?;
-            input.parse::<Token![=]>()?;
-
-            if key == "error" {
-                error = Some(input.parse()?);
-            } else if key == "tracing_component" {
-                tracing_component = Some(input.parse()?);
-            } else {
-                return Err(syn::Error::new(
-                    key.span(),
-                    "expected `error` or `tracing_component`",
-                ));
-            }
-
-            if input.is_empty() {
-                break;
-            }
-            input.parse::<Token![,]>()?;
-        }
-
-        let error = error.ok_or_else(|| {
-            syn::Error::new(
-                proc_macro2::Span::call_site(),
-                "`#[gen_proxy]` requires an `error = <Type>` argument",
-            )
-        })?;
-
-        Ok(Self {
-            error,
-            tracing_component,
-        })
-    }
 }

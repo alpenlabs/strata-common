@@ -2,10 +2,59 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use syn::parse::{Parse, ParseStream};
 use syn::{
     Attribute, FnArg, GenericArgument, ItemTrait, LitStr, Pat, PatType, Path, PathArguments,
-    ReturnType, TraitItem, TraitItemFn, Type,
+    ReturnType, Token, TraitItem, TraitItemFn, Type,
 };
+
+/// Parsed arguments for the [`macro@gen_proxy`] attribute.
+pub(crate) struct GenProxyArgs {
+    /// Required `error = <Path>`: the error type used by the trait's methods.
+    pub(crate) error: Path,
+    /// Optional `tracing_component = <string>`: instruments each method's blocking work.
+    pub(crate) tracing_component: Option<LitStr>,
+}
+
+impl Parse for GenProxyArgs {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let mut error: Option<Path> = None;
+        let mut tracing_component: Option<LitStr> = None;
+
+        while !input.is_empty() {
+            let key: syn::Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+
+            if key == "error" {
+                error = Some(input.parse()?);
+            } else if key == "tracing_component" {
+                tracing_component = Some(input.parse()?);
+            } else {
+                return Err(syn::Error::new(
+                    key.span(),
+                    "expected `error` or `tracing_component`",
+                ));
+            }
+
+            if input.is_empty() {
+                break;
+            }
+            input.parse::<Token![,]>()?;
+        }
+
+        let error = error.ok_or_else(|| {
+            syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "`#[gen_proxy]` requires an `error = <Type>` argument",
+            )
+        })?;
+
+        Ok(Self {
+            error,
+            tracing_component,
+        })
+    }
+}
 
 /// Expands the annotated trait into the original trait plus its proxy and receiver
 /// types.
