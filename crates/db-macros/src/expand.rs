@@ -186,10 +186,7 @@ fn is_self_sized_predicate(pred: &syn::WherePredicate) -> bool {
         let syn::TypeParamBound::Trait(tb) = b else {
             return false;
         };
-        tb.path
-            .segments
-            .last()
-            .is_some_and(|s| s.ident == "Sized")
+        tb.path.segments.last().is_some_and(|s| s.ident == "Sized")
     })
 }
 
@@ -211,9 +208,10 @@ fn should_proxy_method(method: &TraitItemFn) -> bool {
         return false;
     }
     if let Some(wc) = &sig.generics.where_clause
-        && wc.predicates.iter().any(is_self_sized_predicate) {
-            return false;
-        }
+        && wc.predicates.iter().any(is_self_sized_predicate)
+    {
+        return false;
+    }
     match sig.inputs.iter().next() {
         Some(FnArg::Receiver(recv)) if recv.reference.is_some() && recv.mutability.is_none() => {}
         _ => return false,
