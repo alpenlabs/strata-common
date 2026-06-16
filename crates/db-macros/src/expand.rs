@@ -73,7 +73,7 @@ pub(crate) fn expand(
     let trait_ident = &item.ident;
     let vis = &item.vis;
     let proxy_ident = format_ident!("{}Proxy", trait_ident);
-    let recv_ident = format_ident!("{}Recv", trait_ident);
+    let recv_ident = format_ident!("{}Fut", trait_ident);
 
     let mut methods = TokenStream::new();
     for trait_item in &item.items {
@@ -225,7 +225,7 @@ fn should_proxy_method(method: &TraitItemFn) -> bool {
     get_first_generic_type(ret_ty).is_some()
 }
 
-/// Generates the `_blocking`, `_chan`, and `_async` proxy methods for a single trait
+/// Generates the `_blocking`, `_fut`, and `_async` proxy methods for a single trait
 /// method, or [`None`] if the method does not qualify for proxying.
 fn gen_method(
     method: &TraitItemFn,
@@ -266,11 +266,11 @@ fn gen_method(
 
     let name = &sig.ident;
     let blocking = format_ident!("{}_blocking", name);
-    let chan = format_ident!("{}_chan", name);
+    let fut = format_ident!("{}_fut", name);
     let asyncf = format_ident!("{}_async", name);
 
     let blocking_doc = format!("Blocking variant of `{trait_ident}::{name}`; runs inline.");
-    let chan_doc = format!(
+    let fut_doc = format!(
         "Spawns `{trait_ident}::{name}` on a blocking task, returning a `{recv_ident}` handle."
     );
     let async_doc =
@@ -290,7 +290,7 @@ fn gen_method(
     let name_str = name.to_string();
     let shim_ident = format_ident!("__{}_shim", name);
 
-    let (shim_fn, blocking_body, chan_body) = if let Some(component) = tracing_component {
+    let (shim_fn, blocking_body, fut_body) = if let Some(component) = tracing_component {
         let shim_fn = quote! {
             #[::tracing::instrument(
                 level = "trace",
@@ -310,7 +310,7 @@ fn gen_method(
             Self::#shim_ident(self.inner.as_ref(), #(#arg_names),*)
         };
 
-        let chan_body = quote! {
+        let fut_body = quote! {
             let inner = ::std::sync::Arc::clone(&self.inner);
             let parent_span = ::tracing::Span::current();
             #recv_ident {
@@ -320,20 +320,20 @@ fn gen_method(
             }
         };
 
-        (Some(shim_fn), blocking_body, chan_body)
+        (Some(shim_fn), blocking_body, fut_body)
     } else {
         let blocking_body = quote! {
             self.inner.#name(#(#arg_names),*)
         };
 
-        let chan_body = quote! {
+        let fut_body = quote! {
             let inner = ::std::sync::Arc::clone(&self.inner);
             #recv_ident {
                 inner: self.handle.spawn_blocking(move || inner.#name(#(#arg_names),*)),
             }
         };
 
-        (None, blocking_body, chan_body)
+        (None, blocking_body, fut_body)
     };
 
     Some(quote! {
@@ -344,14 +344,14 @@ fn gen_method(
             #blocking_body
         }
 
-        #[doc = #chan_doc]
-        #vis fn #chan(&self, #(#arg_decls),*) -> #recv_ident<#success_ty, #error_ty> {
-            #chan_body
+        #[doc = #fut_doc]
+        #vis fn #fut(&self, #(#arg_decls),*) -> #recv_ident<#success_ty, #error_ty> {
+            #fut_body
         }
 
         #[doc = #async_doc]
         #vis async fn #asyncf(&self, #(#arg_decls),*) -> #ret_ty {
-            self.#chan(#(#arg_names),*).recv().await
+            self.#fut(#(#arg_names),*).recv().await
         }
     })
 }

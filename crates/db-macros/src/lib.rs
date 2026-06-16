@@ -3,7 +3,7 @@
 //! The [`macro@gen_proxy`] attribute is attached to a trait `Foo` and generates a
 //! `FooProxy` handle that offloads each trait method onto a Tokio blocking task via
 //! `tokio::runtime::Handle::spawn_blocking`, exposing async, blocking, and
-//! channel-style variants of every method.
+//! future-style variants of every method.
 //!
 //! # Example
 //!
@@ -23,13 +23,13 @@
 //!
 //! // Generated:
 //! //   pub struct TaskDbProxy { /* Handle + Arc<dyn TaskDb> */ }
-//! //   pub struct TaskDbRecv<T, E> { /* wraps a JoinHandle */ }
+//! //   pub struct TaskDbFut<T, E> { /* wraps a JoinHandle */ }
 //! //
 //! //   impl TaskDbProxy {
 //! //       pub fn new(handle: Handle, inner: Arc<dyn TaskDb + Send + Sync + 'static>) -> Self;
 //! //       pub async fn get_task_async(&self, key: Vec<u8>) -> DbResult<Option<Vec<u8>>>;
 //! //       pub fn get_task_blocking(&self, key: Vec<u8>) -> DbResult<Option<Vec<u8>>>;
-//! //       pub fn get_task_chan(&self, key: Vec<u8>) -> TaskDbRecv<Option<Vec<u8>>, DbError>;
+//! //       pub fn get_task_fut(&self, key: Vec<u8>) -> TaskDbFut<Option<Vec<u8>>, DbError>;
 //! //       // ...same trio for count_tasks
 //! //   }
 //! ```
@@ -70,7 +70,7 @@ mod expand;
 
 use expand::GenProxyArgs;
 
-/// Generates a `FooProxy` handle (and `FooRecv` result wrapper) for the annotated
+/// Generates a `FooProxy` handle (and `FooFut` result wrapper) for the annotated
 /// trait `Foo`.
 ///
 /// Takes a required `error = <Path>` argument naming the error type used by the trait's

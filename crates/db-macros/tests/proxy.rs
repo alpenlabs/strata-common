@@ -45,7 +45,7 @@ trait CounterDb: Send + Sync + 'static {
     fn boom(&self) -> DbResult<u64>;
 
     /// Qualifies for proxying but is explicitly opted out via `#[gen_proxy(skip)]`,
-    /// so only the trait method exists (no `*_blocking`/`*_async`/`*_chan` variants).
+    /// so only the trait method exists (no `*_blocking`/`*_async`/`*_fut` variants).
     #[gen_proxy(skip)]
     #[expect(dead_code, reason = "skipped and unused")]
     fn skipped(&self) -> DbResult<u64>;
@@ -102,7 +102,7 @@ fn proxy() -> CounterDbProxy {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn blocking_async_and_chan_variants_agree() {
+async fn blocking_async_and_fut_variants_agree() {
     let proxy = proxy();
 
     // Blocking runs inline on the calling thread.
@@ -111,8 +111,8 @@ async fn blocking_async_and_chan_variants_agree() {
     // Async offloads to a blocking task and awaits it.
     assert_eq!(proxy.increment_async(3).await.unwrap(), 8);
 
-    // Channel variant returns a handle awaited via `recv`.
-    let pending = proxy.get_chan();
+    // Future variant returns a handle awaited via `recv`.
+    let pending = proxy.get_fut();
     assert_eq!(pending.recv().await.unwrap(), 8);
 }
 
@@ -130,7 +130,7 @@ async fn domain_error_propagates() {
     let proxy = proxy();
     assert!(matches!(proxy.fail_async().await, Err(DbError::NotFound)));
     assert!(matches!(
-        proxy.fail_chan().recv().await,
+        proxy.fail_fut().recv().await,
         Err(DbError::NotFound)
     ));
 }

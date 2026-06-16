@@ -67,7 +67,7 @@ async fn instrumented_variants_agree() {
 
     assert_eq!(proxy.record_blocking(5).unwrap(), 5);
     assert_eq!(proxy.record_async(3).await.unwrap(), 8);
-    assert_eq!(proxy.total_chan().recv().await.unwrap(), 8);
+    assert_eq!(proxy.total_fut().recv().await.unwrap(), 8);
 }
 
 // Captures `(span name, parent span name)` for every span created under the global
@@ -123,11 +123,11 @@ async fn instrumented_span_is_parented_to_caller() {
 
     let proxy = metric_proxy();
 
-    // Issue the call from within a known parent span. `record_chan` captures the current
+    // Issue the call from within a known parent span. `record_fut` captures the current
     // span synchronously (here, `caller_parent`); the spawned shim re-enters it before
     // creating the `record` span on the blocking thread.
     let parent = tracing::info_span!("caller_parent");
-    let pending = parent.in_scope(|| proxy.record_chan(5));
+    let pending = parent.in_scope(|| proxy.record_fut(5));
     assert_eq!(pending.recv().await.unwrap(), 5);
 
     assert_record_span_parented_to("caller_parent");
@@ -145,12 +145,12 @@ async fn instrumented_span_generated_for_every_entrypoint() {
     // span is created directly under the ambient current span.
     tracing::info_span!("caller_blocking").in_scope(|| proxy.record_blocking(1).unwrap());
 
-    // `_chan` captures the current span synchronously and re-enters it on the blocking thread.
-    let pending = tracing::info_span!("caller_chan").in_scope(|| proxy.record_chan(1));
+    // `_fut` captures the current span synchronously and re-enters it on the blocking thread.
+    let pending = tracing::info_span!("caller_fut").in_scope(|| proxy.record_fut(1));
     pending.recv().await.unwrap();
 
-    // `_async` delegates to `_chan`, but the captured span must survive across the await:
-    // instrument the future so the caller span is entered when the inner `_chan` call reads
+    // `_async` delegates to `_fut`, but the captured span must survive across the await:
+    // instrument the future so the caller span is entered when the inner `_fut` call reads
     // `Span::current()`.
     proxy
         .record_async(1)
@@ -159,7 +159,7 @@ async fn instrumented_span_generated_for_every_entrypoint() {
         .unwrap();
 
     // Every entrypoint must have produced a `record` span parented to its own caller.
-    for caller in ["caller_blocking", "caller_chan", "caller_async"] {
+    for caller in ["caller_blocking", "caller_fut", "caller_async"] {
         assert_record_span_parented_to(caller);
     }
 }
