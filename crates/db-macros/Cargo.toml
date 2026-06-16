@@ -1,0 +1,21 @@
+[package]
+name = "strata-db-macros"
+version = "0.1.0"
+edition = "2024"
+description = "Procedural macro generating async/blocking proxy handles for DB traits"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full", "derive"] }
+
+[dev-dependencies]
+tokio = { version = "1.37", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[lints]
+workspace = true

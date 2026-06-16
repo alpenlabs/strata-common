@@ -6,6 +6,7 @@ members = [
   "crates/codec-tests",
   "crates/codec-utils",
   "crates/crypto",
+  "crates/db-macros",
   "crates/identifiers",
   "crates/l1proto/envelope-fmt",
   "crates/l1proto/txfmt",
@@ -30,6 +31,7 @@ strata-codec-derive = { path = "crates/codec-derive" }
 strata-codec-tests = { path = "crates/codec-tests" }
 strata-codec-utils = { path = "crates/codec-utils" }
 strata-crypto = { path = "crates/crypto" }
+strata-db-macros = { path = "crates/db-macros" }
 strata-identifiers = { path = "crates/identifiers" }
 strata-l1-txfmt = { path = "crates/l1proto/txfmt" }
 strata-logging = { path = "crates/logging" }
