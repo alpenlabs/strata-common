@@ -119,6 +119,63 @@ pub(crate) fn expand(
     Ok(expanded)
 }
 
+/// Returns `true` if `pred` is a `where Self: Sized` predicate.
+fn is_self_sized_predicate(pred: &syn::WherePredicate) -> bool {
+    let syn::WherePredicate::Type(pt) = pred else {
+        return false;
+    };
+    let syn::Type::Path(tp) = &pt.bounded_ty else {
+        return false;
+    };
+    if tp.qself.is_some() || tp.path.segments.len() != 1 {
+        return false;
+    }
+    if tp.path.segments[0].ident != "Self" {
+        return false;
+    }
+    pt.bounds.iter().any(|b| {
+        let syn::TypeParamBound::Trait(tb) = b else {
+            return false;
+        };
+        tb.path
+            .segments
+            .last()
+            .map_or(false, |s| s.ident == "Sized")
+    })
+}
+
+/// Returns `true` if `method` qualifies for proxy generation.
+///
+/// A method qualifies when all of the following hold:
+/// - no `#[gen_proxy(skip)]` attribute
+/// - not `async`
+/// - no method-level generic parameters
+/// - no `where Self: Sized` constraint (such methods cannot be dispatched through `dyn Trait`)
+/// - first parameter is `&self`
+/// - return type is a path with at least one generic type argument (i.e. `Result`-shaped)
+fn should_proxy_method(method: &TraitItemFn) -> bool {
+    if method.attrs.iter().any(is_skip_attr) {
+        return false;
+    }
+    let sig = &method.sig;
+    if sig.asyncness.is_some() || !sig.generics.params.is_empty() {
+        return false;
+    }
+    if let Some(wc) = &sig.generics.where_clause {
+        if wc.predicates.iter().any(is_self_sized_predicate) {
+            return false;
+        }
+    }
+    match sig.inputs.iter().next() {
+        Some(FnArg::Receiver(recv)) if recv.reference.is_some() && recv.mutability.is_none() => {}
+        _ => return false,
+    }
+    let ReturnType::Type(_, ret_ty) = &sig.output else {
+        return false;
+    };
+    get_first_generic_type(ret_ty).is_some()
+}
+
 /// Generates the `_blocking`, `_chan`, and `_async` proxy methods for a single trait
 /// method, or [`None`] if the method does not qualify for proxying.
 fn gen_method(
@@ -129,25 +186,13 @@ fn gen_method(
     tracing_component: Option<&LitStr>,
     vis: &syn::Visibility,
 ) -> Option<TokenStream> {
-    // An explicit `#[gen_proxy(skip)]` opts the method out of proxying entirely.
-    if method.attrs.iter().any(is_skip_attr) {
+    if !should_proxy_method(method) {
         return None;
     }
 
     let sig = &method.sig;
-
-    // Only plain, non-generic, synchronous methods are proxied.
-    if sig.asyncness.is_some() || !sig.generics.params.is_empty() {
-        return None;
-    }
-
     let mut inputs = sig.inputs.iter();
-
-    // The receiver must be `&self`.
-    match inputs.next() {
-        Some(FnArg::Receiver(recv)) if recv.reference.is_some() && recv.mutability.is_none() => {}
-        _ => return None,
-    }
+    inputs.next(); // skip `&self` receiver, already validated by `should_proxy_method`
 
     // Collect the remaining arguments, requiring simple identifier patterns.
     let mut arg_names = Vec::new();
@@ -168,7 +213,7 @@ fn gen_method(
     let ReturnType::Type(_, ret_ty) = &sig.output else {
         return None;
     };
-    let success_ty = first_generic_type(ret_ty)?;
+    let success_ty = get_first_generic_type(ret_ty)?;
 
     let name = &sig.ident;
     let blocking = format_ident!("{}_blocking", name);
@@ -279,7 +324,7 @@ fn is_skip_attr(attr: &Attribute) -> bool {
 
 /// Returns the first generic type argument of the last path segment of `ty`, used to
 /// recover the success type `T` from a `Result<T, E>` / `DbResult<T>` return type.
-fn first_generic_type(ty: &Type) -> Option<&Type> {
+fn get_first_generic_type(ty: &Type) -> Option<&Type> {
     let Type::Path(type_path) = ty else {
         return None;
     };
