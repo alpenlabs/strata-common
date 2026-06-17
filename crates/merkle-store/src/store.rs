@@ -99,17 +99,15 @@ pub trait MmrNodeStore {
     /// override it so the whole batch lands atomically; the default loops
     /// [`delete_node`](Self::delete_node) then [`put_node`](Self::put_node).
     ///
-    /// Deletes are applied before writes, which fixes two things callers rely on:
-    ///
-    /// - If a position appears in both `deletes` and `writes`, the write wins —
-    ///   the node ends up stored, not removed. The derived ops never pass
-    ///   overlapping sets, but the resolution is defined rather than left to the
-    ///   backend so an overriding backend stays consistent with the default.
-    /// - The committing metadata write (the watermark or leaf count that finalizes
-    ///   a prune) is in `writes`, so it lands last. A crash in the
-    ///   non-transactional default therefore leaves that marker unchanged and the
-    ///   op re-runs idempotently; a transactional override makes the whole batch
-    ///   atomic and the ordering moot.
+    /// Durability and atomicity are the backend's concern: a persistent backend
+    /// is expected to override this so the whole batch lands as one unit. The
+    /// in-memory default loops [`delete_node`](Self::delete_node) then
+    /// [`put_node`](Self::put_node) — applying deletes before writes — which
+    /// pins down one thing callers rely on: if a position appears in both
+    /// `deletes` and `writes`, the write wins (the node ends up stored, not
+    /// removed). The derived ops never pass overlapping sets, but defining the
+    /// resolution rather than leaving it to the backend keeps an overriding
+    /// backend consistent with the default.
     fn commit(
         &self,
         writes: &[(NodePos, Self::Hash)],
@@ -323,13 +321,11 @@ where
     /// calls advancing `before` — and converge to the same state. Bounding it that
     /// way is left to the consumer.
     ///
-    /// Atomicity follows the backend's [`commit`](MmrNodeStore::commit): the node
-    /// deletes and the watermark write are handed to a single `commit`, so a
-    /// transactional backend applies them as one unit. The non-transactional
-    /// default deletes the nodes first and raises the watermark last, so a leaf
-    /// is never reported `Pruned` while its path is still present, and a crash
-    /// mid-prune leaves the watermark unchanged and re-running the same call
-    /// recomputes the identical (idempotent) delete set and completes.
+    /// The node deletes and the watermark write are handed to a single
+    /// [`commit`](MmrNodeStore::commit), so a transactional backend applies them
+    /// atomically. The operation is also idempotent on its own: the watermark is
+    /// monotonic and the delete set recomputes identically, so re-running the
+    /// same call converges to the same state.
     fn prune_before(&self, before: LeafPos) -> Result<(), MmrError<Self::Error>> {
         let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
         let before_index = before.index();
@@ -346,7 +342,11 @@ where
             NodePos::meta(PRUNED_BEFORE_TAG),
             MH::Hash::pack_u64(before_index),
         )];
-        let writes = if before_index > watermark { writes } else { &[] };
+        let writes = if before_index > watermark {
+            writes
+        } else {
+            &[]
+        };
         self.commit(writes, &positions).map_err(MmrError::Backend)
     }
 
@@ -376,12 +376,11 @@ where
     /// truncation that drops a huge suffix therefore allocates proportionally; a
     /// consumer bounding peak memory should truncate in steps.
     ///
-    /// Atomicity follows the backend's [`commit`](MmrNodeStore::commit): the node
-    /// deletes and the leaf-count write are handed to a single `commit`, so a
-    /// transactional backend applies them as one unit. The non-transactional
-    /// default deletes the nodes first and lowers the leaf count last, so a crash
-    /// mid-prune leaves the count unchanged and re-running the same call
-    /// recomputes the identical (idempotent) delete set and completes.
+    /// The node deletes and the leaf-count write are handed to a single
+    /// [`commit`](MmrNodeStore::commit), so a transactional backend applies them
+    /// atomically. The operation is also idempotent on its own: the delete set
+    /// recomputes identically and the count and watermark settle to the same
+    /// values, so re-running the same call converges to the same state.
     fn prune_after(&self, after: LeafPos) -> Result<(), MmrError<Self::Error>> {
         let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
         let keep = after.index();
