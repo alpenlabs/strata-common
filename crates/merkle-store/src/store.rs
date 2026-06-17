@@ -173,10 +173,11 @@ where
     /// [`put_nodes`](MmrNodeStore::put_nodes).
     ///
     /// Errors with [`MmrError::LeafGap`] if `leaf_index` is past the append
-    /// point (`> leaf_count`), which would skip the leaves in between, and with
-    /// [`MmrError::MaxCapacity`] if the store is already at the `u64::MAX` leaf
-    /// ceiling. A [`MmrError::NodeMissing`] instead signals a corrupt store: a
-    /// sibling required by an in-range write is absent.
+    /// point (`> leaf_count`), which would skip the leaves in between, with
+    /// [`MmrError::Pruned`] if it is an overwrite below the prune watermark (see
+    /// below), and with [`MmrError::MaxCapacity`] if the store is already at the
+    /// `u64::MAX` leaf ceiling. A [`MmrError::NodeMissing`] instead signals a
+    /// corrupt store: a sibling required by an in-range write is absent.
     fn put_leaf(&self, leaf_index: u64, value: MH::Hash) -> Result<(), MmrError<Self::Error>> {
         let old_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
         // Only an overwrite (`< old_count`) or an append (`== old_count`) is
@@ -188,6 +189,22 @@ where
             return Err(MmrError::LeafGap {
                 index: leaf_index,
                 leaf_count: old_count,
+            });
+        }
+        // Reject an overwrite below the prune watermark. A pruned leaf's node
+        // can physically survive when a later leaf needs it as a sibling cohash:
+        // with 6 leaves, leaf 4 and leaf 5 share peak (1,2), so `prune_before(5)`
+        // keeps leaf 4 even though it marks it pruned. Overwriting leaf 4 would
+        // walk up and recompute (1,2) from the surviving leaf 5, silently
+        // changing the root and leaf 5's proof — yet leaf 5 was never pruned.
+        // An append (`leaf_index == old_count`) is always at or above the
+        // watermark (which never exceeds the leaf count), so this only ever
+        // fires on an overwrite.
+        let pruned_before = <Self as StoredMmr<MH>>::pruned_before(self)?;
+        if leaf_index < pruned_before {
+            return Err(MmrError::Pruned {
+                index: leaf_index,
+                pruned_before,
             });
         }
         // The writable range is `0..=old_count`, so the largest valid index is
@@ -710,6 +727,38 @@ mod tests {
         let reference = reference_mmr(&leaves);
         let proof = proof_at_size(&store, 2, 4);
         assert!(reference.verify::<Sha256Hasher>(&proof, &leaf(2)));
+    }
+
+    /// Overwriting a leaf below the watermark is rejected: `prune_before` keeps
+    /// the pruned leaf's covering peak, so the overwrite would recompute that
+    /// peak from a surviving sibling and corrupt the root/proof of an unpruned
+    /// leaf that shares it (e.g. with 6 leaves, `prune_before(5)` retains leaf 4
+    /// as the sibling that proves leaf 5).
+    #[test]
+    fn put_leaf_below_watermark_is_rejected() {
+        let leaves: Vec<Hash32> = (0..6).map(leaf).collect();
+        let store = MemMmr::<Hash32>::default();
+        for value in &leaves {
+            append(&store, *value);
+        }
+        prune_before(&store, 5);
+        assert_eq!(StoredMmr::<Sha256Hasher>::pruned_before(&store).unwrap(), 5);
+
+        // Leaf 4 is below the watermark but its peak survives to prove leaf 5.
+        assert!(matches!(
+            put(&store, 4, leaf(0xaa)),
+            Err(MmrError::Pruned {
+                index: 4,
+                pruned_before: 5,
+            })
+        ));
+        // Leaf 5 (at/above the watermark) still verifies, unchanged.
+        let reference = reference_mmr(&leaves);
+        assert!(reference.verify::<Sha256Hasher>(&proof_at_size(&store, 5, 6), &leaf(5)));
+
+        // Appending at the end is unaffected by the watermark.
+        append(&store, leaf(6));
+        assert_eq!(count(&store), 7);
     }
 
     /// The watermark only ever rises under `prune_before`, and `prune_after`
