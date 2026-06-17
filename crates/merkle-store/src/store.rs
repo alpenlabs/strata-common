@@ -7,7 +7,7 @@ use super::algorithm::{
     write_plan,
 };
 use super::error::MmrError;
-use super::index::{LeafPos, NodePos};
+use super::index::{LeafPos, NodePos, peak_positions};
 
 /// Reserved metadata tag holding the leaf count (== next leaf index).
 const NEXT_INDEX_TAG: u64 = 0;
@@ -355,7 +355,13 @@ where
     /// count, it is clamped down to it.
     ///
     /// Errors with [`MmrError::LeafOutOfRange`] if `after` is past the append
-    /// point (`> leaf_count`).
+    /// point (`> leaf_count`), and with [`MmrError::Pruned`] if `keep` falls
+    /// inside a prefix an earlier `prune_before` already discarded: the new MMR
+    /// would need the peaks of its first `keep` leaves to stay appendable, and
+    /// `prune_before` keeps only the peaks of *its own* cut, so a deeper cut can
+    /// have removed them. Truncating onto a missing prefix would leave a store
+    /// that reports the right leaf count yet cannot append, so it is rejected;
+    /// `keep` at or above the watermark always has its prefix peaks intact.
     ///
     /// Atomicity follows the backend's [`commit`](MmrNodeStore::commit): the node
     /// deletes and the leaf-count write are handed to a single `commit`, so a
@@ -375,13 +381,29 @@ where
         if keep == leaf_count {
             return Ok(());
         }
+        // The truncated store must still be appendable, which needs the peaks of
+        // a `keep`-leaf MMR. A `prune_before` past `keep` can have discarded some
+        // of them, so a `keep` below the watermark may have no intact prefix to
+        // truncate onto; probe those peaks and reject the truncation if any is
+        // gone, rather than commit an unappendable store. At or above the
+        // watermark the peaks are always retained, so skip the probe.
+        let watermark = <Self as StoredMmr<MH>>::pruned_before(self)?;
+        if keep < watermark {
+            let peaks: Vec<NodePos> = peak_positions(keep).collect();
+            let present = self.get_nodes(&peaks).map_err(MmrError::Backend)?;
+            if present.iter().any(Option::is_none) {
+                return Err(MmrError::Pruned {
+                    index: keep,
+                    pruned_before: watermark,
+                });
+            }
+        }
         let positions: Vec<NodePos> = iter_prune_after_positions(keep, leaf_count).collect();
         // Clamp the watermark to the new count, since no leaf at or above `keep`
         // survives to be reported `Pruned`. Order the writes so the leaf count is
         // the last write: it is the marker that "commits" the truncation, so an
         // interrupted prune that has not yet lowered it re-runs identically.
         let mut writes = Vec::with_capacity(2);
-        let watermark = <Self as StoredMmr<MH>>::pruned_before(self)?;
         if watermark > keep {
             writes.push((NodePos::meta(PRUNED_BEFORE_TAG), MH::Hash::pack_u64(keep)));
         }
@@ -399,9 +421,17 @@ where
     ///
     /// The returned value is the leaf hash read just before removal. It is `None`
     /// when the store is empty, but also — distinct only by the count it leaves
-    /// behind — when a prior [`prune_before(leaf_count)`](Self::prune_before)
-    /// full-compaction had already discarded that leaf's hash even though the
-    /// count was non-zero; the pop still happens in that case.
+    /// behind — when a prior [`prune_before`](Self::prune_before) had already
+    /// discarded that leaf's hash (folded into a surviving peak) even though the
+    /// count is non-zero; the pop still happens in that case.
+    ///
+    /// Errors with [`MmrError::Pruned`] (from [`prune_after`](Self::prune_after))
+    /// when removing the last leaf would truncate onto a prefix whose peaks an
+    /// earlier `prune_before` discarded: the shorter MMR could not be appended to,
+    /// so the pop is refused rather than left to corrupt the store. Whether it
+    /// errors depends on the cut's shape, not merely on a leaf hash being gone —
+    /// a pop can still succeed (returning `None`) when the shorter prefix's peaks
+    /// happen to survive.
     fn pop_leaf(&self) -> Result<Option<MH::Hash>, MmrError<Self::Error>> {
         let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
         let Some(last_index) = leaf_count.checked_sub(1) else {
@@ -801,6 +831,40 @@ mod tests {
         assert_eq!(watermark(), 0);
     }
 
+    /// Truncating onto a prefix that `prune_before` already discarded is
+    /// rejected: with 4 leaves, `prune_before(4)` keeps only peak `(2,0)`, so
+    /// `prune_after(3)` — which would need the peaks of a 3-leaf MMR (`(1,0)` and
+    /// `(0,2)`, both gone) to stay appendable — fails with `Pruned` and leaves
+    /// the store untouched. A truncation whose prefix peaks survive (here
+    /// `prune_after(4)` after `prune_before(5)`, peak `(2,0)` intact) still works.
+    #[test]
+    fn prune_after_into_pruned_prefix_is_rejected() {
+        let store = MemMmr::<Hash32>::default();
+        for i in 0..4 {
+            append(&store, leaf(i));
+        }
+        prune_before(&store, 4);
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::prune_after(&store, LeafPos::new(3)),
+            Err(MmrError::Pruned {
+                index: 3,
+                pruned_before: 4
+            })
+        ));
+        // Rejected before any mutation: count and watermark are unchanged.
+        assert_eq!(count(&store), 4);
+        assert_eq!(StoredMmr::<Sha256Hasher>::pruned_before(&store).unwrap(), 4);
+
+        // A cut whose prefix peaks survived the earlier `prune_before` is allowed.
+        let store = MemMmr::<Hash32>::default();
+        for i in 0..8 {
+            append(&store, leaf(i));
+        }
+        prune_before(&store, 5); // keeps peaks of 5 leaves: (2,0) and (0,4)
+        prune_after(&store, 4); // needs (2,0), which is intact
+        assert_eq!(count(&store), 4);
+    }
+
     /// `prune_before(leaf_count)` compacts the whole MMR to its current peaks,
     /// and appends afterward still roll forward correctly.
     #[test]
@@ -924,19 +988,40 @@ mod tests {
         assert_eq!(pop(&store), None);
     }
 
-    /// After a full `prune_before` compaction the last leaf's hash is gone, so
-    /// `pop_leaf` reports `None` yet still removes the leaf (count drops).
+    /// After a full `prune_before` compaction, popping the last leaf would
+    /// truncate onto a prefix whose peaks are gone, leaving an unappendable
+    /// store, so `pop_leaf` refuses with `Pruned` instead of dropping the count.
+    /// But a pop whose shorter prefix peaks survive still succeeds: compacting 3
+    /// leaves keeps peak `(1,0)`, which is exactly what a 2-leaf MMR needs, so the
+    /// pop goes through (returning leaf 2's retained hash).
     #[test]
-    fn pop_leaf_after_full_compaction_drops_count() {
+    fn pop_leaf_into_pruned_prefix_is_rejected() {
         let store = MemMmr::<Hash32>::default();
         for i in 0..4 {
             append(&store, leaf(i));
         }
-        // Leaf 3 is a descendant of peak (1,2), so compaction discards its hash.
+        // Compaction keeps only peak (2,0); a 3-leaf MMR needs (1,0) and (0,2),
+        // both discarded, so the pop down to 3 leaves cannot leave an appendable
+        // store.
         prune_before(&store, 4);
         assert_eq!(read_leaf(&store, 3), None);
-        assert_eq!(pop(&store), None);
-        assert_eq!(count(&store), 3);
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::pop_leaf(&store),
+            Err(MmrError::Pruned {
+                index: 3,
+                pruned_before: 4
+            })
+        ));
+        assert_eq!(count(&store), 4);
+
+        // A pop whose shorter prefix survives compaction is still allowed.
+        let store = MemMmr::<Hash32>::default();
+        for i in 0..3 {
+            append(&store, leaf(i));
+        }
+        prune_before(&store, 3); // keeps peaks of 3 leaves: (1,0) and (0,2)
+        assert_eq!(pop(&store), Some(leaf(2))); // 2-leaf MMR needs (1,0), intact
+        assert_eq!(count(&store), 2);
     }
 
     /// Exhaustive, deterministic parity for small sizes: our proof's cohashes
@@ -1077,6 +1162,35 @@ mod tests {
                 let fresh_proof = proof_at_size(&fresh, idx, k);
                 prop_assert_eq!(pruned_proof.cohashes(), fresh_proof.cohashes());
             }
+        }
+
+        /// `pop_leaf` unwinds an MMR leaf-by-leaf: each pop returns the last
+        /// appended value, drops the count by one, and leaves a store whose proofs
+        /// match a fresh build of the surviving prefix — down to empty, after
+        /// which it keeps returning `None`.
+        #[test]
+        fn pop_leaf_unwinds_to_fresh_builds((leaves, _size, _index) in leaves_and_query(1..32)) {
+            let n = leaves.len() as u64;
+            let store = MemMmr::<Hash32>::default();
+            for value in &leaves {
+                append(&store, *value);
+            }
+            for k in (0..n).rev() {
+                prop_assert_eq!(pop(&store), Some(leaves[k as usize]));
+                prop_assert_eq!(count(&store), k);
+
+                let fresh = MemMmr::<Hash32>::default();
+                for value in &leaves[..k as usize] {
+                    append(&fresh, *value);
+                }
+                for idx in 0..k {
+                    let popped_proof = proof_at_size(&store, idx, k);
+                    let fresh_proof = proof_at_size(&fresh, idx, k);
+                    prop_assert_eq!(popped_proof.cohashes(), fresh_proof.cohashes());
+                }
+            }
+            prop_assert_eq!(pop(&store), None);
+            prop_assert_eq!(pop(&store), None);
         }
 
         /// After `prune_before(k)` every leaf in `[k, n)` still verifies against
