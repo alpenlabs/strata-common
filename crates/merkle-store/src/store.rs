@@ -52,11 +52,12 @@ impl<const N: usize> MmrMetaPack for [u8; N] {
 
 /// Storage backend for MMR nodes.
 ///
-/// An implementor writes only [`get_node`](Self::get_node) and
-/// [`put_node`](Self::put_node); [`get_nodes`](Self::get_nodes) and
-/// [`commit`](Self::commit) have correct defaults that a backend may override
-/// for batching/atomicity. One backend instance corresponds to one MMR — any
-/// namespacing is the implementor's concern and invisible here.
+/// An implementor writes [`get_node`](Self::get_node),
+/// [`put_node`](Self::put_node), and [`delete_node`](Self::delete_node);
+/// [`get_nodes`](Self::get_nodes), [`put_nodes`](Self::put_nodes), and
+/// [`delete_nodes`](Self::delete_nodes) have correct defaults that a backend may
+/// override for batching/atomicity. One backend instance corresponds to one MMR
+/// — any namespacing is the implementor's concern and invisible here.
 ///
 /// The derived leaf/proof API lives in [`StoredMmr`], which is
 /// blanket-implemented for every `MmrNodeStore`; callers use that and never
@@ -72,7 +73,14 @@ pub trait MmrNodeStore {
     fn get_node(&self, pos: NodePos) -> Result<Option<Self::Hash>, Self::Error>;
 
     /// Stores `value` at `pos`.
+    ///
+    /// Overwriting a node that is already present is not an error.
     fn put_node(&self, pos: NodePos, value: Self::Hash) -> Result<(), Self::Error>;
+
+    /// Removes the node at `pos`.
+    ///
+    /// Idempotent: removing a node that is absent is not an error.
+    fn delete_node(&self, pos: NodePos) -> Result<(), Self::Error>;
 
     /// Reads several nodes in one call.
     ///
@@ -86,39 +94,18 @@ pub trait MmrNodeStore {
     ///
     /// The default loops [`put_node`](Self::put_node); transactional backends
     /// should override it so a leaf write (leaf + ancestors + leaf-count) is
-    /// atomic.
-    fn commit(&self, writes: &[(NodePos, Self::Hash)]) -> Result<(), Self::Error> {
+    /// committed atomically.
+    fn put_nodes(&self, writes: &[(NodePos, Self::Hash)]) -> Result<(), Self::Error> {
         for (pos, value) in writes {
             self.put_node(*pos, *value)?;
         }
         Ok(())
     }
-}
-
-/// A [`MmrNodeStore`] that can also delete nodes, unlocking the pruning
-/// operations on [`StoredMmr`] ([`prune_before`](StoredMmr::prune_before) /
-/// [`prune_after`](StoredMmr::prune_after)).
-///
-/// Opt-in and separate from [`MmrNodeStore`] so append-only backends (which
-/// cannot delete) are unaffected: an implementor adds only
-/// [`delete_node`](Self::delete_node); [`delete_nodes`](Self::delete_nodes) has
-/// a correct default a backend may override for a single round-trip.
-pub trait PrunableNodeStore: MmrNodeStore {
-    /// Removes the node at `pos`.
-    ///
-    /// Idempotent: removing a node that is absent is not an error.
-    fn delete_node(&self, pos: NodePos) -> Result<(), Self::Error>;
 
     /// Removes several nodes in one call.
     ///
     /// The default loops [`delete_node`](Self::delete_node); backends with a
     /// native multi-delete should override it for a single round-trip.
-    ///
-    /// The pruning operations pass the whole set of positions a prune removes —
-    /// a count that scales with how far back the cut reaches (a deep
-    /// [`prune_after`](StoredMmr::prune_after), for instance, can delete most of
-    /// the tree). A backend that cannot issue an arbitrarily large delete in one
-    /// go should chunk internally (e.g. `positions.chunks(N)`) to its own limit.
     fn delete_nodes(&self, positions: &[NodePos]) -> Result<(), Self::Error> {
         for pos in positions {
             self.delete_node(*pos)?;
@@ -183,7 +170,7 @@ where
     /// `leaf_index` may be the current end (an append, which extends the leaf
     /// count) or an existing index (an overwrite). The leaf, its recomputed
     /// ancestors, and any leaf-count bump are written in a single
-    /// [`commit`](MmrNodeStore::commit).
+    /// [`put_nodes`](MmrNodeStore::put_nodes).
     ///
     /// Errors with [`MmrError::LeafGap`] if `leaf_index` is past the append
     /// point (`> leaf_count`), which would skip the leaves in between, and with
@@ -214,7 +201,7 @@ where
         if new_count != old_count {
             writes.push((NodePos::meta(NEXT_INDEX_TAG), MH::Hash::pack_u64(new_count)));
         }
-        self.commit(&writes).map_err(MmrError::Backend)
+        self.put_nodes(&writes).map_err(MmrError::Backend)
     }
 
     /// Generates an inclusion proof for `leaf_index` against the current MMR
@@ -304,12 +291,7 @@ where
     /// are separate calls, and the watermark is written last, so a crash
     /// mid-prune leaves the watermark unchanged and re-running the same call
     /// recomputes the identical (idempotent) delete set and completes.
-    ///
-    /// Requires a [`PrunableNodeStore`] backend.
-    fn prune_before(&self, before: LeafPos) -> Result<(), MmrError<Self::Error>>
-    where
-        Self: PrunableNodeStore,
-    {
+    fn prune_before(&self, before: LeafPos) -> Result<(), MmrError<Self::Error>> {
         let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
         let before_index = before.index();
         if before_index > leaf_count {
@@ -324,7 +306,7 @@ where
         // a leaf is never reported `Pruned` while its path is still present.
         let watermark = <Self as StoredMmr<MH>>::pruned_before(self)?;
         if before_index > watermark {
-            self.commit(&[(
+            self.put_nodes(&[(
                 NodePos::meta(PRUNED_BEFORE_TAG),
                 MH::Hash::pack_u64(before_index),
             )])
@@ -352,12 +334,7 @@ where
     /// write are separate calls, and the count is written last, so a crash
     /// mid-prune leaves the count unchanged and re-running the same call
     /// recomputes the identical (idempotent) delete set and completes.
-    ///
-    /// Requires a [`PrunableNodeStore`] backend.
-    fn prune_after(&self, after: LeafPos) -> Result<(), MmrError<Self::Error>>
-    where
-        Self: PrunableNodeStore,
-    {
+    fn prune_after(&self, after: LeafPos) -> Result<(), MmrError<Self::Error>> {
         let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
         let keep = after.index();
         if keep > leaf_count {
@@ -379,7 +356,7 @@ where
         if watermark > keep {
             writes.push((NodePos::meta(PRUNED_BEFORE_TAG), MH::Hash::pack_u64(keep)));
         }
-        self.commit(&writes).map_err(MmrError::Backend)
+        self.put_nodes(&writes).map_err(MmrError::Backend)
     }
 
     /// Removes the last leaf and returns its value, or `None` if the MMR is
@@ -395,12 +372,7 @@ where
     /// behind — when a prior [`prune_before(leaf_count)`](Self::prune_before)
     /// full-compaction had already discarded that leaf's hash even though the
     /// count was non-zero; the pop still happens in that case.
-    ///
-    /// Requires a [`PrunableNodeStore`] backend.
-    fn pop_leaf(&self) -> Result<Option<MH::Hash>, MmrError<Self::Error>>
-    where
-        Self: PrunableNodeStore,
-    {
+    fn pop_leaf(&self) -> Result<Option<MH::Hash>, MmrError<Self::Error>> {
         let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
         let Some(last_index) = leaf_count.checked_sub(1) else {
             return Ok(None);

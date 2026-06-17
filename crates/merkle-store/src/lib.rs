@@ -2,9 +2,10 @@
 //!
 //! Stores *every* MMR node — leaves and internal nodes — so inclusion proofs
 //! are generated in `O(log n)` by walking the stored sibling path, with no
-//! leaf replay. The surface a backend must implement is just two methods
-//! ([`MmrNodeStore::get_node`] / [`MmrNodeStore::put_node`]); the leaf- and
-//! proof-level API ([`StoredMmr`]) is derived on top.
+//! leaf replay. The surface a backend must implement is three methods
+//! ([`MmrNodeStore::get_node`] / [`MmrNodeStore::put_node`] /
+//! [`MmrNodeStore::delete_node`]); the leaf- and proof-level API
+//! ([`StoredMmr`]) is derived on top.
 //!
 //! The store is storage- and namespace-agnostic (one backend instance == one
 //! MMR) and generic over the [`MerkleHasher`](strata_merkle::MerkleHasher) used
@@ -29,4 +30,4 @@ pub use algorithm::{
 pub use error::MmrError;
 pub use index::{LeafPos, NodePos, peak_for_leaf, peak_positions};
 pub use memory::MemMmr;
-pub use store::{MmrMetaPack, MmrNodeStore, PrunableNodeStore, StoredMmr};
+pub use store::{MmrMetaPack, MmrNodeStore, StoredMmr};
