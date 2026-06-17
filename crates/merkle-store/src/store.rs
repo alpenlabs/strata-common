@@ -54,10 +54,10 @@ impl<const N: usize> MmrMetaPack for [u8; N] {
 ///
 /// An implementor writes [`get_node`](Self::get_node),
 /// [`put_node`](Self::put_node), and [`delete_node`](Self::delete_node);
-/// [`get_nodes`](Self::get_nodes), [`put_nodes`](Self::put_nodes), and
-/// [`delete_nodes`](Self::delete_nodes) have correct defaults that a backend may
-/// override for batching/atomicity. One backend instance corresponds to one MMR
-/// — any namespacing is the implementor's concern and invisible here.
+/// [`get_nodes`](Self::get_nodes) and [`commit`](Self::commit) have correct
+/// defaults that a backend may override for batching/atomicity. One backend
+/// instance corresponds to one MMR — any namespacing is the implementor's
+/// concern and invisible here.
 ///
 /// The derived leaf/proof API lives in [`StoredMmr`], which is
 /// blanket-implemented for every `MmrNodeStore`; callers use that and never
@@ -90,25 +90,36 @@ pub trait MmrNodeStore {
         positions.iter().map(|pos| self.get_node(*pos)).collect()
     }
 
-    /// Writes all `writes` together.
+    /// Applies `writes` and `deletes` as one batch: every position in `writes`
+    /// is stored and every position in `deletes` is removed.
     ///
-    /// The default loops [`put_node`](Self::put_node); transactional backends
-    /// should override it so a leaf write (leaf + ancestors + leaf-count) is
-    /// committed atomically.
-    fn put_nodes(&self, writes: &[(NodePos, Self::Hash)]) -> Result<(), Self::Error> {
+    /// The derived MMR ops use this as their sole mutation path — a leaf write
+    /// (leaf + ancestors + leaf-count) or a prune (node deletes + watermark/count
+    /// update) is handed to a single `commit` call. Transactional backends should
+    /// override it so the whole batch lands atomically; the default loops
+    /// [`delete_node`](Self::delete_node) then [`put_node`](Self::put_node).
+    ///
+    /// Deletes are applied before writes, which fixes two things callers rely on:
+    ///
+    /// - If a position appears in both `deletes` and `writes`, the write wins —
+    ///   the node ends up stored, not removed. The derived ops never pass
+    ///   overlapping sets, but the resolution is defined rather than left to the
+    ///   backend so an overriding backend stays consistent with the default.
+    /// - The committing metadata write (the watermark or leaf count that finalizes
+    ///   a prune) is in `writes`, so it lands last. A crash in the
+    ///   non-transactional default therefore leaves that marker unchanged and the
+    ///   op re-runs idempotently; a transactional override makes the whole batch
+    ///   atomic and the ordering moot.
+    fn commit(
+        &self,
+        writes: &[(NodePos, Self::Hash)],
+        deletes: &[NodePos],
+    ) -> Result<(), Self::Error> {
+        for pos in deletes {
+            self.delete_node(*pos)?;
+        }
         for (pos, value) in writes {
             self.put_node(*pos, *value)?;
-        }
-        Ok(())
-    }
-
-    /// Removes several nodes in one call.
-    ///
-    /// The default loops [`delete_node`](Self::delete_node); backends with a
-    /// native multi-delete should override it for a single round-trip.
-    fn delete_nodes(&self, positions: &[NodePos]) -> Result<(), Self::Error> {
-        for pos in positions {
-            self.delete_node(*pos)?;
         }
         Ok(())
     }
@@ -170,7 +181,7 @@ where
     /// `leaf_index` may be the current end (an append, which extends the leaf
     /// count) or an existing index (an overwrite). The leaf, its recomputed
     /// ancestors, and any leaf-count bump are written in a single
-    /// [`put_nodes`](MmrNodeStore::put_nodes).
+    /// [`commit`](MmrNodeStore::commit).
     ///
     /// Errors with [`MmrError::LeafGap`] if `leaf_index` is past the append
     /// point (`> leaf_count`), which would skip the leaves in between, with
@@ -218,7 +229,7 @@ where
         if new_count != old_count {
             writes.push((NodePos::meta(NEXT_INDEX_TAG), MH::Hash::pack_u64(new_count)));
         }
-        self.put_nodes(&writes).map_err(MmrError::Backend)
+        self.commit(&writes, &[]).map_err(MmrError::Backend)
     }
 
     /// Generates an inclusion proof for `leaf_index` against the current MMR
@@ -304,8 +315,11 @@ where
     /// Errors with [`MmrError::LeafOutOfRange`] if `before` is past the append
     /// point (`> leaf_count`).
     ///
-    /// Not a single atomic transaction: the node deletes and the watermark write
-    /// are separate calls, and the watermark is written last, so a crash
+    /// Atomicity follows the backend's [`commit`](MmrNodeStore::commit): the node
+    /// deletes and the watermark write are handed to a single `commit`, so a
+    /// transactional backend applies them as one unit. The non-transactional
+    /// default deletes the nodes first and raises the watermark last, so a leaf
+    /// is never reported `Pruned` while its path is still present, and a crash
     /// mid-prune leaves the watermark unchanged and re-running the same call
     /// recomputes the identical (idempotent) delete set and completes.
     fn prune_before(&self, before: LeafPos) -> Result<(), MmrError<Self::Error>> {
@@ -318,18 +332,14 @@ where
             });
         }
         let positions: Vec<NodePos> = iter_prune_before_positions(before_index).collect();
-        self.delete_nodes(&positions).map_err(MmrError::Backend)?;
-        // Raise the watermark last (monotonically), once the nodes are gone, so
-        // a leaf is never reported `Pruned` while its path is still present.
+        // Raise the watermark (monotonically) in the same commit as the deletes.
         let watermark = <Self as StoredMmr<MH>>::pruned_before(self)?;
-        if before_index > watermark {
-            self.put_nodes(&[(
-                NodePos::meta(PRUNED_BEFORE_TAG),
-                MH::Hash::pack_u64(before_index),
-            )])
-            .map_err(MmrError::Backend)?;
-        }
-        Ok(())
+        let writes: &[(NodePos, MH::Hash)] = &[(
+            NodePos::meta(PRUNED_BEFORE_TAG),
+            MH::Hash::pack_u64(before_index),
+        )];
+        let writes = if before_index > watermark { writes } else { &[] };
+        self.commit(writes, &positions).map_err(MmrError::Backend)
     }
 
     /// Truncates the MMR to its first `after.index()` leaves, removing that leaf
@@ -347,8 +357,10 @@ where
     /// Errors with [`MmrError::LeafOutOfRange`] if `after` is past the append
     /// point (`> leaf_count`).
     ///
-    /// Not a single atomic transaction: the node deletes and the leaf-count
-    /// write are separate calls, and the count is written last, so a crash
+    /// Atomicity follows the backend's [`commit`](MmrNodeStore::commit): the node
+    /// deletes and the leaf-count write are handed to a single `commit`, so a
+    /// transactional backend applies them as one unit. The non-transactional
+    /// default deletes the nodes first and lowers the leaf count last, so a crash
     /// mid-prune leaves the count unchanged and re-running the same call
     /// recomputes the identical (idempotent) delete set and completes.
     fn prune_after(&self, after: LeafPos) -> Result<(), MmrError<Self::Error>> {
@@ -364,16 +376,17 @@ where
             return Ok(());
         }
         let positions: Vec<NodePos> = iter_prune_after_positions(keep, leaf_count).collect();
-        self.delete_nodes(&positions).map_err(MmrError::Backend)?;
-        // Lower the leaf count last so an interrupted prune is resumable. Clamp
-        // the watermark to the new count in the same write, since no leaf at or
-        // above `keep` survives to be reported `Pruned`.
-        let mut writes = vec![(NodePos::meta(NEXT_INDEX_TAG), MH::Hash::pack_u64(keep))];
+        // Clamp the watermark to the new count, since no leaf at or above `keep`
+        // survives to be reported `Pruned`. Order the writes so the leaf count is
+        // the last write: it is the marker that "commits" the truncation, so an
+        // interrupted prune that has not yet lowered it re-runs identically.
+        let mut writes = Vec::with_capacity(2);
         let watermark = <Self as StoredMmr<MH>>::pruned_before(self)?;
         if watermark > keep {
             writes.push((NodePos::meta(PRUNED_BEFORE_TAG), MH::Hash::pack_u64(keep)));
         }
-        self.put_nodes(&writes).map_err(MmrError::Backend)
+        writes.push((NodePos::meta(NEXT_INDEX_TAG), MH::Hash::pack_u64(keep)));
+        self.commit(&writes, &positions).map_err(MmrError::Backend)
     }
 
     /// Removes the last leaf and returns its value, or `None` if the MMR is
