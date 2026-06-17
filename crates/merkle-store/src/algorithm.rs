@@ -95,8 +95,8 @@ pub fn assemble_proof<H: MerkleHash>(leaf_index: u64, cohashes: Vec<H>) -> Merkl
 /// Produced lazily — only the peak list (`O(log before)`) is held, with the
 /// descendants yielded on demand. The prune op collects the full set before
 /// handing it to the node store to delete.
-pub fn prune_before_positions(before: u64) -> impl Iterator<Item = NodePos> {
-    peak_positions(before).into_iter().flat_map(|peak| {
+pub fn iter_prune_before_positions(before: u64) -> impl Iterator<Item = NodePos> {
+    peak_positions(before).flat_map(|peak| {
         let peak_height = peak.height();
         let peak_index = peak.index();
         (0..peak_height).flat_map(move |height| {
@@ -119,7 +119,7 @@ pub fn prune_before_positions(before: u64) -> impl Iterator<Item = NodePos> {
 /// node store to delete. A real MMR tops out at height 63 (a height-64 node
 /// would need `2^64` leaves), so the height walk is capped there, which also
 /// avoids a `>> 64` shift overflow.
-pub fn prune_after_positions(keep: u64, leaf_count: u64) -> impl Iterator<Item = NodePos> {
+pub fn iter_prune_after_positions(keep: u64, leaf_count: u64) -> impl Iterator<Item = NodePos> {
     (0u8..64)
         .take_while(move |&height| (leaf_count >> height) > 0)
         .flat_map(move |height| {

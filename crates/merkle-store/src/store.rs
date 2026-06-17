@@ -3,7 +3,8 @@
 use strata_merkle::{MerkleHash, MerkleHasher, MerkleProof};
 
 use super::algorithm::{
-    assemble_proof, proof_positions, prune_after_positions, prune_before_positions, write_plan,
+    assemble_proof, iter_prune_after_positions, iter_prune_before_positions, proof_positions,
+    write_plan,
 };
 use super::error::MmrError;
 use super::index::{LeafPos, NodePos};
@@ -317,7 +318,7 @@ where
                 leaf_count,
             });
         }
-        let positions: Vec<NodePos> = prune_before_positions(before_index).collect();
+        let positions: Vec<NodePos> = iter_prune_before_positions(before_index).collect();
         self.delete_nodes(&positions).map_err(MmrError::Backend)?;
         // Raise the watermark last (monotonically), once the nodes are gone, so
         // a leaf is never reported `Pruned` while its path is still present.
@@ -368,7 +369,7 @@ where
         if keep == leaf_count {
             return Ok(());
         }
-        let positions: Vec<NodePos> = prune_after_positions(keep, leaf_count).collect();
+        let positions: Vec<NodePos> = iter_prune_after_positions(keep, leaf_count).collect();
         self.delete_nodes(&positions).map_err(MmrError::Backend)?;
         // Lower the leaf count last so an interrupted prune is resumable. Clamp
         // the watermark to the new count in the same write, since no leaf at or
@@ -681,7 +682,7 @@ mod tests {
                     append(&store, *value);
                 }
 
-                let deletes: Vec<NodePos> = prune_before_positions(k).collect();
+                let deletes: Vec<NodePos> = iter_prune_before_positions(k).collect();
                 for pos in &deletes {
                     assert!(
                         store.get_node(*pos).unwrap().is_some(),
@@ -782,7 +783,7 @@ mod tests {
         for pos in crate::peak_positions(n) {
             assert!(store.get_node(pos).unwrap().is_some(), "peak {pos:?} kept");
         }
-        for pos in prune_before_positions(n) {
+        for pos in iter_prune_before_positions(n) {
             assert!(
                 store.get_node(pos).unwrap().is_none(),
                 "non-peak {pos:?} gone"
