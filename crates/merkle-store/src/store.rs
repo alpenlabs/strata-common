@@ -315,6 +315,14 @@ where
     /// Errors with [`MmrError::LeafOutOfRange`] if `before` is past the append
     /// point (`> leaf_count`).
     ///
+    /// Note: the set of node positions to delete is materialized in full (into a
+    /// `Vec`) before it is handed to [`commit`](MmrNodeStore::commit), so a single
+    /// prune over a long-lived MMR allocates memory proportional to the number of
+    /// removed nodes. The watermark is monotonic and the delete set idempotent, so
+    /// a consumer that needs to bound peak memory can prune in steps — repeated
+    /// calls advancing `before` — and converge to the same state. Bounding it that
+    /// way is left to the consumer.
+    ///
     /// Atomicity follows the backend's [`commit`](MmrNodeStore::commit): the node
     /// deletes and the watermark write are handed to a single `commit`, so a
     /// transactional backend applies them as one unit. The non-transactional
@@ -362,6 +370,11 @@ where
     /// have removed them. Truncating onto a missing prefix would leave a store
     /// that reports the right leaf count yet cannot append, so it is rejected;
     /// `keep` at or above the watermark always has its prefix peaks intact.
+    ///
+    /// Note: like [`prune_before`](Self::prune_before), the delete set is
+    /// materialized in full before the [`commit`](MmrNodeStore::commit). A single
+    /// truncation that drops a huge suffix therefore allocates proportionally; a
+    /// consumer bounding peak memory should truncate in steps.
     ///
     /// Atomicity follows the backend's [`commit`](MmrNodeStore::commit): the node
     /// deletes and the leaf-count write are handed to a single `commit`, so a
