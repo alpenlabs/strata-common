@@ -29,6 +29,16 @@ pub enum ParseError {
         max: usize,
     },
 
+    /// The provided amount exceeds the maximum bitcoin money supply
+    /// (`Amount::MAX_MONEY`).
+    #[error("amount of {sats} sats exceeds the maximum of {max} sats")]
+    AmountTooLarge {
+        /// The offending amount, in satoshis.
+        sats: u64,
+        /// Maximum allowed amount, in satoshis (`Amount::MAX_MONEY`).
+        max: u64,
+    },
+
     /// The provided 32-byte buffer is not a valid point on the curve.
     #[error("not a valid point on the curve: {0}")]
     InvalidPoint(Buf32),
