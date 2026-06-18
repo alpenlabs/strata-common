@@ -243,10 +243,22 @@ where
     /// Generates an inclusion proof for `leaf_index` against an MMR of exactly
     /// `at_leaf_count` leaves.
     ///
-    /// Exact for any historical size: stored nodes are immutable under
-    /// append-only use, so the proof path for `leaf_index` in a
-    /// size-`at_leaf_count` MMR walks the same nodes regardless of later
-    /// appends.
+    /// Exact for any retained historical size: a stored node's hash covers a
+    /// fixed leaf range and never changes under appends, so the proof path for
+    /// `leaf_index` in a size-`at_leaf_count` MMR walks the same nodes
+    /// regardless of later appends.
+    ///
+    /// Errors with [`MmrError::LeafOutOfRange`] if `at_leaf_count` exceeds the
+    /// store's current [`leaf_count`](Self::leaf_count): the immutability above
+    /// only holds for sizes the store still retains, and
+    /// [`prune_after`](Self::prune_after) can truncate leaves off the top.
+    /// The hazard this prevents is not a malformed proof but a *valid* one: a
+    /// truncated-away leaf that is a lone peak at `at_leaf_count` has an empty
+    /// proof path, so it slips past the missing-node check below and assembles
+    /// into a proof that still verifies against the (now-abandoned) size-
+    /// `at_leaf_count` root. The store would thus vouch for a leaf it
+    /// deliberately rolled back, with nothing to signal the state is gone. The
+    /// guard makes the store vend proofs only against sizes it still holds.
     ///
     /// Errors with [`MmrError::Pruned`] if `leaf_index` is below the store's
     /// prune watermark (see [`prune_before`](Self::prune_before)): the nodes
@@ -261,6 +273,14 @@ where
             return Err(MmrError::LeafOutOfRange {
                 index: leaf_index,
                 leaf_count: at_leaf_count,
+            });
+        }
+
+        let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
+        if at_leaf_count > leaf_count {
+            return Err(MmrError::LeafOutOfRange {
+                index: at_leaf_count - 1,
+                leaf_count,
             });
         }
 
@@ -875,6 +895,42 @@ mod tests {
         prune_before(&store, 5); // keeps peaks of 5 leaves: (2,0) and (0,4)
         prune_after(&store, 4); // needs (2,0), which is intact
         assert_eq!(count(&store), 4);
+    }
+
+    /// A historical proof against a size the store has truncated away is
+    /// rejected. With 5 leaves, `prune_after(4)` drops leaf 4 (a lone height-0
+    /// peak at size 5), so its proof path is empty; without the size guard
+    /// `generate_proof_at_size(4, 5)` would return a proof for the rolled-back
+    /// leaf instead of erroring.
+    #[test]
+    fn proof_past_truncated_size_is_rejected() {
+        let store = MemMmr::<Hash32>::default();
+        for i in 0..5 {
+            append(&store, leaf(i));
+        }
+        prune_after(&store, 4);
+        assert_eq!(count(&store), 4);
+
+        // Leaf 4 was a lone peak at size 5 (empty proof path), so it slips past
+        // the missing-node check; the size guard must reject it.
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::generate_proof_at_size(&store, 4, 5),
+            Err(MmrError::LeafOutOfRange {
+                index: 4,
+                leaf_count: 4
+            })
+        ));
+        // A still-retained leaf is rejected too when the requested size is gone.
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::generate_proof_at_size(&store, 2, 5),
+            Err(MmrError::LeafOutOfRange {
+                index: 4,
+                leaf_count: 4
+            })
+        ));
+        // Proofs against the retained size still work.
+        let reference = reference_mmr(&(0..4).map(leaf).collect::<Vec<_>>());
+        assert!(reference.verify::<Sha256Hasher>(&proof_at_size(&store, 2, 4), &leaf(2)));
     }
 
     /// `prune_before(leaf_count)` compacts the whole MMR to its current peaks,
