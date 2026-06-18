@@ -35,4 +35,9 @@ impl<H: MerkleHash> MmrNodeStore for MemMmr<H> {
         self.nodes.borrow_mut().insert(pos, value);
         Ok(())
     }
+
+    fn delete_node(&self, pos: NodePos) -> Result<(), Infallible> {
+        self.nodes.borrow_mut().remove(&pos);
+        Ok(())
+    }
 }

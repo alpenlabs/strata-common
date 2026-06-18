@@ -11,7 +11,7 @@
 use strata_merkle::{MerkleHash, MerkleHasher, MerkleProof};
 
 use super::error::MmrError;
-use super::index::{LeafPos, NodePos, peak_for_leaf};
+use super::index::{LeafPos, NodePos, peak_for_leaf, peak_positions};
 
 /// Computes the nodes to write when setting `leaf` at `leaf_index` in an MMR
 /// that has (or will have) `leaf_count` leaves.
@@ -82,4 +82,47 @@ pub fn proof_positions(leaf_index: u64, leaf_count: u64) -> Vec<NodePos> {
 /// order (the order returned by [`proof_positions`]).
 pub fn assemble_proof<H: MerkleHash>(leaf_index: u64, cohashes: Vec<H>) -> MerkleProof<H> {
     MerkleProof::from_cohashes(cohashes, leaf_index)
+}
+
+/// Positions to delete to prune everything strictly before leaf `before`,
+/// keeping only the peaks of the first `before` leaves.
+///
+/// Yields the proper descendants of each peak in [`peak_positions`]`(before)` —
+/// exactly the nodes whose leaf-coverage lies entirely in `[0, before)`, minus
+/// the peaks themselves, which are retained so later leaves stay provable and
+/// appends keep working. Empty when `before == 0`.
+///
+/// Produced lazily — only the peak list (`O(log before)`) is held, with the
+/// descendants yielded on demand. The prune op collects the full set before
+/// handing it to the node store to delete.
+pub fn iter_prune_before_positions(before: u64) -> impl Iterator<Item = NodePos> {
+    peak_positions(before).flat_map(|peak| {
+        let peak_height = peak.height();
+        let peak_index = peak.index();
+        (0..peak_height).flat_map(move |height| {
+            // Each descendant level widens the peak's index by 2 per step down.
+            let span = 1u64 << (peak_height - height);
+            (peak_index * span..(peak_index + 1) * span)
+                .map(move |index| NodePos::new(height, index))
+        })
+    })
+}
+
+/// Positions to delete to truncate an MMR from `leaf_count` leaves down to
+/// `keep` leaves.
+///
+/// Yields every node present at `leaf_count` but not at `keep`: at each height
+/// `h`, the indices in `[keep >> h, leaf_count >> h)` (a node `(h, i)` exists at
+/// a given count iff `i < count >> h`). Empty when `keep >= leaf_count`.
+///
+/// Produced lazily; the prune op collects the full set before handing it to the
+/// node store to delete. A real MMR tops out at height 63 (a height-64 node
+/// would need `2^64` leaves), so the height walk is capped there, which also
+/// avoids a `>> 64` shift overflow.
+pub fn iter_prune_after_positions(keep: u64, leaf_count: u64) -> impl Iterator<Item = NodePos> {
+    (0u8..64)
+        .take_while(move |&height| (leaf_count >> height) > 0)
+        .flat_map(move |height| {
+            (keep >> height..leaf_count >> height).map(move |index| NodePos::new(height, index))
+        })
 }

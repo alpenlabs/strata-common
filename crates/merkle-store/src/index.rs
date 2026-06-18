@@ -4,6 +4,8 @@
 //! namespace-agnostic. A node lives at `(height, index)`: leaves are height 0,
 //! and `index` is the zero-based offset within that level.
 
+use std::iter;
+
 /// Height of the reserved metadata level.
 ///
 /// A real MMR node never reaches this height (it would require `2^255` leaves),
@@ -127,20 +129,25 @@ fn highest_mountain_size(leaves: u64) -> u64 {
 }
 
 /// Returns the peak positions for an MMR of `leaf_count` leaves, left to right.
-pub fn peak_positions(leaf_count: u64) -> Vec<NodePos> {
-    let mut peaks = Vec::new();
+///
+/// Yielded lazily so callers that just walk the peaks (e.g.
+/// [`iter_prune_before_positions`](super::algorithm::iter_prune_before_positions))
+/// need not allocate a `Vec`.
+pub fn peak_positions(leaf_count: u64) -> impl Iterator<Item = NodePos> {
     let mut start_leaf = 0u64;
     let mut remaining = leaf_count;
 
-    while remaining > 0 {
+    iter::from_fn(move || {
+        if remaining == 0 {
+            return None;
+        }
         let size = highest_mountain_size(remaining);
         let height = size.trailing_zeros() as u8;
-        peaks.push(NodePos::new(height, start_leaf >> height));
+        let peak = NodePos::new(height, start_leaf >> height);
         start_leaf += size;
         remaining -= size;
-    }
-
-    peaks
+        Some(peak)
+    })
 }
 
 /// Returns the peak node that the leaf at `leaf_index` hashes up to, in an MMR
@@ -184,15 +191,13 @@ mod tests {
     // Concrete examples that document exact peak decompositions.
     #[test]
     fn peaks_match_known_decompositions() {
-        assert_eq!(peak_positions(0), vec![]);
-        assert_eq!(peak_positions(1), vec![NodePos::new(0, 0)]);
+        let peaks = |n| peak_positions(n).collect::<Vec<_>>();
+        assert_eq!(peaks(0), vec![]);
+        assert_eq!(peaks(1), vec![NodePos::new(0, 0)]);
+        assert_eq!(peaks(3), vec![NodePos::new(1, 0), NodePos::new(0, 2)]);
+        assert_eq!(peaks(4), vec![NodePos::new(2, 0)]);
         assert_eq!(
-            peak_positions(3),
-            vec![NodePos::new(1, 0), NodePos::new(0, 2)]
-        );
-        assert_eq!(peak_positions(4), vec![NodePos::new(2, 0)]);
-        assert_eq!(
-            peak_positions(11),
+            peaks(11),
             vec![NodePos::new(3, 0), NodePos::new(1, 4), NodePos::new(0, 10)]
         );
     }
@@ -252,7 +257,7 @@ mod tests {
 
         #[test]
         fn peaks_partition_leaves_with_descending_heights(leaf_count in 0u64..1_000_000) {
-            let peaks = peak_positions(leaf_count);
+            let peaks: Vec<_> = peak_positions(leaf_count).collect();
             // Each peak of height h covers 2^h leaves; together they cover all.
             let covered: u64 = peaks.iter().map(|p| 1u64 << p.height()).sum();
             prop_assert_eq!(covered, leaf_count);
@@ -265,7 +270,7 @@ mod tests {
         fn peak_for_leaf_is_a_reachable_peak(leaf_count in 1u64..1_000_000, frac in any::<u64>()) {
             let leaf_index = frac % leaf_count;
             let peak = peak_for_leaf(leaf_index, leaf_count);
-            prop_assert!(peak_positions(leaf_count).contains(&peak));
+            prop_assert!(peak_positions(leaf_count).any(|p| p == peak));
 
             // Walking up from the leaf reaches exactly that peak.
             let mut cur = LeafPos::new(leaf_index).to_node_pos();
