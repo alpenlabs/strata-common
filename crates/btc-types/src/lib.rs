@@ -16,7 +16,6 @@ mod convert;
 mod errors;
 mod genesis;
 mod params;
-pub mod payload;
 
 pub use btc::*;
 pub use convert::*;
