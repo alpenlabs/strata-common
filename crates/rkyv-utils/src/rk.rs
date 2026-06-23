@@ -52,6 +52,16 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
         Ok(unsafe { Self::new_unchecked(buf) })
     }
 
+    /// Exposes the backing buffer natively.
+    pub fn inner(&self) -> &B {
+        &self.0
+    }
+
+    /// Unwraps the [`Rk`] and returns the backing buffer natively.
+    pub fn into_inner(self) -> B {
+        self.0
+    }
+
     /// Returns the underlying buffer as a slice.
     pub fn as_slice(&self) -> &[u8] {
         self.0.as_ref()
@@ -131,9 +141,8 @@ impl<T: Portable> RkVec<T> {
 
     /// Converts the [`RkVec`] into an [`RkBox`].
     pub fn into_rkbox(self) -> RkBox<T> {
-        let Self(vec, _) = self;
         // SAFETY: buffer is known to be valid already
-        unsafe { RkBox::new_unchecked(vec.into_boxed_slice()) }
+        unsafe { RkBox::new_unchecked(self.into_inner().into_boxed_slice()) }
     }
 }
 
