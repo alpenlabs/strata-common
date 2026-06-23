@@ -37,7 +37,7 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
     ///
     /// This is equivalent to calling [`rkyv::access_unchecked`] without
     /// checking, so has the same safety guarantees.
-    fn new_unchecked(buf: B) -> Self {
+    pub unsafe fn new_unchecked(buf: B) -> Self {
         Self(buf, PhantomData)
     }
 
@@ -48,7 +48,8 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
         T: for<'a> CheckBytes<HighValidator<'a, E>>,
     {
         rkyv::access::<T, E>(buf.as_ref())?;
-        Ok(Self::new_unchecked(buf))
+        // SAFETY: we just checked it
+        Ok(unsafe { Self::new_unchecked(buf) })
     }
 
     /// Returns the underlying buffer as a slice.
@@ -58,7 +59,8 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
 
     /// Copies the underlying buffer to a newly-allocated owned buffer.
     pub fn to_rkbox(&self) -> RkBox<T> {
-        RkBox::new_unchecked(Box::from(self.as_slice()))
+        // SAFETY: buffer is known to be valid already
+        unsafe { RkBox::new_unchecked(Box::from(self.as_slice())) }
     }
 }
 
@@ -123,13 +125,15 @@ impl<T: Portable> RkVec<T> {
             + for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, Error>>,
     {
         let buf = rkyv::to_bytes::<Error>(val).expect("rkyv-utils: serialization failed");
-        Self::new_unchecked(buf.into_vec())
+        // SAFETY: we just encoded it validly
+        unsafe { Self::new_unchecked(buf.into_vec()) }
     }
 
     /// Converts the [`RkVec`] into an [`RkBox`].
     pub fn into_rkbox(self) -> RkBox<T> {
         let Self(vec, _) = self;
-        RkBox::new_unchecked(vec.into_boxed_slice())
+        // SAFETY: buffer is known to be valid already
+        unsafe { RkBox::new_unchecked(vec.into_boxed_slice()) }
     }
 }
 
