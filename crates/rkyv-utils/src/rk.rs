@@ -1,6 +1,7 @@
 //! [`Rk`] wrapper type.
 
 use std::cmp::Ordering;
+use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
@@ -29,7 +30,7 @@ pub type RkRef<'a, T> = Rk<&'a [u8], T>;
 ///
 /// This is meant to be pronounced "arc", but more acutely than how you'd
 /// pronounce `Arc`, so that it's easy to tell the difference.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 pub struct Rk<B: AsRef<[u8]>, T: Portable>(B, PhantomData<T>);
 
 impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
@@ -119,6 +120,20 @@ where
 impl<B: AsRef<[u8]>, T: Portable + Ord> Ord for Rk<B, T> {
     fn cmp(&self, other: &Self) -> Ordering {
         Ord::cmp(self.as_ref(), other.as_ref())
+    }
+}
+
+/// Formats the archived value, ignoring the buffer type backing it.
+impl<B: AsRef<[u8]>, T: Portable + fmt::Debug> fmt::Debug for Rk<B, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self.as_ref(), f)
+    }
+}
+
+/// Formats the archived value, ignoring the buffer type backing it.
+impl<B: AsRef<[u8]>, T: Portable + fmt::Display> fmt::Display for Rk<B, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self.as_ref(), f)
     }
 }
 
@@ -265,6 +280,20 @@ mod tests {
         let garbage = vec![0xffu8; 4];
         let res = RkVec::<ArchivedExample>::from_buf::<Error>(garbage);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn debug_and_display_pass_through_to_archived() {
+        // Debug delegates to the archived struct (which derives `Debug`).
+        let rk = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 7, &["x"]));
+        let dbg = format!("{rk:?}");
+        assert!(dbg.contains("alpha"), "got {dbg:?}");
+        assert!(dbg.contains('7'), "got {dbg:?}");
+
+        // Display delegates to the archived primitive's own `Display`.
+        let num = RkVec::<rkyv::Archived<u64>>::from_val(&31415926u64);
+        assert_eq!(format!("{num}"), "31415926");
+        assert_eq!(format!("{num:?}"), format!("{:?}", 31415926u64));
     }
 
     #[derive(Archive, Serialize, Deserialize, Debug)]
