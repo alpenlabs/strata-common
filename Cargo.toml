@@ -20,7 +20,7 @@ members = [
   "crates/rkyv-utils",
   "crates/service",
   "crates/ssz-tests",
-  "crates/tasks"
+  "crates/tasks",
 ]
 
 resolver = "3"
