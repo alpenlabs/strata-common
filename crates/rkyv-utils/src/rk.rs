@@ -72,6 +72,15 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
         // SAFETY: buffer is known to be valid already
         unsafe { RkBox::new_unchecked(Box::from(self.as_slice())) }
     }
+
+    /// Borrows the underlying buffer as a lifetime-bound [`RkRef`].
+    ///
+    /// This is `O(1)`: it just wraps a borrow of the existing bytes without
+    /// copying or re-validating them.
+    pub fn as_rkref(&self) -> RkRef<'_, T> {
+        // SAFETY: buffer is known to be valid already
+        unsafe { RkRef::new_unchecked(self.as_slice()) }
+    }
 }
 
 impl<B: AsRef<[u8]>, T: Portable> AsRef<T> for Rk<B, T> {
@@ -222,6 +231,19 @@ mod tests {
         let archived = rk.as_ref();
         assert_eq!(archived.name.as_str(), val.name);
         assert_eq!(archived.value.to_native(), val.value);
+    }
+
+    #[test]
+    fn as_rkref_borrows_same_bytes() {
+        let owned = RkVec::<ArchivedExample>::from_val(&sample());
+        let borrowed = owned.as_rkref();
+
+        // Shares the exact same backing bytes (same pointer), no copy.
+        assert_eq!(borrowed.as_slice().as_ptr(), owned.as_slice().as_ptr());
+        assert_eq!(borrowed.as_slice(), owned.as_slice());
+
+        // Archived view is accessible through the borrowed handle.
+        assert_eq!(borrowed.as_ref().value.to_native(), sample().value);
     }
 
     #[test]
