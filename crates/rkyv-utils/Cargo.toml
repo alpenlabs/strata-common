@@ -7,12 +7,16 @@ edition = "2024"
 strata-codec = { workspace = true, optional = true }
 
 rkyv = { workspace = true, features = ["alloc", "bytecheck"] }
+rkyv_impl = { workspace = true, optional = true }
 ssz = { workspace = true, optional = true }
-ssz_derive = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Only used by the `ssz` feature's tests for the `Encode`/`Decode` derives.
+ssz_derive = { workspace = true }
 
 [lints]
 workspace = true
 
 [features]
-ssz = ["dep:ssz", "dep:ssz_derive"]
-codec = ["dep:strata-codec", "strata-codec/derive"]
+ssz = ["dep:ssz", "dep:rkyv_impl"]
+codec = ["dep:strata-codec", "strata-codec/derive", "dep:rkyv_impl"]

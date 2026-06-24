@@ -1,7 +1,10 @@
 //! Various utils for working with [`rkyv`].
 
-#[cfg(feature = "ssz")]
-extern crate ssz_derive as _;
+// `ssz_derive` is a dev-dependency used only by the `ssz` feature's tests.
+// Dev-dependencies can't be feature-gated, so reference it here when that
+// feature is off to keep test builds clear of the unused-crate lint.
+#[cfg(all(test, not(feature = "ssz")))]
+use ssz_derive as _;
 
 mod rk;
 
