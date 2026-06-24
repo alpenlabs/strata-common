@@ -5,37 +5,14 @@ use std::marker::PhantomData;
 use rkyv::{Archive, Deserialize, Serialize};
 use ssz::{Decode, DecodeError, Encode};
 
-/// A buffer presumed to contain a valid SSZ-encoded instance of [`SszBuf::Target`].
-///
-/// Implementors only need to expose the raw bytes; decoding is provided for free
-/// by the [`SszBufExt`] blanket impl.
-pub trait SszBuf {
-    /// The type the buffer is expected to decode to.
-    type Target: Decode;
-
-    /// Returns the underlying buffer as a slice.
-    fn as_slice(&self) -> &[u8];
-}
-
-/// Extension trait adding SSZ decoding on top of any [`SszBuf`].
-pub trait SszBufExt: SszBuf {
-    /// Attempts to decode the contained value, propagating any error.
-    fn try_decode(&self) -> Result<Self::Target, DecodeError>;
-}
-
-impl<B: SszBuf> SszBufExt for B {
-    fn try_decode(&self) -> Result<Self::Target, DecodeError> {
-        Self::Target::from_ssz_bytes(self.as_slice())
-    }
-}
-
 /// Wrapper around [`Vec<u8>`] which is presumed to contain a valid SSZ-encoded
 /// instance of a `T`.  Exposes helpers for decoding.
 #[derive(Clone, Debug, Archive, Deserialize, Serialize)]
 pub struct RkSsz<T: Decode>(Vec<u8>, PhantomData<T>);
 
 impl<T: Decode> RkSsz<T> {
-    /// Constructs a new instance.
+    /// Constructs a new instance from an arbitrary buffer without checking its
+    /// validity.
     pub fn new_unchecked(buf: Vec<u8>) -> Self {
         Self(buf, PhantomData)
     }
@@ -54,10 +31,28 @@ impl<T: Decode> RkSsz<T> {
     }
 }
 
+/// A buffer presumed to contain a valid SSZ-encoded instance of [`SszBuf::Target`].
+///
+/// Implemented by both [`RkSsz`] and its archived form, so consumers can be
+/// generic over which representation they accept.  Implementors only need to
+/// expose the raw bytes; [`try_decode`](SszBuf::try_decode) is provided.
+pub trait SszBuf {
+    /// The type the buffer is expected to decode to.
+    type Target: Decode;
+
+    /// Returns the underlying buffer as a slice.
+    fn bytes(&self) -> &[u8];
+
+    /// Attempts to decode the contained value, propagating any error.
+    fn try_decode(&self) -> Result<Self::Target, DecodeError> {
+        Self::Target::from_ssz_bytes(self.bytes())
+    }
+}
+
 impl<T: Decode> SszBuf for RkSsz<T> {
     type Target = T;
 
-    fn as_slice(&self) -> &[u8] {
+    fn bytes(&self) -> &[u8] {
         self.0.as_slice()
     }
 }
@@ -65,14 +60,15 @@ impl<T: Decode> SszBuf for RkSsz<T> {
 impl<T: Decode> SszBuf for ArchivedRkSsz<T> {
     type Target = T;
 
-    fn as_slice(&self) -> &[u8] {
+    fn bytes(&self) -> &[u8] {
         self.0.as_slice()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use rkyv::{rancor::Error as RkyvError, Archive, Deserialize, Serialize};
+    use rkyv::rancor::Error as RkyvError;
+    use rkyv::{Archive, Deserialize, Serialize};
     use ssz_derive::{Decode, Encode};
 
     use super::*;
@@ -112,7 +108,7 @@ mod tests {
         let wrapped = RkSsz::encode(&msg);
 
         // The wrapped buffer is exactly what a direct SSZ encode produces.
-        assert_eq!(wrapped.as_slice(), msg.as_ssz_bytes().as_slice());
+        assert_eq!(wrapped.bytes(), msg.as_ssz_bytes().as_slice());
 
         // ...and it decodes back to the original value.
         assert_eq!(wrapped.try_decode().expect("ssz decode"), msg);
@@ -144,7 +140,7 @@ mod tests {
         // and decode straight out of the archived buffer.
         let archived = rkyv::access::<ArchivedEnvelope, RkyvError>(&bytes).expect("rkyv access");
         assert_eq!(archived.seq.to_native(), 42);
-        assert_eq!(archived.body.as_slice(), msg.as_ssz_bytes().as_slice());
+        assert_eq!(archived.body.bytes(), msg.as_ssz_bytes().as_slice());
         assert_eq!(
             archived.body.try_decode().expect("ssz decode archived"),
             msg
@@ -153,7 +149,7 @@ mod tests {
         // Full rkyv deserialize back to an owned `Envelope`, then SSZ-decode.
         let owned: Envelope = rkyv::from_bytes::<_, RkyvError>(&bytes).expect("rkyv deserialize");
         assert_eq!(owned.seq, 42);
-        assert_eq!(owned.body.as_slice(), msg.as_ssz_bytes().as_slice());
+        assert_eq!(owned.body.bytes(), msg.as_ssz_bytes().as_slice());
         assert_eq!(owned.body.try_decode().expect("ssz decode owned"), msg);
     }
 }
