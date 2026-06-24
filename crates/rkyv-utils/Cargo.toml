@@ -15,4 +15,4 @@ workspace = true
 
 [features]
 ssz = ["dep:ssz", "dep:ssz_derive"]
-codec = ["dep:strata-codec"]
+codec = ["dep:strata-codec", "strata-codec/derive"]
