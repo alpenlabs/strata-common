@@ -14,4 +14,4 @@ pub use rk::{Rk, RkBox, RkRef, RkVec};
 mod ssz_shims;
 
 #[cfg(feature = "ssz")]
-pub use ssz_shims::{RkSsz, SszBuf, SszBufExt};
+pub use ssz_shims::{RkSsz, SszBuf};
