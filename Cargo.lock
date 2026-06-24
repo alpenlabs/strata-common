@@ -3010,6 +3010,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rkyv_impl"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0dd2b1a039abca502ce9c2a227c0778a4f5fdf766cfbf55686837fbab00869c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "ruint"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4324,6 +4335,7 @@ name = "strata-rkyv-utils"
 version = "0.1.0"
 dependencies = [
  "rkyv",
+ "rkyv_impl",
  "ssz",
  "ssz_derive",
  "strata-codec",

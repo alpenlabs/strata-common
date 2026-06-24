@@ -3,6 +3,7 @@
 use std::marker::PhantomData;
 
 use rkyv::{Archive, Deserialize, Serialize};
+use rkyv_impl::archive_impl;
 use strata_codec::{Codec, CodecError, decode_buf_exact, encode_to_vec};
 
 /// Wrapper around [`Vec<u8>`] which is presumed to contain a valid
@@ -32,35 +33,35 @@ impl<T: Codec> RkCodec<T> {
 /// [`CodecBuf::Target`].
 ///
 /// Implemented by both [`RkCodec`] and its archived form, so consumers can be
-/// generic over which representation they accept.  Implementors only need to
-/// expose the raw bytes; [`try_decode`](CodecBuf::try_decode) is provided.
-pub trait CodecBuf {
+/// generic over which representation they accept.  The raw bytes are accessed
+/// via the [`AsRef<[u8]>`] supertrait; [`try_decode`](CodecBuf::try_decode) is
+/// provided.
+pub trait CodecBuf: AsRef<[u8]> {
     /// The type the buffer is expected to decode to.
     type Target: Codec;
 
-    /// Returns the underlying buffer as a slice.
-    fn bytes(&self) -> &[u8];
-
     /// Attempts to decode the contained value, propagating any error.
     fn try_decode(&self) -> Result<Self::Target, CodecError> {
-        decode_buf_exact(self.bytes())
+        decode_buf_exact(self.as_ref())
+    }
+}
+
+/// Generates `AsRef<[u8]>` for both [`RkCodec`] and `ArchivedRkCodec`; both
+/// store the bytes in field `0` (a `Vec<u8>`/`ArchivedVec<u8>`) which exposes
+/// `as_slice`.
+#[archive_impl]
+impl<T: Codec> AsRef<[u8]> for RkCodec<T> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_slice()
     }
 }
 
 impl<T: Codec> CodecBuf for RkCodec<T> {
     type Target = T;
-
-    fn bytes(&self) -> &[u8] {
-        self.0.as_slice()
-    }
 }
 
 impl<T: Codec> CodecBuf for ArchivedRkCodec<T> {
     type Target = T;
-
-    fn bytes(&self) -> &[u8] {
-        self.0.as_slice()
-    }
 }
 
 #[cfg(test)]
@@ -110,7 +111,7 @@ mod tests {
 
         // The wrapped buffer is exactly what a direct codec encode produces.
         assert_eq!(
-            wrapped.bytes(),
+            wrapped.as_ref(),
             encode_to_vec(&msg).expect("encode").as_slice()
         );
 
@@ -145,7 +146,7 @@ mod tests {
         let archived = rkyv::access::<ArchivedEnvelope, RkyvError>(&bytes).expect("rkyv access");
         assert_eq!(archived.seq.to_native(), 42);
         assert_eq!(
-            archived.body.bytes(),
+            archived.body.as_ref(),
             encode_to_vec(&msg).expect("encode").as_slice()
         );
         assert_eq!(
@@ -157,7 +158,7 @@ mod tests {
         let owned: Envelope = rkyv::from_bytes::<_, RkyvError>(&bytes).expect("rkyv deserialize");
         assert_eq!(owned.seq, 42);
         assert_eq!(
-            owned.body.bytes(),
+            owned.body.as_ref(),
             encode_to_vec(&msg).expect("encode").as_slice()
         );
         assert_eq!(owned.body.try_decode().expect("codec decode owned"), msg);
