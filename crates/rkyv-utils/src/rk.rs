@@ -30,8 +30,20 @@ pub type RkRef<'a, T> = Rk<&'a [u8], T>;
 ///
 /// This is meant to be pronounced "arc", but more acutely than how you'd
 /// pronounce `Arc`, so that it's easy to tell the difference.
-#[derive(Copy, Clone)]
 pub struct Rk<B: AsRef<[u8]>, T: Portable>(B, PhantomData<T>);
+
+// `Copy`/`Clone` are bounded only on the backing buffer `B`, never on the
+// archived type `T` (which lives only in `PhantomData` and is frequently not
+// `Clone`, e.g. `ArchivedString`).  A `#[derive]` would wrongly add a `T: Clone`
+// bound.  This is what lets, say, an `Rk<Arc<[u8]>, _>` clone by simply bumping
+// the `Arc` refcount.
+impl<B: AsRef<[u8]> + Copy, T: Portable> Copy for Rk<B, T> {}
+
+impl<B: AsRef<[u8]> + Clone, T: Portable> Clone for Rk<B, T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
+    }
+}
 
 impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
     /// Constructs a new instance without checking.
@@ -197,7 +209,7 @@ mod tests {
     use rkyv::rancor::Error;
     use rkyv::{Archive, Deserialize, Serialize};
 
-    use super::{RkBox, RkRef, RkVec};
+    use super::{Rk, RkBox, RkRef, RkVec};
 
     #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
     struct Example {
@@ -273,6 +285,40 @@ mod tests {
         let buf = reference_bytes();
         let rk = RkRef::<ArchivedExample>::from_buf::<Error>(&buf).unwrap();
         assert_eq!(rk.as_ref().name.as_str(), sample().name);
+    }
+
+    #[test]
+    fn clone_shares_arc_backing_buffer() {
+        use std::sync::Arc;
+
+        // Back an `Rk` with a refcounted `Arc<[u8]>` buffer holding a nontrivial
+        // archived value (a `String`, a `u64`, and a `Vec<String>`).
+        let val = keyed("alpha", 7, &["x", "y", "z"]);
+        let bytes = rkyv::to_bytes::<Error>(&val).unwrap().into_vec();
+        let arc: Arc<[u8]> = Arc::from(bytes.into_boxed_slice());
+        assert_eq!(Arc::strong_count(&arc), 1);
+
+        let rk = Rk::<Arc<[u8]>, ArchivedKeyed>::from_buf::<Error>(arc).unwrap();
+        // The `Rk` now holds the sole strong reference.
+        assert_eq!(Arc::strong_count(rk.inner()), 1);
+
+        // Cloning the `Rk` should just bump the `Arc` refcount, not copy the
+        // backing bytes.
+        let cloned = rk.clone();
+        assert_eq!(Arc::strong_count(rk.inner()), 2);
+        assert_eq!(Arc::strong_count(cloned.inner()), 2);
+
+        // Both handles point at the exact same buffer (no copy happened).
+        assert_eq!(rk.as_slice().as_ptr(), cloned.as_slice().as_ptr());
+
+        // ...and both still resolve to the original archived value.
+        assert_eq!(rk.as_ref().label.as_str(), "alpha");
+        assert_eq!(rk.as_ref(), cloned.as_ref());
+        assert_eq!(cloned.as_ref().id.to_native(), 7);
+
+        // Dropping one clone returns the count to a single strong reference.
+        drop(cloned);
+        assert_eq!(Arc::strong_count(rk.inner()), 1);
     }
 
     #[test]
