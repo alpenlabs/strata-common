@@ -17,6 +17,7 @@ members = [
   "crates/msg-fmt",
   "crates/ol-logs",
   "crates/predicate",
+  "crates/rkyv-utils",
   "crates/service",
   "crates/ssz-tests",
   "crates/tasks",
@@ -41,6 +42,7 @@ strata-metrics = { path = "crates/metrics" }
 strata-msg-fmt = { path = "crates/msg-fmt" }
 strata-ol-logs = { path = "crates/ol-logs" }
 strata-predicate = { path = "crates/predicate" }
+strata-rkyv-utils = { path = "crates/rkyv-utils" }
 strata-service = { path = "crates/service" }
 strata-ssz-tests = { path = "crates/ssz-tests" }
 strata-tasks = { path = "crates/tasks" }
@@ -84,6 +86,8 @@ paste = "1"
 proptest = "1.8"
 rand = "0.8"
 rand_core = { version = "0.6", features = ["getrandom"] }
+rkyv = "0.8"
+rkyv_impl = "0.3"
 schemars = { version = "1", features = ["derive"] }
 secp256k1 = { version = "0.29.1", features = ["global-context", "std"] }
 serde = { version = "1.0", features = ["derive"] }

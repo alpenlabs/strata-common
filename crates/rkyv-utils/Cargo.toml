@@ -1,0 +1,28 @@
+[package]
+name = "strata-rkyv-utils"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-codec = { workspace = true, optional = true }
+
+# `unaligned` makes archived multibyte primitives alignment-1, so the archived
+# format imposes no buffer-alignment requirement.  Without it, rkyv's default
+# format needs the backing buffer aligned (e.g. 8 for a `u64`), which plain
+# `Vec<u8>` / `Box<[u8]>` allocations don't guarantee — so `access_unchecked`
+# on an owned buffer built by copying (`from_val`) could hit a misaligned
+# pointer (UB).
+rkyv = { workspace = true, features = ["alloc", "bytecheck", "unaligned"] }
+rkyv_impl = { workspace = true, optional = true }
+ssz = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Only used by the `ssz` feature's tests for the `Encode`/`Decode` derives.
+ssz_derive = { workspace = true }
+
+[lints]
+workspace = true
+
+[features]
+ssz = ["dep:ssz", "dep:rkyv_impl"]
+codec = ["dep:strata-codec", "strata-codec/derive", "dep:rkyv_impl"]
