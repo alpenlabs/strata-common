@@ -425,6 +425,37 @@ mod tests {
     }
 
     #[test]
+    fn from_buf_validates_at_varying_offsets() {
+        // A nontrivial archived value: a string, a wide integer, and a list.
+        let val = keyed("alpha", 0xDEAD_BEEF_CAFE_F00D, &["one", "two", "three"]);
+        let encoded = rkyv::to_bytes::<Error>(&val).unwrap().into_vec();
+
+        // Reference instance every offset is compared against.
+        let reference = RkVec::<ArchivedKeyed>::from_val(&val);
+
+        // Place the archive at a range of offsets inside a larger buffer (padded
+        // with filler bytes), so it starts at a variety of mostly-unaligned
+        // addresses.  With the `unaligned` format each one must validate and
+        // resolve to the same value regardless of alignment.
+        for offset in 0..16 {
+            let mut buf = vec![0xA5u8; offset];
+            buf.extend_from_slice(&encoded);
+
+            let rk = RkRef::<ArchivedKeyed>::from_buf::<Error>(&buf[offset..])
+                .unwrap_or_else(|e: Error| panic!("offset {offset} failed to validate: {e}"));
+
+            // Matches the reference archived value regardless of offset.
+            assert_eq!(rk, reference.as_rkref(), "mismatch at offset {offset}");
+
+            // ...and fully deserializes back to the original.
+            let de = rkyv::deserialize::<Keyed, Error>(rk.as_ref()).unwrap();
+            assert_eq!(de.label, val.label, "offset {offset}");
+            assert_eq!(de.id, val.id, "offset {offset}");
+            assert_eq!(de.tags, val.tags, "offset {offset}");
+        }
+    }
+
+    #[test]
     fn compares_across_buffer_types() {
         let as_vec = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 5, &["t"]));
         let as_box = RkBox::<ArchivedKeyed>::from_val(&keyed("alpha", 5, &["t"]));
