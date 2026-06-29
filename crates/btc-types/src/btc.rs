@@ -142,9 +142,8 @@ impl<'a> Arbitrary<'a> for BitcoinOutPoint {
 /// deserialization path of [`BitcoinAmount`], so that an instance can never hold
 /// a value beyond the money supply.
 fn check_amount(sats: u64) -> Result<(), ParseError> {
-    let max = Amount::MAX_MONEY.to_sat();
-    if sats > max {
-        Err(ParseError::AmountTooLarge { sats, max })
+    if sats > Amount::MAX_MONEY.to_sat() {
+        Err(ParseError::AmountTooLarge { sats })
     } else {
         Ok(())
     }
