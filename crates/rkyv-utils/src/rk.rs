@@ -5,15 +5,20 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
-use rkyv::api::high::{HighSerializer, HighValidator};
+use rkyv::api::high::{HighSerializer, HighValidator, to_bytes_in};
 use rkyv::bytecheck::CheckBytes;
 use rkyv::rancor::{Error, Source};
 use rkyv::ser::allocator::ArenaHandle;
 use rkyv::util::AlignedVec;
 use rkyv::{Archive, Portable, Serialize};
 
-/// A `Vec<u8>` containing a valid [`Archived`] instance of `T`.
-pub type RkVec<T> = Rk<Vec<u8>, T>;
+use crate::raw_vec::{RawRkVec, SerVec, into_raw_buf, raw_from_slice, ser_buf_into_raw};
+
+/// A [`RawRkVec`] containing a valid [`Archived`] instance of `T`.
+///
+/// The backing buffer type adapts to the alignment mode (see [`RawRkVec`]), so
+/// [`from_val`](RkVec::from_val) is always sound and infallible.
+pub type RkVec<T> = Rk<RawRkVec, T>;
 
 /// A `Box<[u8]>` containing a valid [`Archived`] instance of `T`.
 pub type RkBox<T> = Rk<Box<[u8]>, T>;
@@ -50,6 +55,14 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
     ///
     /// This is equivalent to calling [`rkyv::access_unchecked`] without
     /// checking, so has the same safety guarantees.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee that `buf` contains a valid archived `T` *and*
+    /// that its base pointer is aligned to `align_of::<T>()` (trivially true
+    /// under the `unaligned` feature, where that alignment is 1).  Both are
+    /// required for the [`AsRef<T>`](Rk::as_ref) accessor — which calls
+    /// [`rkyv::access_unchecked`] — to be sound.
     pub unsafe fn new_unchecked(buf: B) -> Self {
         Self(buf, PhantomData)
     }
@@ -80,10 +93,16 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
         self.0.as_ref()
     }
 
-    /// Copies the underlying buffer to a newly-allocated owned buffer.
-    pub fn to_rkbox(&self) -> RkBox<T> {
-        // SAFETY: buffer is known to be valid already
-        unsafe { RkBox::new_unchecked(Box::from(self.as_slice())) }
+    /// Copies the underlying buffer to a newly-allocated, owned [`RkVec`].
+    ///
+    /// This is the owned-copy path that is sound under both alignment modes: the
+    /// fresh [`RawRkVec`] carries whatever alignment the active mode requires
+    /// (16-aligned [`AlignedVec`] under `aligned`, plain `Vec<u8>` under
+    /// `unaligned`).
+    pub fn to_rkvec(&self) -> RkVec<T> {
+        // SAFETY: the bytes are a copy of an already-valid archive, and
+        // `raw_from_slice` produces a buffer with the required alignment.
+        unsafe { RkVec::new_unchecked(raw_from_slice(self.as_slice())) }
     }
 
     /// Borrows the underlying buffer as a lifetime-bound [`RkRef`].
@@ -98,7 +117,11 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
 
 impl<B: AsRef<[u8]>, T: Portable> AsRef<T> for Rk<B, T> {
     fn as_ref(&self) -> &T {
-        // SAFETY: we already checked it in all constructors
+        // SAFETY: every *safe* constructor (`from_buf`, `RkVec::from_val`,
+        // `from_aligned_vec`, `from_unaligned_buf`, `to_rkvec`, `as_rkref`)
+        // guarantees both validity and alignment; the `unsafe` `new_unchecked`
+        // pushes those obligations onto the caller.  So `access_unchecked` is
+        // always sound.
         unsafe { rkyv::access_unchecked(self.as_slice()) }
     }
 }
@@ -159,7 +182,14 @@ impl<B: AsRef<[u8]>, T: Portable + Hash> Hash for Rk<B, T> {
 /// Helper impl.
 impl<T: Portable> RkVec<T> {
     /// Encodes a value whose [`Archived`](Archive::Archived) form is `T` into a
-    /// freshly-allocated buffer and returns it as a [`RkVec`].
+    /// freshly-allocated [`RawRkVec`] and returns it as a [`RkVec`].
+    ///
+    /// This is sound and infallible in both modes, and never copies: the value
+    /// is serialized straight into the [`RawRkVec`] backing.  Under `aligned`
+    /// that is the [`AlignedVec`] the serializer produces anyway (alignment
+    /// guaranteed); under `unaligned` it is serialized into an `AlignedVec<1>`
+    /// whose allocation is moved into the `Vec<u8>` backing without copying (see
+    /// [`SerVec`]).
     ///
     /// # Panics
     ///
@@ -168,48 +198,56 @@ impl<T: Portable> RkVec<T> {
     pub fn from_val<S>(val: &S) -> Self
     where
         S: Archive<Archived = T>
-            + for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, Error>>,
+            + for<'a> Serialize<HighSerializer<SerVec, ArenaHandle<'a>, Error>>,
     {
-        let buf = rkyv::to_bytes::<Error>(val).expect("rkyv-utils: serialization failed");
-        // SAFETY: we just encoded it validly
-        unsafe { Self::new_unchecked(buf.into_vec()) }
+        let buf =
+            to_bytes_in::<_, Error>(val, SerVec::new()).expect("rkyv-utils: serialization failed");
+        // SAFETY: we just encoded it validly, and `ser_buf_into_raw` preserves
+        // the alignment guarantee the active mode requires.
+        unsafe { Self::new_unchecked(ser_buf_into_raw(buf)) }
     }
 
-    /// Converts the [`RkVec`] into an [`RkBox`].
-    pub fn into_rkbox(self) -> RkBox<T> {
-        // SAFETY: buffer is known to be valid already
-        unsafe { RkBox::new_unchecked(self.into_inner().into_boxed_slice()) }
-    }
-}
-
-/// Helper impl.
-impl<T: Portable> RkBox<T> {
-    /// Encodes a value whose [`Archived`](Archive::Archived) form is `T` into a
-    /// freshly-allocated buffer and returns it as a [`RkBox`].  This goes
-    /// through a `Vec` under the hood so it's not really much cheaper but it
-    /// may be more ergonomic.
+    /// Validates that an [`AlignedVec`] contains a valid archived `T` and wraps
+    /// it as a [`RkVec`].
     ///
-    /// # Panics
-    ///
-    /// If serialization fails (which for the in-memory serializer only happens
-    /// on allocation failure).
-    pub fn from_val<S>(val: &S) -> Self
+    /// Like [`from_buf`](Rk::from_buf) it runs full structural validation, but
+    /// because the input is aligned to 16 it is *guaranteed never to return an
+    /// alignment error* — any error is a structural/content one.  Under
+    /// `unaligned` the buffer is copied down into the plain `Vec<u8>` backing.
+    pub fn from_aligned_vec<E: Source>(buf: AlignedVec) -> Result<Self, E>
     where
-        S: Archive<Archived = T>
-            + for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, Error>>,
+        T: for<'a> CheckBytes<HighValidator<'a, E>>,
     {
-        RkVec::from_val(val).into_rkbox()
+        Self::from_buf(into_raw_buf(buf))
+    }
+
+    /// Copies arbitrary (possibly misaligned) bytes into a fresh [`RawRkVec`],
+    /// validates them, and wraps the result.
+    ///
+    /// This is the explicit opt-in copy: unlike the borrowing/zero-copy
+    /// constructors it always allocates, but in exchange it accepts any input
+    /// buffer and is *guaranteed never to return an alignment error* in either
+    /// mode.
+    pub fn from_unaligned_buf<E: Source>(buf: impl AsRef<[u8]>) -> Result<Self, E>
+    where
+        T: for<'a> CheckBytes<HighValidator<'a, E>>,
+    {
+        Self::from_buf(raw_from_slice(buf.as_ref()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::hash::{Hash, Hasher};
+    use std::mem::align_of;
 
     use rkyv::rancor::Error;
+    use rkyv::util::AlignedVec;
     use rkyv::{Archive, Deserialize, Serialize};
 
     use super::{Rk, RkBox, RkRef, RkVec};
+
+    // --- fixtures ---
 
     #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
     struct Example {
@@ -224,19 +262,57 @@ mod tests {
         }
     }
 
+    /// A nontrivial value mixing a `String`, a wide integer, and a list, with the
+    /// archived form deriving the comparison/hash traits the `Rk` impls delegate
+    /// to.
+    #[derive(Archive, Serialize, Deserialize, Debug)]
+    #[rkyv(derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash))]
+    struct Keyed {
+        label: String,
+        id: u64,
+        tags: Vec<String>,
+    }
+
+    fn keyed(label: &str, id: u64, tags: &[&str]) -> Keyed {
+        Keyed {
+            label: label.to_owned(),
+            id,
+            tags: tags.iter().map(|s| (*s).to_owned()).collect(),
+        }
+    }
+
+    /// Builds a `Box<[u8]>`-backed [`RkBox`] from a [`Keyed`] value, for the
+    /// cross-buffer-type tests.  Goes through `from_buf` (the only owned-`RkBox`
+    /// constructor), so it works in both alignment modes.
+    fn keyed_box(label: &str, id: u64, tags: &[&str]) -> RkBox<ArchivedKeyed> {
+        let bytes = rkyv::to_bytes::<Error>(&keyed(label, id, tags))
+            .unwrap()
+            .into_vec()
+            .into_boxed_slice();
+        RkBox::<ArchivedKeyed>::from_buf::<Error>(bytes).unwrap()
+    }
+
     /// Reference bytes produced directly by `rkyv`, used to cross-check the
     /// buffers our `encode` helpers produce.
     fn reference_bytes() -> Vec<u8> {
         rkyv::to_bytes::<Error>(&sample()).unwrap().into_vec()
     }
 
+    // --- construction & round-trip ---
+
     #[test]
-    fn vec_encode_matches_rkyv_and_roundtrips() {
+    fn from_val_matches_rkyv_aligned_and_roundtrips() {
         let val = sample();
         let rk = RkVec::<ArchivedExample>::from_val(&val);
 
         // Buffer is exactly what rkyv would produce.
         assert_eq!(rk.as_slice(), reference_bytes().as_slice());
+
+        // The backing buffer always satisfies the archived type's alignment.
+        assert_eq!(
+            rk.as_slice().as_ptr() as usize % align_of::<ArchivedExample>(),
+            0
+        );
 
         // Archived view is accessible without re-validation.
         let archived = rk.as_ref();
@@ -249,16 +325,71 @@ mod tests {
     }
 
     #[test]
-    fn box_encode_matches_rkyv_and_roundtrips() {
-        let val = sample();
-        let rk = RkBox::<ArchivedExample>::from_val(&val);
-
-        assert_eq!(rk.as_slice(), reference_bytes().as_slice());
-
-        let archived = rk.as_ref();
-        assert_eq!(archived.name.as_str(), val.name);
-        assert_eq!(archived.value.to_native(), val.value);
+    fn from_buf_accepts_valid_owned_buffer() {
+        // `RkBox` keeps a fixed `Box<[u8]>` backing in both modes, so this
+        // exercises `from_buf` on an owned buffer regardless of alignment mode.
+        let buf: Box<[u8]> = reference_bytes().into_boxed_slice();
+        let rk = RkBox::<ArchivedExample>::from_buf::<Error>(buf).unwrap();
+        assert_eq!(rk.as_ref().value.to_native(), sample().value);
     }
+
+    #[test]
+    fn from_buf_accepts_valid_borrowed_buffer() {
+        let buf = reference_bytes();
+        let rk = RkRef::<ArchivedExample>::from_buf::<Error>(&buf).unwrap();
+        assert_eq!(rk.as_ref().name.as_str(), sample().name);
+    }
+
+    #[test]
+    fn from_buf_rejects_garbage() {
+        let garbage: Box<[u8]> = vec![0xffu8; 4].into_boxed_slice();
+        let res = RkBox::<ArchivedExample>::from_buf::<Error>(garbage);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn from_aligned_vec_validates_and_never_misaligns() {
+        // Build an `AlignedVec` straight from rkyv's serializer.
+        let val = keyed("beta", 7, &["x", "y", "z"]);
+        let aligned: AlignedVec = rkyv::to_bytes::<Error>(&val).unwrap();
+
+        let rk = RkVec::<ArchivedKeyed>::from_aligned_vec::<Error>(aligned).unwrap();
+        assert_eq!(
+            rk.as_slice().as_ptr() as usize % align_of::<ArchivedKeyed>(),
+            0
+        );
+        assert_eq!(rk.as_ref().id.to_native(), 7);
+
+        // Garbage still fails structural validation (but never on alignment).
+        let mut garbage = AlignedVec::new();
+        garbage.extend_from_slice(&[0xffu8; 8]);
+        assert!(RkVec::<ArchivedKeyed>::from_aligned_vec::<Error>(garbage).is_err());
+    }
+
+    #[test]
+    fn from_unaligned_buf_copies_validates_and_aligns() {
+        let val = keyed("gamma", 99, &["q"]);
+        let encoded = rkyv::to_bytes::<Error>(&val).unwrap().into_vec();
+
+        // Feed a deliberately misaligned borrow (offset 1 into a padded buffer);
+        // the copy into the mode's backing makes the result sound regardless.
+        let mut padded = vec![0xA5u8];
+        padded.extend_from_slice(&encoded);
+        let misaligned = &padded[1..];
+
+        let rk = RkVec::<ArchivedKeyed>::from_unaligned_buf::<Error>(misaligned).unwrap();
+        assert_eq!(
+            rk.as_slice().as_ptr() as usize % align_of::<ArchivedKeyed>(),
+            0
+        );
+
+        let de = rkyv::deserialize::<Keyed, Error>(rk.as_ref()).unwrap();
+        assert_eq!(de.label, val.label);
+        assert_eq!(de.id, val.id);
+        assert_eq!(de.tags, val.tags);
+    }
+
+    // --- borrowing & cheap handles ---
 
     #[test]
     fn as_rkref_borrows_same_bytes() {
@@ -271,20 +402,6 @@ mod tests {
 
         // Archived view is accessible through the borrowed handle.
         assert_eq!(borrowed.as_ref().value.to_native(), sample().value);
-    }
-
-    #[test]
-    fn from_buf_accepts_valid_owned_buffer() {
-        let buf = reference_bytes();
-        let rk = RkVec::<ArchivedExample>::from_buf::<Error>(buf).unwrap();
-        assert_eq!(rk.as_ref().value.to_native(), sample().value);
-    }
-
-    #[test]
-    fn from_buf_accepts_valid_borrowed_buffer() {
-        let buf = reference_bytes();
-        let rk = RkRef::<ArchivedExample>::from_buf::<Error>(&buf).unwrap();
-        assert_eq!(rk.as_ref().name.as_str(), sample().name);
     }
 
     #[test]
@@ -321,52 +438,7 @@ mod tests {
         assert_eq!(Arc::strong_count(rk.inner()), 1);
     }
 
-    #[test]
-    fn from_buf_rejects_garbage() {
-        let garbage = vec![0xffu8; 4];
-        let res = RkVec::<ArchivedExample>::from_buf::<Error>(garbage);
-        assert!(res.is_err());
-    }
-
-    #[test]
-    fn debug_and_display_pass_through_to_archived() {
-        // Debug delegates to the archived struct (which derives `Debug`).
-        let rk = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 7, &["x"]));
-        let dbg = format!("{rk:?}");
-        assert!(dbg.contains("alpha"), "got {dbg:?}");
-        assert!(dbg.contains('7'), "got {dbg:?}");
-
-        // Display delegates to the archived primitive's own `Display`.
-        let num = RkVec::<rkyv::Archived<u64>>::from_val(&31415926u64);
-        assert_eq!(format!("{num}"), "31415926");
-        assert_eq!(format!("{num:?}"), format!("{:?}", 31415926u64));
-    }
-
-    #[derive(Archive, Serialize, Deserialize, Debug)]
-    #[rkyv(derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash))]
-    struct Keyed {
-        label: String,
-        id: u64,
-        tags: Vec<String>,
-    }
-
-    fn keyed(label: &str, id: u64, tags: &[&str]) -> Keyed {
-        Keyed {
-            label: label.to_owned(),
-            id,
-            tags: tags.iter().map(|s| (*s).to_owned()).collect(),
-        }
-    }
-
-    #[test]
-    fn eq_compares_archived_values() {
-        let a = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 7, &["x", "y"]));
-        let a2 = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 7, &["x", "y"]));
-        let b = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 7, &["x", "z"]));
-
-        assert_eq!(a, a2);
-        assert_ne!(a, b);
-    }
+    // --- value semantics (delegate to the archived value) ---
 
     #[test]
     fn ord_compares_archived_values() {
@@ -378,7 +450,7 @@ mod tests {
         assert!(b > a);
         assert_eq!(a.cmp(&b), std::cmp::Ordering::Less);
 
-        let mut v = vec![
+        let mut v = [
             RkVec::<ArchivedKeyed>::from_val(&keyed("gamma", 1, &[])),
             RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 9, &[])),
             RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 1, &[])),
@@ -406,7 +478,7 @@ mod tests {
         use std::collections::HashSet;
 
         let as_vec = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 5, &["t"]));
-        let as_box = RkBox::<ArchivedKeyed>::from_val(&keyed("alpha", 5, &["t"]));
+        let as_box = keyed_box("alpha", 5, &["t"]);
         let other = RkVec::<ArchivedKeyed>::from_val(&keyed("beta", 5, &["t"]));
 
         // Equal archived values hash equally, even across buffer types.
@@ -425,47 +497,88 @@ mod tests {
     }
 
     #[test]
+    fn debug_and_display_pass_through_to_archived() {
+        // Debug delegates to the archived struct (which derives `Debug`).
+        let rk = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 7, &["x"]));
+        let dbg = format!("{rk:?}");
+        assert!(dbg.contains("alpha"), "got {dbg:?}");
+        assert!(dbg.contains('7'), "got {dbg:?}");
+
+        // Display delegates to the archived primitive's own `Display`.
+        let num = RkVec::<rkyv::Archived<u64>>::from_val(&31415926u64);
+        assert_eq!(format!("{num}"), "31415926");
+        assert_eq!(format!("{num:?}"), format!("{:?}", 31415926u64));
+    }
+
+    #[test]
+    fn compares_across_buffer_types() {
+        // Equality and ordering delegate to the archived value, regardless of
+        // the (here, differing) backing buffer types.
+        let as_vec = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 5, &["t"]));
+        let as_box = keyed_box("alpha", 5, &["t"]);
+        let bigger_vec = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 6, &["t"]));
+
+        // Equal archived values compare equal across buffer types...
+        assert_eq!(as_vec, as_box);
+        // ...and unequal ones compare unequal.
+        assert_ne!(as_vec, bigger_vec);
+
+        assert!(as_vec < bigger_vec);
+        assert_eq!(
+            as_vec.partial_cmp(&bigger_vec),
+            Some(std::cmp::Ordering::Less)
+        );
+    }
+
+    // --- alignment behavior ---
+
+    #[test]
     fn from_buf_validates_at_varying_offsets() {
         // A nontrivial archived value: a string, a wide integer, and a list.
         let val = keyed("alpha", 0xDEAD_BEEF_CAFE_F00D, &["one", "two", "three"]);
         let encoded = rkyv::to_bytes::<Error>(&val).unwrap().into_vec();
 
-        // Reference instance every offset is compared against.
+        // Reference instance every offset is compared against.  `RkVec`'s
+        // mode-adaptive backing keeps this infallible in both modes.
         let reference = RkVec::<ArchivedKeyed>::from_val(&val);
 
         // Place the archive at a range of offsets inside a larger buffer (padded
         // with filler bytes), so it starts at a variety of mostly-unaligned
-        // addresses.  With the `unaligned` format each one must validate and
-        // resolve to the same value regardless of alignment.
+        // addresses.  `from_buf` validates each one and — crucially — reports an
+        // error (rather than UB or a panic) when the start address is not
+        // aligned for the archived type.  Under the `unaligned` feature the
+        // required alignment is 1 so every offset validates; under `aligned` only
+        // the offsets whose address satisfies the alignment do.
+        let required = align_of::<ArchivedKeyed>();
         for offset in 0..16 {
             let mut buf = vec![0xA5u8; offset];
             buf.extend_from_slice(&encoded);
+            let slice = &buf[offset..];
 
-            let rk = RkRef::<ArchivedKeyed>::from_buf::<Error>(&buf[offset..])
-                .unwrap_or_else(|e: Error| panic!("offset {offset} failed to validate: {e}"));
+            let is_aligned = (slice.as_ptr() as usize) & (required - 1) == 0;
+            let res = RkRef::<ArchivedKeyed>::from_buf::<Error>(slice);
 
-            // Matches the reference archived value regardless of offset.
-            assert_eq!(rk, reference.as_rkref(), "mismatch at offset {offset}");
+            if is_aligned {
+                let rk = res.unwrap_or_else(|e: Error| {
+                    panic!("offset {offset} (aligned) failed to validate: {e}")
+                });
 
-            // ...and fully deserializes back to the original.
-            let de = rkyv::deserialize::<Keyed, Error>(rk.as_ref()).unwrap();
-            assert_eq!(de.label, val.label, "offset {offset}");
-            assert_eq!(de.id, val.id, "offset {offset}");
-            assert_eq!(de.tags, val.tags, "offset {offset}");
+                // Matches the reference archived value regardless of offset.
+                assert_eq!(rk, reference.as_rkref(), "mismatch at offset {offset}");
+
+                // ...and fully deserializes back to the original.
+                let de = rkyv::deserialize::<Keyed, Error>(rk.as_ref()).unwrap();
+                assert_eq!(de.label, val.label, "offset {offset}");
+                assert_eq!(de.id, val.id, "offset {offset}");
+                assert_eq!(de.tags, val.tags, "offset {offset}");
+            } else {
+                // Misaligned start (only reachable under `aligned`): graceful
+                // error, no panic or UB.
+                assert!(
+                    res.is_err(),
+                    "offset {offset} is misaligned (required {required}) yet validated"
+                );
+            }
         }
-    }
-
-    #[test]
-    fn compares_across_buffer_types() {
-        let as_vec = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 5, &["t"]));
-        let as_box = RkBox::<ArchivedKeyed>::from_val(&keyed("alpha", 5, &["t"]));
-        let bigger_box = RkBox::<ArchivedKeyed>::from_val(&keyed("alpha", 6, &["t"]));
-
-        assert_eq!(as_vec, as_box);
-        assert!(as_vec < bigger_box);
-        assert_eq!(
-            as_vec.partial_cmp(&bigger_box),
-            Some(std::cmp::Ordering::Less)
-        );
     }
 }
