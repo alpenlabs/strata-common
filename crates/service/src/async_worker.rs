@@ -28,75 +28,78 @@ where
     // Create parent lifecycle span wrapping entire service lifetime
     let lifecycle_span =
         instrumentation.create_lifecycle_span(&span_prefix, &service_name, "async");
-    let _lifecycle_guard = lifecycle_span.enter();
 
-    info!(service.name = %service_name, "service starting");
+    async move {
+        info!(service.name = %service_name, "service starting");
 
-    // Perform startup logic.  If this errors we propagate it immediately and
-    // crash the task.
-    {
-        let launch_span = info_span!(
-            "service.launch",
-            span_prefix = %span_prefix,
-            service.name = %service_name,
-        );
-        let start = Instant::now();
+        // Perform startup logic.  If this errors we propagate it immediately and
+        // crash the task.
+        {
+            let launch_span = info_span!(
+                "service.launch",
+                span_prefix = %span_prefix,
+                service.name = %service_name,
+            );
+            let start = Instant::now();
 
-        let launch_result = S::on_launch(&mut state).instrument(launch_span).await;
-        let duration = start.elapsed();
-        let result = OperationResult::from(&launch_result);
+            let launch_result = S::on_launch(&mut state).instrument(launch_span).await;
+            let duration = start.elapsed();
+            let result = OperationResult::from(&launch_result);
 
-        instrumentation.record_launch(duration, result);
+            instrumentation.record_launch(duration, result);
 
-        launch_result?;
-        info!(service.name = %service_name, duration_ms = duration.as_millis(), "service launch completed");
-    }
-
-    // Wrapping for the worker task to respect shutdown requests.
-    let err = {
-        let mut exit_fut = Box::pin(shutdown_guard.wait_for_shutdown().fuse());
-        let mut wkr_fut = Box::pin(
-            worker_task_inner::<S, I>(
-                &mut state,
-                &mut inp,
-                &status_tx,
-                &instrumentation,
-                &span_prefix,
-            )
-            .fuse(),
-        );
-
-        futures::select! {
-            _ = exit_fut => {
-                info!(service.name = %service_name, "shutdown signal received");
-                None
-            },
-            res = wkr_fut => res.err(),
+            launch_result?;
+            info!(service.name = %service_name, duration_ms = duration.as_millis(), "service launch completed");
         }
-    };
 
-    // Perform shutdown handling.
-    let shutdown_reason = if err.is_some() {
-        ShutdownReason::Error
-    } else {
-        ShutdownReason::Normal
-    };
+        // Wrapping for the worker task to respect shutdown requests.
+        let err = {
+            let mut exit_fut = Box::pin(shutdown_guard.wait_for_shutdown().fuse());
+            let mut wkr_fut = Box::pin(
+                worker_task_inner::<S, I>(
+                    &mut state,
+                    &mut inp,
+                    &status_tx,
+                    &instrumentation,
+                    &span_prefix,
+                )
+                .fuse(),
+            );
 
-    handle_shutdown::<S>(
-        &mut state,
-        err.as_ref(),
-        &instrumentation,
-        shutdown_reason,
-        &span_prefix,
-    )
-    .await;
+            futures::select! {
+                _ = exit_fut => {
+                    info!(service.name = %service_name, "shutdown signal received");
+                    None
+                },
+                res = wkr_fut => res.err(),
+            }
+        };
 
-    info!(service.name = %service_name, "service stopped");
+        // Perform shutdown handling.
+        let shutdown_reason = if err.is_some() {
+            ShutdownReason::Error
+        } else {
+            ShutdownReason::Normal
+        };
 
-    match err {
-        Some(e) => Err(e),
-        None => Ok(()),
+        handle_shutdown::<S>(
+            &mut state,
+            err.as_ref(),
+            &instrumentation,
+            shutdown_reason,
+            &span_prefix,
+        )
+        .await;
+
+        info!(service.name = %service_name, "service stopped");
+
+        match err {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
+    .instrument(lifecycle_span)
+    .await
 }
 
 async fn worker_task_inner<S: AsyncService, I>(
