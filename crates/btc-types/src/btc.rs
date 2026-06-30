@@ -135,66 +135,83 @@ impl<'a> Arbitrary<'a> for BitcoinOutPoint {
         Ok(BitcoinOutPoint(OutPoint { txid, vout }))
     }
 }
-/// A wrapper for bitcoin amount in sats similar to the implementation in [`bitcoin::Amount`].
+/// Validates that an amount does not exceed the bitcoin money supply
+/// ([`Amount::MAX_MONEY`]).
 ///
-/// NOTE: This wrapper has been created so that we can implement `Borsh*` traits on it.
-#[derive(
-    Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
-    Clone,
-    Copy,
-    Debug,
-    Deserialize,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    Serialize,
-    Encode,
-    Decode,
-)]
-pub struct BitcoinAmount(u64);
-
-impl Display for BitcoinAmount {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+/// This is the single chokepoint enforced by every fallible constructor and
+/// deserialization path of [`BitcoinAmount`], so that an instance can never hold
+/// a value beyond the money supply.
+fn check_amount(sats: u64) -> Result<(), ParseError> {
+    if sats > Amount::MAX_MONEY.to_sat() {
+        Err(ParseError::AmountTooLarge { sats })
+    } else {
+        Ok(())
     }
 }
 
-impl Default for BitcoinAmount {
-    fn default() -> Self {
-        Self::ZERO
+/// A wrapper around [`bitcoin::Amount`] that adds the trait impls the upstream
+/// type lacks (`Borsh*`, [`Arbitrary`], SSZ, [`Codec`]).
+///
+/// Every path that parses untrusted input — the `TryFrom<u64>` constructor and
+/// all deserialization paths — routes through `check_amount`, rejecting values
+/// above [`Amount::MAX_MONEY`]. Wrapping an already-typed [`Amount`] via [`From`]
+/// is infallible and trusts the caller.
+///
+/// [`Display`] and [`Debug`] are inherited from [`Amount`], so an amount prints
+/// in BTC (`Display`) and as `<n> SAT` (`Debug`). SSZ encoding delegates to a
+/// `u64` count of satoshis.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct BitcoinAmount(Amount);
+
+impl Display for BitcoinAmount {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self.0, f)
     }
 }
 
 impl From<Amount> for BitcoinAmount {
     fn from(value: Amount) -> Self {
-        Self::from_sat(value.to_sat())
+        Self(value)
+    }
+}
+
+impl TryFrom<u64> for BitcoinAmount {
+    type Error = ParseError;
+
+    /// Builds an amount from a satoshi count, rejecting values above
+    /// [`Amount::MAX_MONEY`].
+    fn try_from(sats: u64) -> Result<Self, Self::Error> {
+        check_amount(sats)?;
+        Ok(Self(Amount::from_sat(sats)))
     }
 }
 
 impl From<BitcoinAmount> for Amount {
     fn from(value: BitcoinAmount) -> Self {
-        Self::from_sat(value.to_sat())
-    }
-}
-
-impl From<u64> for BitcoinAmount {
-    fn from(value: u64) -> Self {
-        Self(value)
+        value.0
     }
 }
 
 impl From<BitcoinAmount> for u64 {
     fn from(value: BitcoinAmount) -> Self {
-        value.0
+        value.to_sat()
+    }
+}
+
+/// Routes through the fallible `TryFrom<u64>` constructor so the `MAX_MONEY`
+/// invariant holds for deserialized (untrusted) values.
+impl<'de> Deserialize<'de> for BitcoinAmount {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let amount = Amount::deserialize(deserializer)?;
+        Self::try_from(amount.to_sat()).map_err(serde::de::Error::custom)
     }
 }
 
 impl ops::Deref for BitcoinAmount {
-    type Target = u64;
+    type Target = Amount;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -207,109 +224,53 @@ impl ops::DerefMut for BitcoinAmount {
     }
 }
 
+// Borsh, SSZ, and `Codec` all encode the amount as a bare `u64` count of
+// satoshis, since `bitcoin::Amount` provides none of them itself.
+impl BorshSerialize for BitcoinAmount {
+    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        BorshSerialize::serialize(&self.to_sat(), writer)
+    }
+}
+
+impl BorshDeserialize for BitcoinAmount {
+    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let sats = u64::deserialize_reader(reader)?;
+        Self::try_from(sats).map_err(io::Error::other)
+    }
+}
+
+impl<'a> Arbitrary<'a> for BitcoinAmount {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        // Generate only in-range values so the `MAX_MONEY` invariant holds.
+        let sats = u.int_in_range(0..=Amount::MAX_MONEY.to_sat())?;
+        Ok(Self(Amount::from_sat(sats)))
+    }
+}
+
 impl Codec for BitcoinAmount {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        Ok(Self(u64::decode(dec)?))
+        let sats = u64::decode(dec)?;
+        Self::try_from(sats).map_err(|_| CodecError::OobInteger)
     }
 
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.0.encode(enc)
+        self.to_sat().encode(enc)
     }
 }
 
-impl_ssz_transparent_wrapper!(BitcoinAmount, u64);
+impl SszDelegate for BitcoinAmount {
+    type Delegate = u64;
 
-impl BitcoinAmount {
-    /// The zero amount.
-    pub const ZERO: BitcoinAmount = Self(0);
-    /// The maximum value allowed as an amount. Useful for sanity checking.
-    pub const MAX_MONEY: BitcoinAmount = Self::from_int_btc(21_000_000);
-    /// The minimum value of an amount.
-    pub const MIN: BitcoinAmount = Self::ZERO;
-    /// The maximum value of an amount.
-    pub const MAX: BitcoinAmount = Self(u64::MAX);
-    /// The number of bytes that an amount contributes to the size of a transaction.
-    /// Serialized length of a u64.
-    pub const SIZE: usize = 8;
-
-    /// The number of sats in 1 bitcoin.
-    pub const SATS_FACTOR: u64 = 100_000_000;
-
-    /// Get the number of sats in this [`BitcoinAmount`].
-    pub fn to_sat(&self) -> u64 {
-        self.0
+    fn into_delegate(self) -> u64 {
+        self.to_sat()
     }
 
-    /// Create a [`BitcoinAmount`] with sats precision and the given number of sats.
-    pub const fn from_sat(value: u64) -> Self {
-        Self(value)
-    }
-
-    /// Convert from a value strataing integer values of bitcoins to a [`BitcoinAmount`]
-    /// in const context.
-    ///
-    /// ## Panics
-    ///
-    /// The function panics if the argument multiplied by the number of sats
-    /// per bitcoin overflows a u64 type, or is greater than [`BitcoinAmount::MAX_MONEY`].
-    pub const fn from_int_btc(btc: u64) -> Self {
-        match btc.checked_mul(Self::SATS_FACTOR) {
-            Some(amount) => Self::from_sat(amount),
-            None => {
-                panic!("number of sats greater than u64::MAX");
-            }
-        }
-    }
-
-    /// Checked addition. Returns [`None`] if overflow occurred.
-    pub fn checked_add(self, rhs: Self) -> Option<Self> {
-        self.0.checked_add(rhs.0).map(Self::from_sat)
-    }
-
-    /// Checked subtraction. Returns [`None`] if overflow occurred.
-    pub fn checked_sub(self, rhs: Self) -> Option<Self> {
-        self.0.checked_sub(rhs.0).map(Self::from_sat)
-    }
-
-    /// Checked multiplication. Returns [`None`] if overflow occurred.
-    pub fn checked_mul(self, rhs: u64) -> Option<Self> {
-        self.0.checked_mul(rhs).map(Self::from_sat)
-    }
-
-    /// Checked division. Returns [`None`] if `rhs == 0`.
-    pub fn checked_div(self, rhs: u64) -> Option<Self> {
-        self.0.checked_div(rhs).map(Self::from_sat)
-    }
-
-    /// Saturating subtraction. Computes `self - rhs`, returning [`Self::ZERO`] if overflow
-    /// occurred.
-    pub fn saturating_sub(self, rhs: Self) -> Self {
-        Self::from_sat(self.to_sat().saturating_sub(rhs.to_sat()))
-    }
-
-    /// Saturating addition. Computes `self + rhs`, saturating at the numeric bounds.
-    pub fn saturating_add(self, rhs: Self) -> Self {
-        Self::from_sat(self.to_sat().saturating_add(rhs.to_sat()))
-    }
-
-    /// Returns a zero amount.
-    pub const fn zero() -> Self {
-        Self::ZERO
-    }
-
-    /// Returns true if the amount is zero.
-    pub fn is_zero(&self) -> bool {
-        self.0 == 0
-    }
-
-    /// Sums an iterator of [`BitcoinAmount`] values.
-    pub fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(Self::ZERO, |acc, amt| {
-            acc.checked_add(amt)
-                .expect("BitcoinAmount overflow during sum")
-        })
+    fn from_delegate(delegate: u64) -> Result<Self, DecodeError> {
+        Self::try_from(delegate).map_err(|e| DecodeError::BytesInvalid(e.to_string()))
     }
 }
+
+impl_ssz_via_delegate!(BitcoinAmount);
 
 /// [Borsh](borsh)-friendly Bitcoin [`Txid`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -845,14 +806,6 @@ mod tests {
     use crate::test_helpers::ArbitraryGenerator;
 
     #[test]
-    #[should_panic(expected = "number of sats greater than u64::MAX")]
-    fn bitcoinamount_should_handle_sats_exceeding_u64_max() {
-        let bitcoins: u64 = u64::MAX / BitcoinAmount::SATS_FACTOR + 1;
-
-        BitcoinAmount::from_int_btc(bitcoins);
-    }
-
-    #[test]
     fn test_bitcointxout_serialize_deserialize() {
         // Create a dummy TxOut with a simple script
         let script = Builder::new()
@@ -1106,19 +1059,49 @@ mod tests {
         assert!(BitcoinScriptBuf::deserialize(&mut &buf[..]).is_err());
     }
 
-    // Property-based tests for BitcoinAmount SSZ serialization
+    // Property-based tests for BitcoinAmount SSZ serialization. The strategy is
+    // bounded to valid amounts since construction now enforces `MAX_MONEY`.
     ssz_proptest!(
         BitcoinAmount,
-        any::<u64>(),
-        transparent_wrapper_of(u64, from_sat)
+        (0..=Amount::MAX_MONEY.to_sat()).prop_map(|sats| BitcoinAmount::try_from(sats).unwrap())
     );
 
     #[test]
     fn test_bitcoin_amount_zero_ssz() {
-        let zero = BitcoinAmount::zero();
+        let zero = BitcoinAmount::default();
         let encoded = zero.as_ssz_bytes();
         let decoded = BitcoinAmount::from_ssz_bytes(&encoded).unwrap();
         assert_eq!(zero, decoded);
-        assert!(decoded.is_zero());
+        // `to_sat` now comes from `Amount` through `Deref`.
+        assert_eq!(decoded.to_sat(), 0);
+    }
+
+    #[test]
+    fn bitcoin_amount_try_from_enforces_money_bound() {
+        let max = Amount::MAX_MONEY.to_sat();
+
+        // Exactly at the bound is accepted.
+        assert!(BitcoinAmount::try_from(max).is_ok());
+
+        // One sat over the money supply is rejected rather than producing a
+        // value that violates the invariant.
+        assert!(matches!(
+            BitcoinAmount::try_from(max + 1),
+            Err(ParseError::AmountTooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn bitcoin_amount_deserialize_rejects_over_max_money() {
+        let over = Amount::MAX_MONEY.to_sat() + 1;
+
+        // serde, borsh, and SSZ all reject an over-max value instead of
+        // decoding one that violates the `MAX_MONEY` invariant.
+        let json = serde_json::to_string(&over).unwrap();
+        assert!(serde_json::from_str::<BitcoinAmount>(&json).is_err());
+
+        assert!(BitcoinAmount::deserialize(&mut &over.to_le_bytes()[..]).is_err());
+
+        assert!(BitcoinAmount::from_ssz_bytes(&over.as_ssz_bytes()).is_err());
     }
 }

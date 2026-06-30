@@ -38,10 +38,11 @@ pub use tree_hash::{self, Sha256Hasher};
 /// ssz_proptest!(MyType, any::<u64>().prop_map(MyType::new));
 /// ```
 ///
-/// For transparent wrappers:
+/// For transparent wrappers (where `SatsWrapper::from_sat` builds the wrapper
+/// from its inner `u64`):
 /// ```ignore
 /// ssz_proptest!(
-///     BitcoinAmount,
+///     SatsWrapper,
 ///     any::<u64>(),
 ///     transparent_wrapper_of(u64, from_sat)
 /// );

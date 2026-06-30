@@ -1,6 +1,6 @@
 //! Errors during parsing/handling/conversion of Bitcoin types.
 
-use bitcoin::{AddressType, address, secp256k1};
+use bitcoin::{AddressType, Amount, address, secp256k1};
 use strata_identifiers::Buf32;
 use thiserror::Error;
 
@@ -27,6 +27,14 @@ pub enum ParseError {
         size: usize,
         /// Maximum allowed script size, in bytes (`MAX_SCRIPT_SIZE`).
         max: usize,
+    },
+
+    /// The provided amount exceeds the maximum bitcoin money supply
+    /// (`Amount::MAX_MONEY`).
+    #[error("amount of {sats} sats exceeds the maximum of {} sats", Amount::MAX_MONEY.to_sat())]
+    AmountTooLarge {
+        /// The offending amount, in satoshis.
+        sats: u64,
     },
 
     /// The provided 32-byte buffer is not a valid point on the curve.
