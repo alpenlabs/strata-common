@@ -172,6 +172,7 @@ where
     /// Convenience over [`put_leaf`](Self::put_leaf) at the current end.
     fn append_leaf<MH>(&self, value: Self::Hash) -> Result<u64, MmrError<Self::Error>>
     where
+        Self: Sized,
         MH: MerkleHasher<Hash = Self::Hash>,
     {
         let index = self.leaf_count()?;
@@ -194,6 +195,7 @@ where
     /// corrupt store: a sibling required by an in-range write is absent.
     fn put_leaf<MH>(&self, leaf_index: u64, value: Self::Hash) -> Result<(), MmrError<Self::Error>>
     where
+        Self: Sized,
         MH: MerkleHasher<Hash = Self::Hash>,
     {
         let old_count = self.leaf_count()?;
@@ -324,6 +326,7 @@ where
         sentinel: Self::Hash,
     ) -> Result<(), MmrError<Self::Error>>
     where
+        Self: Sized,
         MH: MerkleHasher<Hash = Self::Hash>,
     {
         let mut count = self.leaf_count()?;
@@ -576,6 +579,17 @@ mod tests {
             Mmr::<Sha256Hasher>::add_leaf(&mut mmr, *value).unwrap();
         }
         mmr
+    }
+
+    /// The hasher-free read/proof/prune API must stay dyn-compatible
+    #[test]
+    fn read_api_is_dyn_compatible() {
+        let mmr = MemMmr::<Hash32>::default();
+        append(&mmr, leaf(0));
+        let store: &dyn StoredMmr<Hash = Hash32, Error = std::convert::Infallible> = &mmr;
+        assert_eq!(store.leaf_count().unwrap(), 1);
+        assert_eq!(store.get_leaf(0).unwrap(), Some(leaf(0)));
+        store.generate_proof_at_idx(0).unwrap();
     }
 
     // ---- concrete edge cases ----
