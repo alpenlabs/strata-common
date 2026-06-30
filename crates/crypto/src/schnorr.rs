@@ -215,8 +215,9 @@ mod tests {
 
         let msg: [u8; 32] = [(); 32].map(|_| OsRng.r#gen());
 
+        // Flip a bit so `mod_msg` always differs from `msg`.
         let mut mod_msg = msg;
-        mod_msg.swap(1, 2);
+        mod_msg[1] ^= 0x01;
         let msg = Buf32::from(msg);
         let mod_msg = Buf32::from(mod_msg);
 
