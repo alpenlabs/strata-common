@@ -23,7 +23,7 @@ borsh = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 k256 = { version = "0.13.4", features = ["schnorr"], optional = true }
 serde = { workspace = true, optional = true }
-signature = { version = "2.2", optional = true }
+signature = { version = "3.0", optional = true }
 
 [build-dependencies]
 ssz_codegen.workspace = true
