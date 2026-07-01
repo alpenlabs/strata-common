@@ -78,7 +78,7 @@ metrics-util = { version = "0.20", default-features = false, features = [
 musig2 = "0.1"
 num_enum = "0.7"
 opentelemetry = "0.31"
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
+opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic"] }
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 paste = "1"
 proptest = "1.8"
