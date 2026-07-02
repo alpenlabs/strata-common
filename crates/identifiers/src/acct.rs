@@ -147,6 +147,15 @@ impl fmt::Display for AccountSerial {
 #[cfg(feature = "ssz")]
 crate::impl_ssz_transparent_wrapper!(AccountSerial, RawAccountSerial);
 
+/// Reserved account reference assigned to the bridge gateway account.
+const BRIDGE_GATEWAY_REF: u8 = 0x10;
+
+/// Account ID assigned to the bridge gateway account.
+pub const BRIDGE_GATEWAY_ACCT_ID: AccountId = AccountId::special(BRIDGE_GATEWAY_REF);
+
+/// Account serial assigned to the bridge gateway account.
+pub const BRIDGE_GATEWAY_ACCT_SERIAL: AccountSerial = AccountSerial::reserved(BRIDGE_GATEWAY_REF);
+
 type RawSubjectId = [u8; SUBJ_ID_LEN];
 
 /// Identifier for a "subject" within the scope of an execution environment.
