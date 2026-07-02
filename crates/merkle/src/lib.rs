@@ -29,6 +29,16 @@ mod proof;
 mod traits;
 mod tree;
 
+/// Prefill leaf used for L1-height-indexed MMRs before genesis.
+///
+/// MMR state treats [`MerkleHash::zero`] peak values as absent, so prefilled leaves use a
+/// non-zero value. Consumers that prefill the same height-indexed MMR must agree on this leaf to
+/// produce the same roots.
+///
+/// The specific bytes do not affect proof semantics as long as no real proof references a
+/// prefilled position.
+pub const L1_HEIGHT_MMR_PREFILL_LEAF: [u8; 32] = [0xffu8; 32];
+
 pub use error::*;
 pub use ext::*;
 pub use hasher::*;
