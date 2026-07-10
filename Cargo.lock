@@ -4197,6 +4197,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-serde-utils"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "ciborium",
+ "hex",
+ "serde",
+ "serde_json",
+ "ssz",
+ "ssz_derive",
+ "strata-codec",
+]
+
+[[package]]
 name = "strata-service"
 version = "0.3.0-alpha.1"
 dependencies = [
