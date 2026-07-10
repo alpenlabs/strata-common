@@ -113,6 +113,62 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
         // SAFETY: buffer is known to be valid already
         unsafe { RkRef::new_unchecked(self.as_slice()) }
     }
+
+    /// Borrows a sub-value `U` that lives *inside* this archive as an independent
+    /// [`RkRef`], backed by a subslice of this buffer.
+    ///
+    /// `field` must be a reference into this archive — typically obtained by
+    /// traversing [`as_ref`](Rk::as_ref), e.g.
+    /// `rk.as_rkref_of(&rk.as_ref().some_field)`.  The returned handle borrows
+    /// `self` and resolves to the same bytes `field` already pointed at, with no
+    /// copy or re-serialization.
+    ///
+    /// The projected subslice runs from the *start* of the buffer up to the end
+    /// of `field`, rather than just `field`'s own bytes.  That whole prefix is
+    /// required: rkyv stores a value's out-of-line data (a `String`'s
+    /// characters, a `Vec`'s elements) at *lower* addresses than the value that
+    /// points at it, and the archived value's relative pointers — offsets from
+    /// their own address — must still resolve.  Keeping the prefix preserves
+    /// both those targets and the field's alignment, so this works for any
+    /// field (primitive, `String`, `Vec`, nested struct) and composes
+    /// recursively.
+    ///
+    /// This validates the projected subslice (via [`from_buf`](Rk::from_buf)), so
+    /// a `field` that does not point within this buffer is reported as an `Err`
+    /// rather than causing undefined behavior.  For the unchecked, allocation-
+    /// and validation-free counterpart see
+    /// [`as_rkref_of_unchecked`](Rk::as_rkref_of_unchecked).
+    pub fn as_rkref_of<U, E>(&self, field: &U) -> Result<RkRef<'_, U>, E>
+    where
+        U: Portable + for<'a> CheckBytes<HighValidator<'a, E>>,
+        E: Source,
+    {
+        let buf = self.as_slice();
+        let end = projected_prefix_len::<U, E>(buf, field)?;
+        RkRef::<U>::from_buf::<E>(&buf[..end])
+    }
+
+    /// Borrows a sub-value `U` inside this archive as an [`RkRef`] without any
+    /// validation — the unchecked counterpart of
+    /// [`as_rkref_of`](Rk::as_rkref_of).
+    ///
+    /// # Safety
+    ///
+    /// `field` must be a reference obtained by traversing
+    /// [`as_ref`](Rk::as_ref) (i.e. it genuinely points at an archived `U`
+    /// inside this buffer).  Then the prefix `&buf[..off + size_of::<U>()]` is a
+    /// valid archive of `U` whose root sits at the end, so the resulting
+    /// handle's [`AsRef<U>`](Rk::as_ref) accessor — which calls
+    /// [`rkyv::access_unchecked`] — is sound.
+    pub unsafe fn as_rkref_of_unchecked<U: Portable>(&self, field: &U) -> RkRef<'_, U> {
+        let buf = self.as_slice();
+        let off = (field as *const U as usize) - (buf.as_ptr() as usize);
+        let end = off + core::mem::size_of::<U>();
+        // SAFETY: the caller guarantees `field` points at an archived `U` within
+        // this buffer, so `end <= buf.len()` and the prefix is a valid archive of
+        // `U` with its root at the end.
+        unsafe { RkRef::new_unchecked(buf.get_unchecked(..end)) }
+    }
 }
 
 impl<B: AsRef<[u8]>, T: Portable> AsRef<T> for Rk<B, T> {
@@ -234,6 +290,41 @@ impl<T: Portable> RkVec<T> {
     {
         Self::from_buf(raw_from_slice(buf.as_ref()))
     }
+}
+
+/// Error returned by [`as_rkref_of`](Rk::as_rkref_of) when `field` does not point
+/// within the backing buffer.
+#[derive(Debug)]
+struct ProjectionOutOfBounds;
+
+impl fmt::Display for ProjectionOutOfBounds {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("rkyv-utils: projected reference is not within the backing buffer")
+    }
+}
+
+impl std::error::Error for ProjectionOutOfBounds {}
+
+/// Computes the length of the prefix subslice `&buf[..end]` that exposes `field`
+/// as a root archived `U`, bounds-checking that `field` lies fully within `buf`.
+///
+/// The prefix ends at `field`'s last byte (`off + size_of::<U>()`) and begins at
+/// the buffer start so that `field`'s relative pointers — which target lower
+/// addresses — still resolve.  Returns an error (rather than a panic or UB) if
+/// `field` starts before the buffer or extends past its end.
+fn projected_prefix_len<U, E: Source>(buf: &[u8], field: &U) -> Result<usize, E> {
+    let base = buf.as_ptr() as usize;
+    let addr = field as *const U as usize;
+    let off = addr
+        .checked_sub(base)
+        .ok_or_else(|| E::new(ProjectionOutOfBounds))?;
+    let end = off
+        .checked_add(core::mem::size_of::<U>())
+        .ok_or_else(|| E::new(ProjectionOutOfBounds))?;
+    if end > buf.len() {
+        return Err(E::new(ProjectionOutOfBounds));
+    }
+    Ok(end)
 }
 
 #[cfg(test)]
@@ -580,5 +671,154 @@ mod tests {
                 );
             }
         }
+    }
+
+    // --- projection (`as_rkref_of`) ---
+
+    /// Deeply nested fixture: an `Outer` owning a wide integer, a nested struct
+    /// (itself holding a `String` and a `Vec`), and a `Vec<String>`.  Lets the
+    /// projection tests reach sub-values at several levels, including ones whose
+    /// archived form stores out-of-line data.
+    #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
+    #[rkyv(derive(Debug, PartialEq))]
+    struct Inner {
+        tag: String,
+        nums: Vec<u32>,
+    }
+
+    #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
+    #[rkyv(derive(Debug, PartialEq))]
+    struct Outer {
+        id: u64,
+        inner: Inner,
+        names: Vec<String>,
+    }
+
+    fn outer() -> Outer {
+        Outer {
+            id: 0xDEAD_BEEF_CAFE_F00D,
+            inner: Inner {
+                tag: "the-inner-tag".to_owned(),
+                nums: vec![1, 1, 2, 3, 5, 8, 13],
+            },
+            names: vec!["alice".to_owned(), "bob".to_owned(), "carol".to_owned()],
+        }
+    }
+
+    #[test]
+    fn project_primitive_field() {
+        let val = outer();
+        let rk = RkVec::<ArchivedOuter>::from_val(&val);
+
+        let id_ref = &rk.as_ref().id;
+        let id_rk = rk.as_rkref_of::<_, Error>(id_ref).unwrap();
+
+        // Reads back the right value.
+        assert_eq!(id_rk.as_ref().to_native(), val.id);
+
+        // The projected subslice is the prefix ending exactly at the field's end
+        // and shares the original buffer's base pointer.
+        let base = rk.as_slice().as_ptr() as usize;
+        let off = (id_ref as *const _ as usize) - base;
+        assert_eq!(id_rk.as_slice().as_ptr(), rk.as_slice().as_ptr());
+        assert_eq!(
+            id_rk.as_slice().len(),
+            off + std::mem::size_of::<rkyv::Archived<u64>>()
+        );
+    }
+
+    #[test]
+    fn project_string_field_with_out_of_line_data() {
+        // The acid test for the *prefix* approach: a `String` field's characters
+        // live before the field, so a naive tight subslice would slice them away
+        // and reading the string would be UB / wrong.
+        let val = outer();
+        let rk = RkVec::<ArchivedOuter>::from_val(&val);
+
+        let tag_ref = &rk.as_ref().inner.tag;
+        let tag_rk = rk.as_rkref_of::<_, Error>(tag_ref).unwrap();
+
+        assert_eq!(tag_rk.as_ref().as_str(), val.inner.tag);
+        let de = rkyv::deserialize::<String, Error>(tag_rk.as_ref()).unwrap();
+        assert_eq!(de, val.inner.tag);
+    }
+
+    #[test]
+    fn project_vec_field() {
+        let val = outer();
+        let rk = RkVec::<ArchivedOuter>::from_val(&val);
+
+        let names_rk = rk.as_rkref_of::<_, Error>(&rk.as_ref().names).unwrap();
+
+        // Element-by-element match against the original.
+        let archived = names_rk.as_ref();
+        assert_eq!(archived.len(), val.names.len());
+        for (a, b) in archived.iter().zip(&val.names) {
+            assert_eq!(a.as_str(), b);
+        }
+
+        let de = rkyv::deserialize::<Vec<String>, Error>(names_rk.as_ref()).unwrap();
+        assert_eq!(de, val.names);
+    }
+
+    #[test]
+    fn project_nested_struct_field_and_cross_check() {
+        let val = outer();
+        let rk = RkVec::<ArchivedOuter>::from_val(&val);
+
+        let inner_rk = rk.as_rkref_of::<_, Error>(&rk.as_ref().inner).unwrap();
+
+        // Deserializing the projected nested struct matches the original whole.
+        let de = rkyv::deserialize::<Inner, Error>(inner_rk.as_ref()).unwrap();
+        assert_eq!(de, val.inner);
+    }
+
+    #[test]
+    fn project_recursively() {
+        // Projections compose: project to `inner`, then project again to a field
+        // *of that projection* and confirm the (out-of-line) string still
+        // resolves.
+        let val = outer();
+        let rk = RkVec::<ArchivedOuter>::from_val(&val);
+
+        let inner_rk = rk.as_rkref_of::<_, Error>(&rk.as_ref().inner).unwrap();
+        let tag_rk = inner_rk
+            .as_rkref_of::<_, Error>(&inner_rk.as_ref().tag)
+            .unwrap();
+        assert_eq!(tag_rk.as_ref().as_str(), val.inner.tag);
+
+        let nums_rk = inner_rk
+            .as_rkref_of::<_, Error>(&inner_rk.as_ref().nums)
+            .unwrap();
+        let de = rkyv::deserialize::<Vec<u32>, Error>(nums_rk.as_ref()).unwrap();
+        assert_eq!(de, val.inner.nums);
+    }
+
+    #[test]
+    fn project_out_of_buffer_ref_errors() {
+        let rk = RkVec::<ArchivedOuter>::from_val(&outer());
+
+        // A reference to a value that does *not* live in `rk`'s buffer must be
+        // reported as an error, not a panic or UB.
+        let stray: rkyv::Archived<u64> = 7u64.into();
+        let res = rk.as_rkref_of::<_, Error>(&stray);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn project_unchecked_matches_checked() {
+        let val = outer();
+        let rk = RkVec::<ArchivedOuter>::from_val(&val);
+
+        let checked = rk.as_rkref_of::<_, Error>(&rk.as_ref().inner).unwrap();
+        // SAFETY: `&rk.as_ref().inner` genuinely points within `rk`'s archive.
+        let unchecked = unsafe { rk.as_rkref_of_unchecked(&rk.as_ref().inner) };
+
+        // Same backing bytes and same archived value.
+        assert_eq!(unchecked.as_slice(), checked.as_slice());
+        let de_a = rkyv::deserialize::<Inner, Error>(checked.as_ref()).unwrap();
+        let de_b = rkyv::deserialize::<Inner, Error>(unchecked.as_ref()).unwrap();
+        assert_eq!(de_a, de_b);
+        assert_eq!(de_a, val.inner);
     }
 }
