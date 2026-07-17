@@ -9,7 +9,15 @@ use crate::{MagicBytes, TagData};
 impl Serialize for MagicBytes {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         if s.is_human_readable() {
-            s.serialize_str(&self.to_string())
+            // Prefer the readable string form, but fall back to the raw byte
+            // array when the magic is not valid UTF-8. Serializing the `Display`
+            // output for non-UTF-8 bytes yields the debug array (e.g.
+            // `"[255, 254, 0, 1]"`), which deserialization then rejects; the
+            // array form round-trips losslessly.
+            match self.as_str() {
+                Some(readable) => s.serialize_str(readable),
+                None => s.serialize_bytes(self.as_bytes()),
+            }
         } else {
             s.serialize_bytes(self.as_bytes())
         }
@@ -19,21 +27,49 @@ impl Serialize for MagicBytes {
 impl<'de> Deserialize<'de> for MagicBytes {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         if d.is_human_readable() {
-            struct StrVisitor;
+            struct HumanReadableVisitor;
 
-            impl de::Visitor<'_> for StrVisitor {
+            impl<'de> de::Visitor<'de> for HumanReadableVisitor {
                 type Value = MagicBytes;
 
                 fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    write!(f, "a {MAGIC_BYTES_LEN}-byte string")
+                    write!(
+                        f,
+                        "a {MAGIC_BYTES_LEN}-byte string or a {MAGIC_BYTES_LEN}-element byte array"
+                    )
                 }
 
                 fn visit_str<E: de::Error>(self, v: &str) -> Result<MagicBytes, E> {
                     MagicBytes::from_str(v).map_err(E::custom)
                 }
+
+                fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<MagicBytes, E> {
+                    let bytes: [u8; MAGIC_BYTES_LEN] = v
+                        .try_into()
+                        .map_err(|_| E::invalid_length(v.len(), &self))?;
+                    Ok(MagicBytes::new(bytes))
+                }
+
+                fn visit_seq<A: de::SeqAccess<'de>>(
+                    self,
+                    mut seq: A,
+                ) -> Result<MagicBytes, A::Error> {
+                    let mut bytes = [0u8; MAGIC_BYTES_LEN];
+                    for (i, slot) in bytes.iter_mut().enumerate() {
+                        *slot = seq
+                            .next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(i, &self))?;
+                    }
+                    if seq.next_element::<u8>()?.is_some() {
+                        return Err(de::Error::invalid_length(MAGIC_BYTES_LEN + 1, &self));
+                    }
+                    Ok(MagicBytes::new(bytes))
+                }
             }
 
-            d.deserialize_str(StrVisitor)
+            // Accepts both the string form (valid UTF-8) and the byte-array
+            // fallback (non-UTF-8) emitted by `Serialize` above.
+            d.deserialize_any(HumanReadableVisitor)
         } else {
             struct BytesVisitor;
 
@@ -142,5 +178,22 @@ mod tests {
     fn test_human_readable_invalid_length() {
         let result: Result<MagicBytes, _> = serde_json::from_str("\"AB\"");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_human_readable_roundtrip_non_utf8() {
+        // Non-UTF-8 magic must survive a JSON round trip: it serializes to the
+        // byte-array fallback rather than the lossy `Display` string.
+        let magic = MagicBytes::new([0xFF, 0xFE, 0x00, 0x01]);
+        let json = serde_json::to_string(&magic).unwrap();
+        assert_eq!(json, "[255,254,0,1]");
+        let back: MagicBytes = serde_json::from_str(&json).unwrap();
+        assert_eq!(magic, back);
+    }
+
+    #[test]
+    fn test_human_readable_rejects_wrong_length_array() {
+        assert!(serde_json::from_str::<MagicBytes>("[1,2,3]").is_err());
+        assert!(serde_json::from_str::<MagicBytes>("[1,2,3,4,5]").is_err());
     }
 }
