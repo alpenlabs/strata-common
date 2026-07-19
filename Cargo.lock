@@ -3963,6 +3963,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-retry"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "serde",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "strata-serde-utils"
 version = "0.1.0"
 dependencies = [
