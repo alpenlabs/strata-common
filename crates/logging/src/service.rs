@@ -2,13 +2,93 @@
 
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use super::{BoxedLayer, FileLoggingConfig, LoggerConfig, format_service_name, init_with_layers};
 
-/// Configuration parameters for logging initialization.
+/// Owned, serde-serializable logging configuration.
+///
+/// This is the type binaries should embed in their own config structs (e.g. a
+/// `[logging]` TOML section) or populate from CLI flags. Every field is
+/// optional, so a partial or omitted section deserializes cleanly and falls
+/// back to the crate defaults.
+///
+/// It carries only the operator-tunable subset of the settings. The two
+/// binary-provided constants — the base service name and the default log-file
+/// prefix — are passed to [`init`](Self::init) / [`init_with_layers`](Self::init_with_layers)
+/// as arguments rather than serialized, so they never leak into a user's config
+/// file.
+///
+/// Under the hood these methods build a [`LoggingInitConfigRef`] (the borrowed,
+/// zero-copy view the init routines consume) and forward to
+/// [`init_logging_from_config`] / [`init_logging_from_config_with_layers`].
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LoggingInitConfig {
+    /// Optional service label appended to the service name (e.g. `"prod"`, `"dev"`).
+    pub service_label: Option<String>,
+    /// OpenTelemetry OTLP collector endpoint. When set, OTLP export is enabled.
+    pub otlp_url: Option<String>,
+    /// Directory to write rolling log files into. When unset, file logging is disabled.
+    pub log_dir: Option<PathBuf>,
+    /// Filename prefix for rolling log files. Falls back to the binary's default prefix.
+    pub log_file_prefix: Option<String>,
+    /// Use JSON output format instead of the compact text format.
+    pub json_format: Option<bool>,
+    /// Extra `EnvFilter` directives applied before `RUST_LOG` (e.g. to silence
+    /// noisy dependencies). Empty when omitted.
+    pub extra_filter_directives: Vec<String>,
+}
+
+impl LoggingInitConfig {
+    /// Initialize process-global logging from this config.
+    ///
+    /// `service_base_name` and `default_log_prefix` are binary-provided
+    /// constants (not part of the serialized config). Must be called once from
+    /// a process entrypoint, inside a Tokio runtime context when `otlp_url` is
+    /// set (the OTLP exporter is built on the reactor).
+    pub fn init(&self, service_base_name: &str, default_log_prefix: &str) {
+        self.init_with_layers(service_base_name, default_log_prefix, Vec::new());
+    }
+
+    /// Like [`init`](Self::init), but installs additional subscriber layers.
+    pub fn init_with_layers(
+        &self,
+        service_base_name: &str,
+        default_log_prefix: &str,
+        extra_layers: Vec<BoxedLayer>,
+    ) {
+        let extra_filter_directives: Vec<&str> = self
+            .extra_filter_directives
+            .iter()
+            .map(String::as_str)
+            .collect();
+        init_logging_from_config_with_layers(
+            LoggingInitConfigRef {
+                service_base_name,
+                service_label: self.service_label.as_deref(),
+                otlp_url: self.otlp_url.as_deref(),
+                log_dir: self.log_dir.as_ref(),
+                log_file_prefix: self.log_file_prefix.as_deref(),
+                json_format: self.json_format,
+                default_log_prefix,
+                extra_filter_directives: &extra_filter_directives,
+            },
+            extra_layers,
+        );
+    }
+}
+
+/// Borrowed, zero-copy view of the parameters [`init_logging_from_config`]
+/// consumes.
+///
+/// Prefer the owned [`LoggingInitConfig`] for config-file / CLI wiring. Reach
+/// for this only when you are assembling the parameters transiently at the call
+/// site (e.g. mixing borrowed CLI args with compile-time string literals) and
+/// don't want an owning struct.
 #[derive(Debug)]
-pub struct LoggingInitConfig<'a> {
+pub struct LoggingInitConfigRef<'a> {
     /// Base service name
     pub service_base_name: &'a str,
     /// Optional service label to append like prod or dev
@@ -36,7 +116,7 @@ pub struct LoggingInitConfig<'a> {
 /// This function encapsulates the common logging initialization logic used
 /// across binaries. It should be called once from a process entrypoint, not
 /// from libraries.
-pub fn init_logging_from_config(config: LoggingInitConfig<'_>) {
+pub fn init_logging_from_config(config: LoggingInitConfigRef<'_>) {
     init_logging_from_config_with_layers(config, Vec::new());
 }
 
@@ -45,7 +125,7 @@ pub fn init_logging_from_config(config: LoggingInitConfig<'_>) {
 /// This keeps logging initialization centralized while allowing companion crates
 /// to provide tracing layers without making this crate depend on them.
 pub fn init_logging_from_config_with_layers(
-    config: LoggingInitConfig<'_>,
+    config: LoggingInitConfigRef<'_>,
     extra_layers: Vec<BoxedLayer>,
 ) {
     // Construct service name with optional label
