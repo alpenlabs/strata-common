@@ -1,0 +1,21 @@
+[package]
+edition = "2024"
+name = "strata-rpc-tracing"
+version = "0.1.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+http.workspace = true
+jsonrpsee = { workspace = true, features = ["http-client", "server", "ws-client"] }
+opentelemetry.workspace = true
+serde_json.workspace = true
+tower.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+
+[dev-dependencies]
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+tokio.workspace = true
+tracing-subscriber.workspace = true
