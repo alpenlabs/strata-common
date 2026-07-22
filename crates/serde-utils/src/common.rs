@@ -14,8 +14,6 @@ const MAX_RESPECTED_HINT_BYTES: usize = 1 << 20; // 1 MiB
 /// fit within the capacity limit.
 pub(crate) fn prealloc_hinted_vec<T>(hint: Option<usize>) -> Vec<T> {
     let max_safe_len: usize = MAX_RESPECTED_HINT_BYTES / mem::size_of::<T>();
-    match hint {
-        Some(len) => Vec::with_capacity(usize::min(len, max_safe_len)),
-        _ => Vec::new(),
-    }
+    let len = hint.map(|len| len.min(max_safe_len)).unwrap_or_default();
+    Vec::with_capacity(len)
 }
