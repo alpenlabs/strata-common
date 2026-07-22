@@ -17,6 +17,7 @@ members = [
   "crates/msg-fmt",
   "crates/ol-logs",
   "crates/predicate",
+  "crates/retry",
   "crates/service",
   "crates/ssz-tests",
   "crates/tasks",
@@ -41,6 +42,7 @@ strata-metrics = { path = "crates/metrics" }
 strata-msg-fmt = { path = "crates/msg-fmt" }
 strata-ol-logs = { path = "crates/ol-logs" }
 strata-predicate = { path = "crates/predicate" }
+strata-retry = { path = "crates/retry" }
 strata-service = { path = "crates/service" }
 strata-ssz-tests = { path = "crates/ssz-tests" }
 strata-tasks = { path = "crates/tasks" }
