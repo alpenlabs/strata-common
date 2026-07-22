@@ -14,7 +14,8 @@ mod tests;
 // Re-export main types and functions
 pub use manager::{BoxedLayer, finalize, init, init_with_layers};
 pub use service::{
-    LoggingInitConfig, init_logging_from_config, init_logging_from_config_with_layers,
+    LoggingInitConfig, LoggingInitConfigRef, init_logging_from_config,
+    init_logging_from_config_with_layers,
 };
 // Re-export tracing-appender types for convenience
 pub use tracing_appender::rolling::Rotation;
