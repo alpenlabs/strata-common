@@ -15,17 +15,31 @@
 //!
 //! # Envelope Container
 //!
-//! An envelope container wraps one or more envelopes with a pubkey and CHECKSIGVERIFY:
+//! An envelope container wraps one or more envelopes with a pubkey and OP_CHECKSIG:
 //! ```text
 //! <pubkey>
-//! CHECKSIGVERIFY
+//! OP_CHECKSIG
 //! <envelope_0>
 //! ...
 //! <envelope_n>
 //! ```
 //!
-//! The envelope container is typically placed in a transaction input's script_sig,
-//! allowing arbitrary data to be included in Bitcoin transactions.
+//! The envelope container is carried in a transaction input's script context —
+//! a tapscript leaf or a script_sig — allowing arbitrary data to be included in
+//! Bitcoin transactions.
+//!
+//! # Lenient and strict parsing
+//!
+//! [`parser::parse_envelope_payload`], [`parser::parse_multi_envelope_payloads`],
+//! and [`parser::parse_envelope_container`] are lenient: they scan forward for
+//! an envelope, accept several per script, and ignore trailing opcodes. That
+//! suits scripts whose only job is to carry data.
+//!
+//! [`parser::parse_exact_signed_envelope_leaf`] is strict: the script must be
+//! exactly `<32-byte pubkey> OP_CHECKSIG` followed by one envelope and nothing
+//! else. Use it where the envelope shape is load-bearing for authentication,
+//! such as SPS-53 commit/reveal tapscript leaves, since only the strict form
+//! guarantees no later opcode can discard or invert the `OP_CHECKSIG` result.
 //!
 //! # Examples
 //!
