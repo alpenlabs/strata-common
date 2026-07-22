@@ -2,10 +2,8 @@
 
 use std::fmt;
 
-use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
-    de::{self, Visitor},
-};
+use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz::{Decode, Encode};
 
 /// Wraps an SSZ type so that it can be transparently [`Serialize`]d and

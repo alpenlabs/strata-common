@@ -2,11 +2,8 @@
 
 use std::fmt;
 
-use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
-    de::{self, Visitor},
-    ser,
-};
+use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, ser};
 use strata_codec::{Codec, decode_buf_exact, encode_to_vec};
 
 /// Wraps a [`Codec`] type so that it can be transparently [`Serialize`]d and
