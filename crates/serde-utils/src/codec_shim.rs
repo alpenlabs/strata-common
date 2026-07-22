@@ -6,6 +6,8 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser};
 use strata_codec::{Codec, decode_buf_exact, encode_to_vec};
 
+use crate::common::prealloc_hinted_vec;
+
 /// Wraps a [`Codec`] type so that it can be transparently [`Serialize`]d and
 /// [`Deserialize`]d.
 ///
@@ -84,7 +86,7 @@ impl<'de> Visitor<'de> for BytesVisitor {
     }
 
     fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-        let mut buf = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+        let mut buf = prealloc_hinted_vec(seq.size_hint());
         while let Some(byte) = seq.next_element()? {
             buf.push(byte);
         }
