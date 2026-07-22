@@ -17,6 +17,7 @@ members = [
   "crates/msg-fmt",
   "crates/ol-logs",
   "crates/predicate",
+  "crates/serde-utils",
   "crates/service",
   "crates/ssz-tests",
   "crates/tasks",
@@ -41,6 +42,7 @@ strata-metrics = { path = "crates/metrics" }
 strata-msg-fmt = { path = "crates/msg-fmt" }
 strata-ol-logs = { path = "crates/ol-logs" }
 strata-predicate = { path = "crates/predicate" }
+strata-serde-utils = { path = "crates/serde-utils" }
 strata-service = { path = "crates/service" }
 strata-ssz-tests = { path = "crates/ssz-tests" }
 strata-tasks = { path = "crates/tasks" }
@@ -61,6 +63,7 @@ bincode = "1.3"
 bitcoin = { version = "0.32.9" }
 bitcoin-bosd = { version = "0.9.0", default-features = false }
 borsh = { version = "1.5.0", features = ["derive"] }
+ciborium = "0.2"
 const-hex = "1.18"
 digest = "0.10"
 futures = "0.3"
