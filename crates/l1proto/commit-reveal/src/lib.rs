@@ -46,8 +46,12 @@ mod builder;
 mod errors;
 mod parser;
 
-#[cfg(test)]
-mod test_utils;
+/// Transaction fixtures, behind the `test-utils` feature.
+///
+/// A separate namespace from the format surface above, which is why this is the
+/// one public module: fixtures should not sit beside the protocol contract.
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
 
 /// Maximum commit-marker push, in bytes, as specified by SPS-53.
 ///

@@ -1,4 +1,8 @@
 //! Fixtures for commit/reveal tests.
+//!
+//! These reproduce transaction *shape*, which is all the parser reads. Witness
+//! signatures are placeholders and the P2TR slots do not commit to the leaves
+//! revealed against them, so nothing built here is spend-valid.
 
 use std::sync::OnceLock;
 
@@ -14,10 +18,10 @@ use strata_l1_txfmt::MagicBytes;
 use crate::builder::{build_commit_marker_script, build_reveal_leaf_script};
 
 /// Magic used by fixtures unless a test needs a different one.
-pub(crate) const TEST_MAGIC: MagicBytes = MagicBytes::new(*b"TEST");
+pub const TEST_MAGIC: MagicBytes = MagicBytes::new(*b"TEST");
 
 /// Key seed used by fixtures unless a test needs a different one.
-pub(crate) const DEFAULT_KEY_SEED: u8 = 7;
+pub const DEFAULT_KEY_SEED: u8 = 7;
 
 /// Verification context for fixture key derivation.
 fn secp() -> &'static Secp256k1<All> {
@@ -26,7 +30,7 @@ fn secp() -> &'static Secp256k1<All> {
 }
 
 /// A deterministic txid, distinct per `seed`.
-pub(crate) fn make_txid(seed: u8) -> Txid {
+pub fn make_txid(seed: u8) -> Txid {
     Txid::from_byte_array([seed; 32])
 }
 
@@ -35,7 +39,7 @@ pub(crate) fn make_txid(seed: u8) -> Txid {
 /// Every `u8` seed is valid. The scalar keeps a fixed non-zero prefix and
 /// varies only its last byte, since a repeated seed would give an all-zero
 /// scalar at `seed == 0`, which secp256k1 rejects.
-pub(crate) fn make_xonly_pubkey(seed: u8) -> XOnlyPublicKey {
+pub fn make_xonly_pubkey(seed: u8) -> XOnlyPublicKey {
     let mut secret = [1u8; 32];
     secret[31] = seed;
     let secret_key = SecretKey::from_slice(&secret).expect("non-zero scalar below curve order");
@@ -44,7 +48,7 @@ pub(crate) fn make_xonly_pubkey(seed: u8) -> XOnlyPublicKey {
 }
 
 /// The 32-byte serialization of [`make_xonly_pubkey`].
-pub(crate) fn make_xonly_pubkey_bytes(seed: u8) -> [u8; SIGNED_LEAF_PUBKEY_LEN] {
+pub fn make_xonly_pubkey_bytes(seed: u8) -> [u8; SIGNED_LEAF_PUBKEY_LEN] {
     make_xonly_pubkey(seed).serialize()
 }
 
@@ -59,18 +63,22 @@ fn build_control_block(internal_key: XOnlyPublicKey, leaf_version: LeafVersion) 
 }
 
 /// A P2TR script, for extending or breaking a reveal-slot run.
-pub(crate) fn make_p2tr_script() -> ScriptBuf {
+pub fn make_p2tr_script() -> ScriptBuf {
     ScriptBuf::new_p2tr(secp(), make_xonly_pubkey(9), None)
 }
 
 /// A non-P2TR script, standing in for wallet change.
-pub(crate) fn make_change_script() -> ScriptBuf {
+pub fn make_change_script() -> ScriptBuf {
     ScriptBuf::new_op_return([0u8; 4])
 }
 
 /// Builds a commit tx: marker at output 0, `reveal_slots` P2TR outputs, then
 /// `trailing_outputs` standing in for change.
-pub(crate) fn build_commit_tx(
+///
+/// # Panics
+///
+/// If `tail` exceeds [`MAX_MARKER_TAIL_BYTES`](crate::MAX_MARKER_TAIL_BYTES).
+pub fn build_commit_tx(
     magic: &MagicBytes,
     tail: &[u8],
     reveal_slots: usize,
@@ -91,7 +99,7 @@ pub(crate) fn build_commit_tx(
 ///
 /// The counterpart to [`CommitRevealScripts`](crate::builder::CommitRevealScripts):
 /// a writer funds exactly `reveal_slots` P2TR outputs after the marker.
-pub(crate) fn assemble_commit_tx(marker: ScriptBuf, reveal_slots: usize) -> Transaction {
+pub fn assemble_commit_tx(marker: ScriptBuf, reveal_slots: usize) -> Transaction {
     let reveal_key = make_xonly_pubkey(3);
     let mut output = vec![TxOut {
         value: Amount::ZERO,
@@ -121,7 +129,7 @@ pub(crate) fn assemble_commit_tx(marker: ScriptBuf, reveal_slots: usize) -> Tran
 ///
 /// For exercising marker classification against output-0 scripts the commit
 /// builder would never produce.
-pub(crate) fn build_marker_candidate_tx(script: ScriptBuf) -> Transaction {
+pub fn build_marker_candidate_tx(script: ScriptBuf) -> Transaction {
     Transaction {
         version: Version::TWO,
         lock_time: LockTime::ZERO,
@@ -139,10 +147,17 @@ pub(crate) fn build_marker_candidate_tx(script: ScriptBuf) -> Transaction {
 /// With `chunk`, the witness carries a well-formed signed envelope leaf and a
 /// placeholder signature; with `None` the witness is empty.
 ///
+/// One seed keys both the leaf and the control block, since SPS-53 uses the
+/// producer key as the taproot internal key as well.
+///
 /// The witness signature is a placeholder, not a real signature over the
 /// spend. These fixtures exercise leaf *shape*, which is what the parser
 /// checks; they prove nothing about signature validity.
-pub(crate) fn build_reveal_input(
+///
+/// # Panics
+///
+/// If `chunk` exceeds the per-reveal envelope maximum.
+pub fn build_reveal_input(
     commit_txid: Txid,
     vout: u32,
     chunk: Option<&[u8]>,
@@ -160,23 +175,33 @@ pub(crate) fn build_reveal_input(
 
 /// Builds a reveal input whose witness carries `leaf`, for driving the parser
 /// with scripts a builder produced.
-pub(crate) fn build_reveal_input_from_leaf(
+///
+/// `internal_key_seed` keys the control block only. The leaf's pubkey is
+/// whatever `leaf` already carries, unlike [`build_reveal_input`] where the
+/// seed chooses it.
+pub fn build_reveal_input_from_leaf(
     commit_txid: Txid,
     vout: u32,
     leaf: ScriptBuf,
-    key_seed: u8,
+    internal_key_seed: u8,
 ) -> TxIn {
     let mut witness = Witness::new();
     witness.push([1u8; 64]);
     witness.push(leaf);
-    witness
-        .push(build_control_block(make_xonly_pubkey(key_seed), LeafVersion::TapScript).serialize());
+    witness.push(
+        build_control_block(make_xonly_pubkey(internal_key_seed), LeafVersion::TapScript)
+            .serialize(),
+    );
 
     build_input(commit_txid, vout, witness)
 }
 
 /// Builds a reveal input whose leaf carries an unsupported leaf version.
-pub(crate) fn build_unsupported_leaf_reveal_input(
+///
+/// # Panics
+///
+/// If `chunk` exceeds the per-reveal envelope maximum.
+pub fn build_unsupported_leaf_reveal_input(
     commit_txid: Txid,
     vout: u32,
     chunk: &[u8],
@@ -206,7 +231,7 @@ fn build_input(commit_txid: Txid, vout: u32, witness: Witness) -> TxIn {
 }
 
 /// Builds a reveal tx that carries no marker of its own.
-pub(crate) fn build_reveal_tx(inputs: Vec<TxIn>) -> Transaction {
+pub fn build_reveal_tx(inputs: Vec<TxIn>) -> Transaction {
     build_tx(
         inputs,
         vec![TxOut {
@@ -220,7 +245,7 @@ pub(crate) fn build_reveal_tx(inputs: Vec<TxIn>) -> Transaction {
 ///
 /// Production writers chain envelopes this way, and the range-scanner entry
 /// point must not misread such a transaction as a second commit.
-pub(crate) fn build_reveal_tx_with_marker_output(inputs: Vec<TxIn>, marker: TxOut) -> Transaction {
+pub fn build_reveal_tx_with_marker_output(inputs: Vec<TxIn>, marker: TxOut) -> Transaction {
     build_tx(inputs, vec![marker])
 }
 
