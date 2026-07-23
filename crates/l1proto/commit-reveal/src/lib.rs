@@ -1,4 +1,4 @@
-//! SPS-53 chunked envelope building for Bitcoin L1.
+//! SPS-53 chunked envelope building and parsing for Bitcoin L1.
 //!
 //! Where [`strata_l1_envelope_fmt`] handles one script envelope, this crate
 //! handles the multi-transaction carrier built on top of it: a commit
@@ -25,10 +25,12 @@
 //! after the chunk outputs, so its change may be any type, and the spec says
 //! the two are not exhaustive.
 //!
-//! None of that constrains the builder, which returns a marker script and one
-//! leaf script per chunk without fixing where those outputs sit: output
-//! ordering is transaction assembly. A writer using a different layout can use
-//! it unchanged.
+//! The two directions differ on this. The builder returns a marker script and
+//! one leaf script per chunk without fixing where those outputs sit, since
+//! output ordering is transaction assembly, so a writer using another layout
+//! can use it unchanged. The parser reads Layout A: it expects the marker at
+//! vout 0 and derives the slot run from there. Supporting another layout is
+//! therefore a parser-side change.
 //!
 //! The crate is consumer-neutral. It carries no consumer or deployment values:
 //! it defines no magic, encodes and decodes nothing after the magic, and
@@ -42,6 +44,7 @@ use strata_l1_txfmt::MAGIC_BYTES_LEN;
 
 mod builder;
 mod errors;
+mod parser;
 
 #[cfg(test)]
 mod test_utils;
@@ -61,4 +64,9 @@ pub const MAX_MARKER_PAYLOAD_BYTES: usize = 80;
 pub const MAX_MARKER_TAIL_BYTES: usize = MAX_MARKER_PAYLOAD_BYTES - MAGIC_BYTES_LEN;
 
 pub use builder::{CommitRevealScripts, build_commit_reveal_scripts};
-pub use errors::CommitRevealBuildError;
+pub use errors::{CommitRevealBuildError, CommitRevealParseError};
+pub use parser::{
+    ParsedCommitReveal, RevealSlotRange, derive_reveal_slot_range,
+    extract_authenticated_payload_for_commit, extract_payload_for_commit,
+    extract_payload_from_single_commit_set, read_commit_marker,
+};
