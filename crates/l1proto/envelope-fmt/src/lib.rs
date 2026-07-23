@@ -55,6 +55,14 @@
 //!     .unwrap();
 //! ```
 
+/// Required length of the x-only public key in a signed envelope leaf.
+///
+/// Under BIP342 a tapscript pubkey that is neither empty nor exactly this long
+/// is an *unknown public key type*, for which `OP_CHECKSIG` succeeds without
+/// verifying any signature. A leaf carrying one is spendable by anyone, so it
+/// must be neither emitted nor accepted.
+pub const SIGNED_LEAF_PUBKEY_LEN: usize = 32;
+
 /// Bitcoin script envelope builder utilities.
 pub mod builder;
 

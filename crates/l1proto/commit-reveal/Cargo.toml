@@ -1,0 +1,17 @@
+[package]
+name = "strata-l1-commit-reveal-fmt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-l1-envelope-fmt.workspace = true
+# Not inherited from the workspace: this crate is built for zkVM guests, and a
+# member cannot turn off default features on an inherited dependency. Only
+# MagicBytes is needed, so serde/borsh/arbitrary are left out.
+strata-l1-txfmt = { path = "../txfmt", default-features = false }
+
+bitcoin.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
