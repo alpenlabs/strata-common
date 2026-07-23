@@ -4064,6 +4064,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-l1-commit-reveal-fmt"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "strata-l1-envelope-fmt",
+ "strata-l1-txfmt",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-l1-envelope-fmt"
 version = "0.1.0"
 dependencies = [
