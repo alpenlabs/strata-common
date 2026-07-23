@@ -32,8 +32,9 @@ mod errors;
 mod grouping;
 mod parser;
 
-#[cfg(test)]
-mod test_utils;
+/// Transaction fixtures, behind the `test-utils` feature.
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
 
 /// Maximum commit-marker push, in bytes, as specified by SPS-53.
 ///
