@@ -2,38 +2,24 @@
 //!
 //! # Alignment mode
 //!
-//! This crate exposes two mutually-exclusive, no-default Cargo features that
-//! select rkyv's archived format:
+//! This crate mirrors upstream rkyv's own feature rules: the archived format is
+//! selected by a single additive `unaligned` feature.
 //!
+//! - **default** (no feature) selects rkyv's native format.  In-guest reads are cheaper, but the
+//!   backing buffer must be aligned or [`rkyv::access_unchecked`] (which backs [`Rk`]'s `AsRef<T>`)
+//!   is undefined behaviour.  In this mode the [`Rk`] constructors guard against misaligned
+//!   buffers.
 //! - **`unaligned`** enables `rkyv/unaligned`, making archived multibyte primitives alignment-1. An
 //!   archived value can then live zero-copy inside any plain `Vec<u8>` / `Box<[u8]>` with no
 //!   alignment requirement.
-//! - **`aligned`** selects rkyv's native format.  In-guest reads are cheaper, but the backing
-//!   buffer must be aligned or [`rkyv::access_unchecked`] (which backs [`Rk`]'s `AsRef<T>`) is
-//!   undefined behaviour.  In this mode the [`Rk`] constructors guard against misaligned buffers.
-//!
-//! Exactly one must be enabled; the guards below turn a wrong selection into a
-//! compile error.
 //!
 //! Note that Cargo features are *additive and unified across the dependency
 //! graph*: if any crate anywhere enables `rkyv/unaligned`, rkyv is built
-//! unaligned for everyone, regardless of what `aligned`/`unaligned` this crate
-//! selects.  The `compile_error!` guards only enforce a consistent choice
-//! *within this crate's own* feature set.  This can never make access
-//! *unsound*, because every runtime alignment check keys off `align_of::<T>()`,
-//! which always reflects rkyv's actual format — a graph-wide override only
-//! relaxes enforcement, it doesn't introduce UB.
-
-#[cfg(all(feature = "aligned", feature = "unaligned"))]
-compile_error!(
-    "`strata-rkyv-utils`: the `aligned` and `unaligned` features are mutually \
-     exclusive; enable exactly one (e.g. `default-features = false`)"
-);
-#[cfg(not(any(feature = "aligned", feature = "unaligned")))]
-compile_error!(
-    "`strata-rkyv-utils`: enable exactly one of the `aligned` or `unaligned` \
-     features"
-);
+//! unaligned for everyone, regardless of whether this crate's own `unaligned`
+//! feature is on.  That can never make access *unsound*, because every runtime
+//! alignment check keys off `align_of::<T>()`, which always reflects rkyv's
+//! actual format — a graph-wide override only relaxes enforcement, it doesn't
+//! introduce UB.
 
 // `ssz_derive` is a dev-dependency used only by the `ssz` feature's tests.
 // Dev-dependencies can't be feature-gated, so reference it here when that

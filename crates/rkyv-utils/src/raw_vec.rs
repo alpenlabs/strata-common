@@ -8,13 +8,13 @@
 
 // The buffer-type aliases and conversions are the only mode-dependent pieces;
 // each alignment mode gets its own `imp` module so the `#[cfg]` lives in one
-// place per mode rather than on every item.  Exactly one is ever compiled (the
-// `aligned`/`unaligned` features are mutually exclusive, enforced in `lib.rs`).
+// place per mode rather than on every item.  Exactly one is ever compiled, keyed
+// off the additive `unaligned` feature.
 pub use imp::*;
 use rkyv::util::AlignedVec;
 
-/// Per-mode buffer machinery for the `aligned` feature.
-#[cfg(feature = "aligned")]
+/// Per-mode buffer machinery for the default (aligned) mode.
+#[cfg(not(feature = "unaligned"))]
 mod imp {
     use super::AlignedVec;
 

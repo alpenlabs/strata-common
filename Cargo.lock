@@ -4334,6 +4334,7 @@ dependencies = [
 name = "strata-rkyv-utils"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "rkyv",
  "rkyv_impl",
  "ssz",
