@@ -14,24 +14,24 @@ use rkyv::{Archive, Portable, Serialize};
 
 use crate::raw_vec::{RawRkVec, SerVec, into_raw_buf, raw_from_slice, ser_buf_into_raw};
 
-/// A [`RawRkVec`] containing a valid [`Archived`] instance of `T`.
+/// A [`RawRkVec`] containing a valid [`rkyv::Archive`]d instance of `T`.
 ///
 /// The backing buffer type adapts to the alignment mode (see [`RawRkVec`]), so
 /// [`from_val`](RkVec::from_val) is always sound and infallible.
 pub type RkVec<T> = Rk<RawRkVec, T>;
 
-/// A `Box<[u8]>` containing a valid [`Archived`] instance of `T`.
+/// A `Box<[u8]>` containing a valid [`rkyv::Archive`]d instance of `T`.
 pub type RkBox<T> = Rk<Box<[u8]>, T>;
 
-/// A `&[u8]` containing a valid [`Archived`] instance of `T`.
+/// A `&[u8]` containing a valid [`rkyv::Archive`]d instance of `T`.
 pub type RkRef<'a, T> = Rk<&'a [u8], T>;
 
 /// Wrapper type around some buffer that is known to contain a valid
 /// `rkyv`-decodable value.  Implements `Eq`, `PartialEq`, `Ord`, `PartialOrd`,
 /// and `Hash` according to the underlying values, not the backing buffers.
 ///
-/// This means we can freely return a pointer to the value as its [`Archived`]
-/// form.
+/// This means we can freely return a pointer to the value as its
+/// [`rkyv::Archive`]d form.
 ///
 /// This is meant to be pronounced "arc", but more acutely than how you'd
 /// pronounce `Arc`, so that it's easy to tell the difference.
@@ -246,7 +246,7 @@ impl<T: Portable> RkVec<T> {
     /// that is the [`AlignedVec`] the serializer produces anyway (alignment
     /// guaranteed); under `unaligned` it is serialized into an `AlignedVec<1>`
     /// whose allocation is moved into the `Vec<u8>` backing without copying (see
-    /// [`SerVec`]).
+    /// private `SerVec` type).
     ///
     /// # Panics
     ///
