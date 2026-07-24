@@ -333,11 +333,61 @@ mod tests {
     use std::hash::{Hash, Hasher};
     use std::mem::align_of;
 
+    use rkyv::api::high::HighValidator;
+    use rkyv::bytecheck::CheckBytes;
     use rkyv::rancor::Error;
     use rkyv::util::AlignedVec;
-    use rkyv::{Archive, Deserialize, Serialize};
+    use rkyv::{Archive, Deserialize, Portable, Serialize};
 
     use super::{Rk, RkBox, RkRef, RkVec};
+
+    // --- alignment-mode helpers ---
+    //
+    // Plain `Vec<u8>` / `Box<[u8]>` / `Arc<[u8]>` allocations carry no alignment
+    // guarantee.  Under `unaligned` that doesn't matter (the archived types are
+    // alignment-1), but in the default aligned mode whether such a buffer can
+    // back an `Rk` at all depends on the address the allocator happened to
+    // return.  Tests that build `Rk`s from those buffer types therefore have to
+    // assert mode-dependently rather than blindly unwrapping — natively they
+    // pass by luck, under Miri (which deliberately picks alignment-exposing
+    // addresses) they don't.
+
+    /// Whether `buf`'s base pointer satisfies the alignment the active mode
+    /// requires for an archived `T` (1 under `unaligned`, so always true there).
+    fn is_aligned_for<T>(buf: &[u8]) -> bool {
+        (buf.as_ptr() as usize).is_multiple_of(align_of::<T>())
+    }
+
+    /// Runs [`Rk::from_buf`] on a buffer with no alignment guarantee, asserting
+    /// the outcome matches the buffer's *actual* alignment: `Ok` exactly when the
+    /// base pointer is aligned for `T`, and otherwise a graceful `Err` — never a
+    /// panic or UB.
+    ///
+    /// Under `unaligned` this always yields `Some`.  In the default aligned mode
+    /// a `None` means the scenario simply isn't constructible from this buffer,
+    /// and the caller skips that part; the mode-appropriate constructors
+    /// ([`RkVec::from_val`], [`RkVec::from_unaligned_buf`]) are what tests use
+    /// when they need a handle unconditionally.
+    fn from_unguaranteed_buf<B, T>(buf: B) -> Option<Rk<B, T>>
+    where
+        B: AsRef<[u8]>,
+        T: Portable + for<'a> CheckBytes<HighValidator<'a, Error>>,
+    {
+        let aligned = is_aligned_for::<T>(buf.as_ref());
+        match Rk::<B, T>::from_buf::<Error>(buf) {
+            Ok(rk) => {
+                assert!(
+                    aligned,
+                    "from_buf accepted a buffer misaligned for the archived type"
+                );
+                Some(rk)
+            }
+            Err(e) => {
+                assert!(!aligned, "from_buf rejected an aligned buffer: {e}");
+                None
+            }
+        }
+    }
 
     // --- fixtures ---
 
@@ -374,14 +424,15 @@ mod tests {
     }
 
     /// Builds a `Box<[u8]>`-backed [`RkBox`] from a [`Keyed`] value, for the
-    /// cross-buffer-type tests.  Goes through `from_buf` (the only owned-`RkBox`
-    /// constructor), so it works in both alignment modes.
-    fn keyed_box(label: &str, id: u64, tags: &[&str]) -> RkBox<ArchivedKeyed> {
+    /// cross-buffer-type tests, or `None` when the allocation isn't aligned for
+    /// `ArchivedKeyed` (only reachable in the default aligned mode — see
+    /// [`from_unguaranteed_buf`]).
+    fn keyed_box(label: &str, id: u64, tags: &[&str]) -> Option<RkBox<ArchivedKeyed>> {
         let bytes = rkyv::to_bytes::<Error>(&keyed(label, id, tags))
             .unwrap()
             .into_vec()
             .into_boxed_slice();
-        RkBox::<ArchivedKeyed>::from_buf::<Error>(bytes).unwrap()
+        from_unguaranteed_buf::<_, ArchivedKeyed>(bytes)
     }
 
     /// Reference bytes produced directly by `rkyv`, used to cross-check the
@@ -418,17 +469,33 @@ mod tests {
 
     #[test]
     fn from_buf_accepts_valid_owned_buffer() {
-        // `RkBox` keeps a fixed `Box<[u8]>` backing in both modes, so this
-        // exercises `from_buf` on an owned buffer regardless of alignment mode.
+        // `RkBox` keeps a fixed `Box<[u8]>` backing in both modes.  That
+        // allocation carries no alignment guarantee, so under `aligned` it is
+        // only usable when it happens to land aligned.
         let buf: Box<[u8]> = reference_bytes().into_boxed_slice();
-        let rk = RkBox::<ArchivedExample>::from_buf::<Error>(buf).unwrap();
+        if let Some(rk) = from_unguaranteed_buf::<_, ArchivedExample>(buf) {
+            assert_eq!(rk.as_ref().value.to_native(), sample().value);
+        }
+
+        // The owned constructor that *is* guaranteed in both modes: it copies
+        // into the mode's own backing, so it never fails on alignment.
+        let rk = RkVec::<ArchivedExample>::from_unaligned_buf::<Error>(reference_bytes()).unwrap();
         assert_eq!(rk.as_ref().value.to_native(), sample().value);
     }
 
     #[test]
     fn from_buf_accepts_valid_borrowed_buffer() {
+        // Borrowing a plain `Vec<u8>`: same story as above, alignment-dependent
+        // under `aligned`.
         let buf = reference_bytes();
-        let rk = RkRef::<ArchivedExample>::from_buf::<Error>(&buf).unwrap();
+        if let Some(rk) = from_unguaranteed_buf::<_, ArchivedExample>(&buf[..]) {
+            assert_eq!(rk.as_ref().name.as_str(), sample().name);
+        }
+
+        // Borrowing a buffer that the active mode does guarantee the alignment
+        // of always validates.
+        let owned = RkVec::<ArchivedExample>::from_val(&sample());
+        let rk = RkRef::<ArchivedExample>::from_buf::<Error>(owned.as_slice()).unwrap();
         assert_eq!(rk.as_ref().name.as_str(), sample().name);
     }
 
@@ -497,6 +564,37 @@ mod tests {
     }
 
     #[test]
+    fn to_rkvec_copies_borrow_into_owned_mode_backing() {
+        // The counterpart of `as_rkref` above: turning a handle that only
+        // *borrows* its bytes into one that owns them.
+        let val = keyed("delta", 11, &["a", "b"]);
+        let src = RkVec::<ArchivedKeyed>::from_val(&val);
+        let owned = src.as_rkref().to_rkvec();
+
+        // A real copy into a fresh allocation, not a share of the source's...
+        assert_ne!(owned.as_slice().as_ptr(), src.as_slice().as_ptr());
+        assert_eq!(owned.as_slice(), src.as_slice());
+
+        // ...carrying whatever alignment the active mode requires of its
+        // backing, since `to_rkvec` skips validation and `as_ref` relies on it.
+        assert!(is_aligned_for::<ArchivedKeyed>(owned.as_slice()));
+
+        // Being a copy, it stays readable once the buffer it came from is gone.
+        drop(src);
+        assert_eq!(owned.as_ref().label.as_str(), "delta");
+        assert_eq!(owned.as_ref().id.to_native(), 11);
+
+        // The same from a foreign owned backing, where constructible: a
+        // `Box<[u8]>` whose alignment the mode does not guarantee copies into
+        // one whose alignment it does.
+        if let Some(as_box) = keyed_box("delta", 11, &["a", "b"]) {
+            let from_box = as_box.to_rkvec();
+            assert!(is_aligned_for::<ArchivedKeyed>(from_box.as_slice()));
+            assert_eq!(from_box, as_box);
+        }
+    }
+
+    #[test]
     fn clone_shares_arc_backing_buffer() {
         use std::sync::Arc;
 
@@ -507,7 +605,12 @@ mod tests {
         let arc: Arc<[u8]> = Arc::from(bytes.into_boxed_slice());
         assert_eq!(Arc::strong_count(&arc), 1);
 
-        let rk = Rk::<Arc<[u8]>, ArchivedKeyed>::from_buf::<Error>(arc).unwrap();
+        // An `Arc<[u8]>`'s payload carries no alignment guarantee either, so
+        // under `aligned` this scenario is only constructible when it lands
+        // aligned.
+        let Some(rk) = from_unguaranteed_buf::<_, ArchivedKeyed>(arc) else {
+            return;
+        };
         // The `Rk` now holds the sole strong reference.
         assert_eq!(Arc::strong_count(rk.inner()), 1);
 
@@ -570,7 +673,6 @@ mod tests {
         use std::collections::HashSet;
 
         let as_vec = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 5, &["t"]));
-        let as_box = keyed_box("alpha", 5, &["t"]);
         let other = RkVec::<ArchivedKeyed>::from_val(&keyed("beta", 5, &["t"]));
 
         // Equal archived values hash equally, even across buffer types.
@@ -585,7 +687,16 @@ mod tests {
             h.finish()
         }
         let in_vec = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 5, &["t"]));
-        assert_eq!(hash(&in_vec), hash(&as_box));
+
+        // A `&[u8]`-backed handle is a different buffer type that both modes can
+        // always produce, so this arm runs unconditionally.
+        assert_eq!(hash(&in_vec), hash(&in_vec.as_rkref()));
+
+        // The `Box<[u8]>`-backed arm additionally covers an owned foreign buffer,
+        // where available (see `keyed_box`).
+        if let Some(as_box) = keyed_box("alpha", 5, &["t"]) {
+            assert_eq!(hash(&in_vec), hash(&as_box));
+        }
     }
 
     #[test]
@@ -607,14 +718,22 @@ mod tests {
         // Equality and ordering delegate to the archived value, regardless of
         // the (here, differing) backing buffer types.
         let as_vec = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 5, &["t"]));
-        let as_box = keyed_box("alpha", 5, &["t"]);
         let bigger_vec = RkVec::<ArchivedKeyed>::from_val(&keyed("alpha", 6, &["t"]));
 
-        // Equal archived values compare equal across buffer types...
-        assert_eq!(as_vec, as_box);
-        // ...and unequal ones compare unequal.
-        assert_ne!(as_vec, bigger_vec);
+        // A `&[u8]`-backed handle is a different buffer type that both modes can
+        // always produce, so these run unconditionally.
+        assert_eq!(as_vec, as_vec.as_rkref());
+        assert_ne!(as_vec, bigger_vec.as_rkref());
 
+        // ...and the same across an owned `Box<[u8]>` backing, where available
+        // (see `keyed_box`).
+        if let Some(as_box) = keyed_box("alpha", 5, &["t"]) {
+            assert_eq!(as_vec, as_box);
+            assert_ne!(bigger_vec, as_box);
+        }
+
+        // Unequal values compare unequal, and order by the archived value.
+        assert_ne!(as_vec, bigger_vec);
         assert!(as_vec < bigger_vec);
         assert_eq!(
             as_vec.partial_cmp(&bigger_vec),
