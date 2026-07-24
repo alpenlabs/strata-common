@@ -85,11 +85,49 @@ jobs:
       - name: Run doctests
         run: cargo test --doc --all-features
 
+  miri:
+    name: Run Miri on strata-rkyv-utils
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # `strata-rkyv-utils` reads archived values out of borrowed buffers, which
+      # trips Miri's default Stacked Borrows model inside `rkyv` itself
+      # (`rkyv/src/string/repr.rs`, `bytecheck/src/lib.rs`).  That reproduces
+      # with upstream `rkyv` alone — no code from this crate involved — so it is
+      # not this crate's aliasing to fix.  Tree Borrows is the model that
+      # accepts those patterns, and the whole suite passes under it.
+      MIRIFLAGS: -Zmiri-tree-borrows
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install Miri
+        run: |
+          rustup component add miri
+          cargo miri setup
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-on-failure: true
+
+      # Both alignment modes are covered: they select different backing buffers
+      # (`AlignedVec` vs `Vec<u8>`, including the `Vec::from_raw_parts`
+      # allocation transfer) and different alignment enforcement, so neither run
+      # subsumes the other.
+      - name: Run Miri in aligned mode (default)
+        run: cargo miri test -p strata-rkyv-utils --features ssz,codec --locked
+
+      - name: Run Miri in unaligned mode
+        run: cargo miri test -p strata-rkyv-utils --features ssz,codec,unaligned --locked
+
   unit-success:
     name: Check that unit tests pass
     runs-on: ubuntu-latest
     if: always()
-    needs: [test, doc]
+    needs: [test, doc, miri]
     timeout-minutes: 60
     steps:
       - name: Decide whether the needed jobs succeeded or failed
