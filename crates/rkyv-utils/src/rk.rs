@@ -117,7 +117,7 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
     /// Borrows a sub-value `U` that lives *inside* this archive as an independent
     /// [`RkRef`], backed by a subslice of this buffer.
     ///
-    /// `field` must be a reference into this archive — typically obtained by
+    /// `field` must be a reference into this archive, typically obtained by
     /// traversing [`as_ref`](Rk::as_ref), e.g.
     /// `rk.as_rkref_of(&rk.as_ref().some_field)`.  The returned handle borrows
     /// `self` and resolves to the same bytes `field` already pointed at, with no
@@ -127,8 +127,8 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
     /// of `field`, rather than just `field`'s own bytes.  That whole prefix is
     /// required: rkyv stores a value's out-of-line data (a `String`'s
     /// characters, a `Vec`'s elements) at *lower* addresses than the value that
-    /// points at it, and the archived value's relative pointers — offsets from
-    /// their own address — must still resolve.  Keeping the prefix preserves
+    /// points at it, and the archived value's relative pointers (offsets from
+    /// their own address) must still resolve.  Keeping the prefix preserves
     /// both those targets and the field's alignment, so this works for any
     /// field (primitive, `String`, `Vec`, nested struct) and composes
     /// recursively.
@@ -149,8 +149,9 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
     }
 
     /// Borrows a sub-value `U` inside this archive as an [`RkRef`] without any
-    /// validation — the unchecked counterpart of
-    /// [`as_rkref_of`](Rk::as_rkref_of).
+    /// validation.
+    ///
+    /// This is a faster but unchecked counterpart of [`as_rkref_of`](Rk::as_rkref_of).
     ///
     /// # Safety
     ///
