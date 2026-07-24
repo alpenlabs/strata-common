@@ -1,5 +1,6 @@
 //! Shims for SSZ decodeable types.
 
+use std::fmt;
 use std::marker::PhantomData;
 
 use rkyv::{Archive, Deserialize, Serialize};
@@ -8,8 +9,32 @@ use ssz::{Decode, DecodeError, Encode};
 
 /// Wrapper around [`Vec<u8>`] which is presumed to contain a valid SSZ-encoded
 /// instance of a `T`.  Exposes helpers for decoding.
-#[derive(Clone, Debug, Archive, Deserialize, Serialize)]
+#[derive(Archive, Deserialize, Serialize)]
 pub struct RkSsz<T: Decode>(Vec<u8>, PhantomData<T>);
+
+// `Clone`/`Debug` are implemented manually rather than derived: the derives
+// would bound `T: Clone`/`T: Debug`, but the wrapper only ever owns the encoded
+// bytes and a `PhantomData<T>`, so those bounds are needless.
+impl<T: Decode> Clone for RkSsz<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
+    }
+}
+
+/// Prints the full SSZ payload as hex.
+impl<T: Decode> fmt::Debug for RkSsz<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "RkSsz({})", hex::encode(&self.0))
+    }
+}
+
+/// Elides the payload entirely, so human-facing output doesn't get a wall of
+/// hex.  Use the [`Debug`](fmt::Debug) impl to see the bytes.
+impl<T: Decode> fmt::Display for RkSsz<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("RkSsz").finish_non_exhaustive()
+    }
+}
 
 impl<T: Decode> RkSsz<T> {
     /// Constructs a new instance from an arbitrary buffer without checking its
@@ -113,6 +138,26 @@ mod tests {
 
         // ...and it decodes back to the original value.
         assert_eq!(wrapped.try_decode().expect("ssz decode"), msg);
+    }
+
+    /// A payload that is neither [`Clone`] nor [`Debug`], to check that
+    /// `RkSsz`'s impls don't bound on `T`.
+    #[derive(Encode, Decode)]
+    struct BareMsg {
+        id: u64,
+    }
+
+    #[test]
+    fn clone_and_fmt_dont_require_bounds_on_payload() {
+        let wrapped = RkSsz::encode(&BareMsg { id: 0x0102 });
+
+        // Both of these only compile if the impls are bound on the buffer.
+        let cloned = wrapped.clone();
+        assert_eq!(cloned.as_ref(), wrapped.as_ref());
+
+        // `Debug` spells out the payload as hex, `Display` elides it.
+        assert_eq!(format!("{wrapped:?}"), "RkSsz(0201000000000000)");
+        assert_eq!(format!("{wrapped}"), "RkSsz(..)");
     }
 
     #[test]
