@@ -1,7 +1,7 @@
 //! Backing-buffer plumbing for [`RkVec`](crate::RkVec).
 //!
 //! An [`RkVec`](crate::RkVec)'s owned buffer type, and the serializer scratch
-//! buffer it is built from, depend on the alignment mode — and turning rkyv's
+//! buffer it is built from, depend on the alignment mode, and turning rkyv's
 //! [`AlignedVec`] into that buffer involves some `unsafe` allocation handling.
 //! This module isolates that machinery so the [`rk`](crate::rk) module can stay
 //! focused on the [`Rk`](crate::Rk) wrapper itself.
@@ -22,6 +22,11 @@ mod imp {
     /// (default alignment 16, which covers every standard archived primitive),
     /// so a freshly-encoded `RkVec` is alignment-guaranteed by construction.
     pub type RawRkVec = AlignedVec;
+
+    /// The alignment a [`RawRkVec`] allocation is *guaranteed* to have, and thus
+    /// the largest `align_of::<T>()` that can soundly be placed in one without
+    /// checking the resulting address.
+    pub const RAW_VEC_ALIGN: usize = 16;
 
     /// The scratch buffer [`RkVec::from_val`](crate::RkVec::from_val) serializes
     /// into: the default [`AlignedVec`] (alignment 16 == the [`RawRkVec`]
@@ -58,9 +63,16 @@ mod imp {
     /// simpler/cheaper buffer suffices.
     pub type RawRkVec = Vec<u8>;
 
+    /// The alignment a [`RawRkVec`] allocation is *guaranteed* to have, and thus
+    /// the largest `align_of::<T>()` that can soundly be placed in one without
+    /// checking the resulting address.  A `Vec<u8>` promises only 1, which is
+    /// all the archived format needs under `unaligned`, since that makes rkyv's
+    /// own primitives alignment-1.
+    pub const RAW_VEC_ALIGN: usize = 1;
+
     /// The scratch buffer [`RkVec::from_val`](crate::RkVec::from_val) serializes
     /// into: an `AlignedVec<1>`.  Its buffer is allocated by the global allocator
-    /// with `Layout(cap, 1)` — byte-for-byte the layout a `Vec<u8>` uses — so
+    /// with `Layout(cap, 1)`, byte-for-byte the layout a `Vec<u8>` uses, so
     /// [`ser_buf_into_raw`] can move it into the `Vec<u8>` backing with no copy.
     pub(crate) type SerVec = AlignedVec<1>;
 
@@ -81,7 +93,7 @@ mod imp {
     /// Converts a caller-provided [`AlignedVec`] (alignment 16, e.g. straight
     /// from `rkyv::to_bytes`) into the `Vec<u8>` [`RawRkVec`] backing.  This must
     /// copy, because an align-16 allocation cannot be handed to a `Vec<u8>`
-    /// (which would free it as align-1 — UB).
+    /// (which would free it as align-1, UB).
     pub(crate) fn into_raw_buf(buf: AlignedVec) -> RawRkVec {
         buf.into_vec()
     }
@@ -117,6 +129,30 @@ mod tests {
         // here under a strict allocator / Miri).
         raw.extend_from_slice(&[50, 60]);
         assert_eq!(&raw[..], &[10, 20, 30, 40, 50, 60]);
+    }
+
+    /// [`RAW_VEC_ALIGN`] is what the *unvalidated* [`RkVec`](crate::RkVec)
+    /// constructors ([`from_val`](crate::RkVec::from_val),
+    /// [`to_rkvec`](crate::Rk::to_rkvec)) rest on: they place an archived value
+    /// into one of these buffers and later read it back through
+    /// `access_unchecked`, having only const-checked the type's alignment
+    /// against this constant.  So every path that produces a [`RawRkVec`] has to
+    /// actually deliver that alignment, or the guard is checking against a
+    /// promise the backing doesn't keep.
+    #[test]
+    fn every_backing_path_meets_raw_vec_align() {
+        let from_slice = raw_from_slice(&[1u8; 64]);
+        assert!((from_slice.as_ptr() as usize).is_multiple_of(RAW_VEC_ALIGN));
+
+        let mut scratch = SerVec::new();
+        scratch.extend_from_slice(&[2u8; 64]);
+        let from_ser = ser_buf_into_raw(scratch);
+        assert!((from_ser.as_ptr() as usize).is_multiple_of(RAW_VEC_ALIGN));
+
+        let mut aligned = AlignedVec::new();
+        aligned.extend_from_slice(&[3u8; 64]);
+        let from_aligned = into_raw_buf(aligned);
+        assert!((from_aligned.as_ptr() as usize).is_multiple_of(RAW_VEC_ALIGN));
     }
 
     #[test]

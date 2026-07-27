@@ -12,7 +12,32 @@ use rkyv::ser::allocator::ArenaHandle;
 use rkyv::util::AlignedVec;
 use rkyv::{Archive, Portable, Serialize};
 
-use crate::raw_vec::{RawRkVec, SerVec, into_raw_buf, raw_from_slice, ser_buf_into_raw};
+use crate::raw_vec::{
+    RAW_VEC_ALIGN, RawRkVec, SerVec, into_raw_buf, raw_from_slice, ser_buf_into_raw,
+};
+use crate::stable_buf::StableBuf;
+
+/// Compile-time guard for the [`RkVec`] constructors that skip validation.
+///
+/// Those place an archived `T` into a [`RawRkVec`], whose allocation only
+/// guarantees [`RAW_VEC_ALIGN`] (16 by default, 1 under `unaligned`).  A `T`
+/// needing more than that, an archived type declared `#[repr(align(32))]`, or
+/// under `unaligned` any type that kept an explicit alignment, could land
+/// misaligned, making the later `access_unchecked` undefined behaviour.  rkyv's
+/// own alignment assert only catches this in debug builds, so reject it at
+/// compile time instead.
+///
+/// The validating constructors need no such guard: they route through
+/// [`Rk::from_buf`], which reports a misaligned buffer as a clean `Err`.
+const fn assert_backing_align_suffices<T>() {
+    assert!(
+        align_of::<T>() <= RAW_VEC_ALIGN,
+        "rkyv-utils: the archived type's alignment exceeds the alignment an \
+         RkVec's backing buffer guarantees; use a validating constructor \
+         (`from_buf`/`from_aligned_vec`/`from_unaligned_buf`) with a buffer you \
+         have aligned yourself"
+    );
+}
 
 /// A [`RawRkVec`] containing a valid [`rkyv::Archive`]d instance of `T`.
 ///
@@ -58,23 +83,36 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
     ///
     /// # Safety
     ///
-    /// The caller must guarantee that `buf` contains a valid archived `T` *and*
-    /// that its base pointer is aligned to `align_of::<T>()` (trivially true
-    /// under the `unaligned` feature, where that alignment is 1).  Both are
-    /// required for the [`AsRef<T>`](Rk::as_ref) accessor — which calls
-    /// [`rkyv::access_unchecked`] — to be sound.
+    /// The caller must guarantee all of:
+    ///
+    /// - `buf` contains a valid archived `T`;
+    /// - its base pointer is aligned to `align_of::<T>()` (trivially true under the `unaligned`
+    ///   feature, where that alignment is 1);
+    /// - `B`'s `AsRef<[u8]>` impl is *stable*, i.e. every call yields the same slice (see
+    ///   [`StableBuf`]).  Otherwise the two points above could hold for the slice inspected here
+    ///   and not for the one actually read later.
+    ///
+    /// All three are required for the [`AsRef<T>`](Rk::as_ref) accessor, which
+    /// calls [`rkyv::access_unchecked`], to be sound.
     pub unsafe fn new_unchecked(buf: B) -> Self {
         Self(buf, PhantomData)
     }
 
     /// Validates that the buffer contains a valid instance of `T::Archived` and
     /// returns itself wrapping the underlying buffer.
+    ///
+    /// `B` must be a [`StableBuf`]: validation inspects the buffer once here,
+    /// while every later [`as_ref`](Rk::as_ref) re-reads it, so the two have to
+    /// see the same bytes.
     pub fn from_buf<E: Source>(buf: B) -> Result<Self, E>
     where
+        B: StableBuf,
         T: for<'a> CheckBytes<HighValidator<'a, E>>,
     {
         rkyv::access::<T, E>(buf.as_ref())?;
-        // SAFETY: we just checked it
+        // SAFETY: we just validated the buffer's contents and alignment, and
+        // `B: StableBuf` guarantees the later `as_ref` calls behind
+        // `AsRef<T>`/`access_unchecked` observe that same slice.
         Ok(unsafe { Self::new_unchecked(buf) })
     }
 
@@ -99,9 +137,14 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
     /// fresh [`RawRkVec`] carries whatever alignment the active mode requires
     /// (16-aligned [`AlignedVec`] under `aligned`, plain `Vec<u8>` under
     /// `unaligned`).
+    ///
+    /// Fails to compile if `align_of::<T>()` exceeds what that backing
+    /// guarantees (see [`RAW_VEC_ALIGN`]).
     pub fn to_rkvec(&self) -> RkVec<T> {
+        const { assert_backing_align_suffices::<T>() };
         // SAFETY: the bytes are a copy of an already-valid archive, and
-        // `raw_from_slice` produces a buffer with the required alignment.
+        // `raw_from_slice` produces a buffer aligned to `RAW_VEC_ALIGN`, which
+        // the const guard above proved is enough for `T`.
         unsafe { RkVec::new_unchecked(raw_from_slice(self.as_slice())) }
     }
 
@@ -159,8 +202,8 @@ impl<B: AsRef<[u8]>, T: Portable> Rk<B, T> {
     /// [`as_ref`](Rk::as_ref) (i.e. it genuinely points at an archived `U`
     /// inside this buffer).  Then the prefix `&buf[..off + size_of::<U>()]` is a
     /// valid archive of `U` whose root sits at the end, so the resulting
-    /// handle's [`AsRef<U>`](Rk::as_ref) accessor — which calls
-    /// [`rkyv::access_unchecked`] — is sound.
+    /// handle's [`AsRef<U>`](Rk::as_ref) accessor, which calls
+    /// [`rkyv::access_unchecked`], is sound.
     pub unsafe fn as_rkref_of_unchecked<U: Portable>(&self, field: &U) -> RkRef<'_, U> {
         let buf = self.as_slice();
         let off = (field as *const U as usize) - (buf.as_ptr() as usize);
@@ -248,6 +291,9 @@ impl<T: Portable> RkVec<T> {
     /// whose allocation is moved into the `Vec<u8>` backing without copying (see
     /// private `SerVec` type).
     ///
+    /// Fails to compile if `align_of::<T>()` exceeds what that backing
+    /// guarantees (see [`RAW_VEC_ALIGN`]).
+    ///
     /// # Panics
     ///
     /// If serialization fails (which for the in-memory serializer only happens
@@ -257,10 +303,12 @@ impl<T: Portable> RkVec<T> {
         S: Archive<Archived = T>
             + for<'a> Serialize<HighSerializer<SerVec, ArenaHandle<'a>, Error>>,
     {
+        const { assert_backing_align_suffices::<T>() };
         let buf =
             to_bytes_in::<_, Error>(val, SerVec::new()).expect("rkyv-utils: serialization failed");
-        // SAFETY: we just encoded it validly, and `ser_buf_into_raw` preserves
-        // the alignment guarantee the active mode requires.
+        // SAFETY: we just encoded it validly, and `ser_buf_into_raw` yields a
+        // buffer aligned to `RAW_VEC_ALIGN`, which the const guard above proved
+        // is enough for `T`.
         unsafe { Self::new_unchecked(ser_buf_into_raw(buf)) }
     }
 
@@ -269,7 +317,7 @@ impl<T: Portable> RkVec<T> {
     ///
     /// Like [`from_buf`](Rk::from_buf) it runs full structural validation, but
     /// because the input is aligned to 16 it is *guaranteed never to return an
-    /// alignment error* — any error is a structural/content one.  Under
+    /// alignment error*, any error is a structural/content one.  Under
     /// `unaligned` the buffer is copied down into the plain `Vec<u8>` backing.
     pub fn from_aligned_vec<E: Source>(buf: AlignedVec) -> Result<Self, E>
     where
@@ -310,8 +358,8 @@ impl std::error::Error for ProjectionOutOfBounds {}
 /// as a root archived `U`, bounds-checking that `field` lies fully within `buf`.
 ///
 /// The prefix ends at `field`'s last byte (`off + size_of::<U>()`) and begins at
-/// the buffer start so that `field`'s relative pointers — which target lower
-/// addresses — still resolve.  Returns an error (rather than a panic or UB) if
+/// the buffer start so that `field`'s relative pointers, which target lower
+/// addresses, still resolve.  Returns an error (rather than a panic or UB) if
 /// `field` starts before the buffer or extends past its end.
 fn projected_prefix_len<U, E: Source>(buf: &[u8], field: &U) -> Result<usize, E> {
     let base = buf.as_ptr() as usize;
@@ -339,7 +387,7 @@ mod tests {
     use rkyv::util::AlignedVec;
     use rkyv::{Archive, Deserialize, Portable, Serialize};
 
-    use super::{Rk, RkBox, RkRef, RkVec};
+    use super::{Rk, RkBox, RkRef, RkVec, StableBuf};
 
     // --- alignment-mode helpers ---
     //
@@ -348,7 +396,7 @@ mod tests {
     // alignment-1), but in the default aligned mode whether such a buffer can
     // back an `Rk` at all depends on the address the allocator happened to
     // return.  Tests that build `Rk`s from those buffer types therefore have to
-    // assert mode-dependently rather than blindly unwrapping — natively they
+    // assert mode-dependently rather than blindly unwrapping, natively they
     // pass by luck, under Miri (which deliberately picks alignment-exposing
     // addresses) they don't.
 
@@ -360,7 +408,7 @@ mod tests {
 
     /// Runs [`Rk::from_buf`] on a buffer with no alignment guarantee, asserting
     /// the outcome matches the buffer's *actual* alignment: `Ok` exactly when the
-    /// base pointer is aligned for `T`, and otherwise a graceful `Err` — never a
+    /// base pointer is aligned for `T`, and otherwise a graceful `Err`, never a
     /// panic or UB.
     ///
     /// Under `unaligned` this always yields `Some`.  In the default aligned mode
@@ -370,7 +418,7 @@ mod tests {
     /// when they need a handle unconditionally.
     fn from_unguaranteed_buf<B, T>(buf: B) -> Option<Rk<B, T>>
     where
-        B: AsRef<[u8]>,
+        B: StableBuf,
         T: Portable + for<'a> CheckBytes<HighValidator<'a, Error>>,
     {
         let aligned = is_aligned_for::<T>(buf.as_ref());
@@ -425,7 +473,7 @@ mod tests {
 
     /// Builds a `Box<[u8]>`-backed [`RkBox`] from a [`Keyed`] value, for the
     /// cross-buffer-type tests, or `None` when the allocation isn't aligned for
-    /// `ArchivedKeyed` (only reachable in the default aligned mode — see
+    /// `ArchivedKeyed` (only reachable in the default aligned mode, see
     /// [`from_unguaranteed_buf`]).
     fn keyed_box(label: &str, id: u64, tags: &[&str]) -> Option<RkBox<ArchivedKeyed>> {
         let bytes = rkyv::to_bytes::<Error>(&keyed(label, id, tags))
@@ -755,7 +803,7 @@ mod tests {
 
         // Place the archive at a range of offsets inside a larger buffer (padded
         // with filler bytes), so it starts at a variety of mostly-unaligned
-        // addresses.  `from_buf` validates each one and — crucially — reports an
+        // addresses.  `from_buf` validates each one and, crucially, reports an
         // error (rather than UB or a panic) when the start address is not
         // aligned for the archived type.  Under the `unaligned` feature the
         // required alignment is 1 so every offset validates; under `aligned` only

@@ -18,7 +18,7 @@
 //! unaligned for everyone, regardless of whether this crate's own `unaligned`
 //! feature is on.  That can never make access *unsound*, because every runtime
 //! alignment check keys off `align_of::<T>()`, which always reflects rkyv's
-//! actual format — a graph-wide override only relaxes enforcement, it doesn't
+//! actual format, a graph-wide override only relaxes enforcement, it doesn't
 //! introduce UB.
 
 // `ssz_derive` is a dev-dependency used only by the `ssz` feature's tests.
@@ -29,9 +29,11 @@ use ssz_derive as _;
 
 pub(crate) mod raw_vec;
 mod rk;
+mod stable_buf;
 
-pub use raw_vec::RawRkVec;
+pub use raw_vec::{RAW_VEC_ALIGN, RawRkVec};
 pub use rk::{Rk, RkBox, RkRef, RkVec};
+pub use stable_buf::StableBuf;
 
 #[cfg(feature = "ssz")]
 mod ssz_shims;
