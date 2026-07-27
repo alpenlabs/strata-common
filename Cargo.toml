@@ -36,6 +36,7 @@ strata-codec-utils = { path = "crates/codec-utils" }
 strata-crypto = { path = "crates/crypto" }
 strata-db-macros = { path = "crates/db-macros" }
 strata-identifiers = { path = "crates/identifiers" }
+strata-l1-envelope-fmt = { path = "crates/l1proto/envelope-fmt" }
 strata-l1-txfmt = { path = "crates/l1proto/txfmt" }
 strata-logging = { path = "crates/logging" }
 strata-merkle = { path = "crates/merkle" }
