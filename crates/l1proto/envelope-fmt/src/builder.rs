@@ -5,6 +5,7 @@ use bitcoin::opcodes::OP_FALSE;
 use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
 use bitcoin::script::PushBytesBuf;
 
+use crate::SIGNED_LEAF_PUBKEY_LEN;
 use crate::errors::EnvelopeBuildError;
 
 /// Minimum recommended total envelope payload size in bytes.
@@ -178,6 +179,33 @@ pub fn build_envelope_script(payload: &[u8]) -> Result<ScriptBuf, EnvelopeBuildE
     Ok(builder.into_script())
 }
 
+/// Builds a signed envelope leaf:
+/// `<pubkey> OP_CHECKSIG OP_FALSE OP_IF <payload_chunk> OP_ENDIF`.
+///
+/// The pubkey is fixed to [`SIGNED_LEAF_PUBKEY_LEN`] bytes. The
+/// [`MIN_ENVELOPE_PAYLOAD_SIZE`] recommendation is not enforced.
+///
+/// # Errors
+///
+/// Returns [`EnvelopeBuildError::PayloadTooLarge`] if `payload` exceeds
+/// [`MAX_ENVELOPE_PAYLOAD_SIZE`].
+pub fn build_signed_envelope_leaf(
+    pubkey: &[u8; SIGNED_LEAF_PUBKEY_LEN],
+    payload: &[u8],
+) -> Result<ScriptBuf, EnvelopeBuildError> {
+    EnvelopeScriptBuilder::with_pubkey(pubkey)?
+        .add_envelope(payload)?
+        .build_without_min_check()
+}
+
+/// Splits `payload` into chunks of at most [`MAX_ENVELOPE_PAYLOAD_SIZE`] bytes.
+///
+/// Chunks are full-sized except the last, and an empty payload returns no
+/// chunks.
+pub fn split_payload_into_envelope_chunks(payload: &[u8]) -> Vec<&[u8]> {
+    payload.chunks(MAX_ENVELOPE_PAYLOAD_SIZE).collect()
+}
+
 /// Helper function to add envelope opcodes and payload chunks to a builder.
 ///
 /// Takes a mutable builder and a payload, and extends the builder with:
@@ -203,7 +231,7 @@ fn push_envelope(
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::opcodes::all::{OP_ENDIF, OP_IF};
+    use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
     use bitcoin::script::Instruction;
 
     use super::*;
@@ -593,5 +621,108 @@ mod tests {
             .unwrap();
 
         assert!(!script.is_empty());
+    }
+
+    #[test]
+    fn test_build_signed_envelope_leaf_structure() {
+        let pubkey = [0x03; SIGNED_LEAF_PUBKEY_LEN];
+        let payload = vec![7u8; 50];
+
+        let script = build_signed_envelope_leaf(&pubkey, &payload).unwrap();
+        let mut instructions = script.instructions();
+
+        // <32-byte pubkey>
+        match instructions.next() {
+            Some(Ok(Instruction::PushBytes(bytes))) => {
+                assert_eq!(
+                    bytes.as_bytes(),
+                    pubkey.as_slice(),
+                    "leaf must open with the 32-byte pubkey"
+                );
+            }
+            other => panic!("expected pubkey push, got {other:?}"),
+        }
+        // OP_CHECKSIG
+        assert!(matches!(
+            instructions.next(),
+            Some(Ok(Instruction::Op(op))) if op == OP_CHECKSIG
+        ));
+        // OP_FALSE, encoded as an empty push
+        assert!(matches!(
+            instructions.next(),
+            Some(Ok(Instruction::PushBytes(bytes))) if bytes.as_bytes().is_empty()
+        ));
+        // OP_IF
+        assert!(matches!(
+            instructions.next(),
+            Some(Ok(Instruction::Op(op))) if op == OP_IF
+        ));
+        // payload push(es), then OP_ENDIF, then nothing
+        let mut body = Vec::new();
+        loop {
+            match instructions.next() {
+                Some(Ok(Instruction::PushBytes(bytes))) => body.extend_from_slice(bytes.as_bytes()),
+                Some(Ok(Instruction::Op(op))) if op == OP_ENDIF => break,
+                other => panic!("expected data push or OP_ENDIF, got {other:?}"),
+            }
+        }
+        assert_eq!(body, payload, "recovered body must equal the payload");
+        assert!(
+            instructions.next().is_none(),
+            "strict leaf must have nothing after OP_ENDIF"
+        );
+    }
+
+    #[test]
+    fn test_build_signed_envelope_leaf_allows_below_min_payload() {
+        // The 126-byte builder minimum is a `build()`-only efficiency rule; the
+        // strict leaf builder does not apply it, since reveal chunk sizes are
+        // format-determined rather than a caller's choice.
+        let pubkey = [0x02; SIGNED_LEAF_PUBKEY_LEN];
+        let script = build_signed_envelope_leaf(&pubkey, &[1u8; 10]).unwrap();
+        assert!(!script.is_empty());
+    }
+
+    #[test]
+    fn test_build_signed_envelope_leaf_rejects_oversized_payload() {
+        let pubkey = [0x02; SIGNED_LEAF_PUBKEY_LEN];
+        let result = build_signed_envelope_leaf(&pubkey, &vec![0u8; MAX_ENVELOPE_PAYLOAD_SIZE + 1]);
+        match result {
+            Err(EnvelopeBuildError::PayloadTooLarge { total_size, max }) => {
+                assert_eq!(total_size, MAX_ENVELOPE_PAYLOAD_SIZE + 1);
+                assert_eq!(max, MAX_ENVELOPE_PAYLOAD_SIZE);
+            }
+            other => panic!("expected PayloadTooLarge, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_split_payload_into_envelope_chunks_boundaries() {
+        // Empty payload: no chunks (no "one empty chunk" special case).
+        assert!(split_payload_into_envelope_chunks(&[]).is_empty());
+
+        // One byte: a single one-byte chunk.
+        let one = split_payload_into_envelope_chunks(&[9u8]);
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0], &[9u8]);
+
+        // Exactly the ceiling: a single full chunk.
+        let exact = vec![1u8; MAX_ENVELOPE_PAYLOAD_SIZE];
+        let chunks = split_payload_into_envelope_chunks(&exact);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].len(), MAX_ENVELOPE_PAYLOAD_SIZE);
+
+        // One over: a full chunk plus a one-byte remainder; concat round-trips.
+        let over = vec![2u8; MAX_ENVELOPE_PAYLOAD_SIZE + 1];
+        let chunks = split_payload_into_envelope_chunks(&over);
+        assert_eq!(
+            chunks.iter().map(|c| c.len()).collect::<Vec<_>>(),
+            vec![MAX_ENVELOPE_PAYLOAD_SIZE, 1]
+        );
+        assert_eq!(
+            chunks.concat(),
+            over,
+            "re-joining chunks recovers the payload"
+        );
     }
 }
