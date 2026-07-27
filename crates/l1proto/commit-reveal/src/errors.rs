@@ -1,4 +1,4 @@
-//! Errors raised when parsing a commit-reveal set.
+//! Error types for commit-reveal parsing and grouping.
 
 use strata_l1_envelope_fmt::errors::EnvelopeParseError;
 use thiserror::Error;
@@ -127,5 +127,22 @@ pub enum CommitRevealParseError {
         /// The underlying envelope parse failure.
         #[from]
         source: EnvelopeParseError,
+    },
+}
+
+/// Errors that can occur while assigning reveals to parsed commits.
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum CommitRevealGroupingError {
+    /// A reveal transaction spends reveal slots of more than one parsed commit.
+    #[error("reveal tx spends reveal slots of multiple commits")]
+    RevealSpansMultipleCommits,
+
+    /// A parser error found while checking the assigned commit.
+    #[error("malformed reveal for assigned commit: {source}")]
+    Parse {
+        /// The underlying commit-reveal parse failure.
+        #[from]
+        source: CommitRevealParseError,
     },
 }

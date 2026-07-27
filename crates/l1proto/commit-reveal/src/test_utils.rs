@@ -111,6 +111,43 @@ pub(crate) fn parse_commit(commit: &Transaction) -> ParsedCommit {
         .expect("marker matches")
 }
 
+/// A valid commit transaction and its reveal transactions.
+pub(crate) struct CommitRevealTxSet {
+    pub(crate) commit: Transaction,
+    pub(crate) reveals: Vec<Transaction>,
+}
+
+/// Builds one valid commit and one reveal per supplied chunk.
+pub(crate) fn build_commit_reveal_set(
+    magic: &MagicBytes,
+    tail: &[u8],
+    chunks: &[impl AsRef<[u8]>],
+    key_seed: u8,
+) -> CommitRevealTxSet {
+    let pubkey = make_xonly_pubkey_bytes(key_seed);
+    let leaves: Vec<ScriptBuf> = chunks
+        .iter()
+        .map(|chunk| build_signed_envelope_leaf(&pubkey, chunk.as_ref()).expect("leaf builds"))
+        .collect();
+    let marker = build_marker_script(magic, tail);
+    let commit = assemble_commit_tx(marker, leaves.len());
+    let commit_txid = commit.compute_txid();
+    let reveals = leaves
+        .into_iter()
+        .enumerate()
+        .map(|(idx, leaf)| {
+            build_reveal_tx(vec![build_reveal_input_from_leaf(
+                commit_txid,
+                idx as u32 + 1,
+                leaf,
+                key_seed,
+            )])
+        })
+        .collect();
+
+    CommitRevealTxSet { commit, reveals }
+}
+
 /// Assembles a commit tx from a prebuilt marker script and a slot count.
 ///
 /// A writer funds exactly `reveal_slots` P2TR outputs after the marker.

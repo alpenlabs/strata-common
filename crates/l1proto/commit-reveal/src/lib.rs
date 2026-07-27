@@ -27,6 +27,7 @@
 use strata_l1_txfmt::MAGIC_BYTES_LEN;
 
 mod errors;
+mod grouping;
 mod parser;
 
 #[cfg(test)]
@@ -46,7 +47,8 @@ pub const MAX_MARKER_PAYLOAD_BYTES: usize = 80;
 /// rather than written out, so the two cannot drift.
 pub const MAX_MARKER_TAIL_BYTES: usize = MAX_MARKER_PAYLOAD_BYTES - MAGIC_BYTES_LEN;
 
-pub use errors::{CommitRevealParseError, MarkerTailArrayLengthError};
+pub use errors::{CommitRevealGroupingError, CommitRevealParseError, MarkerTailArrayLengthError};
+pub use grouping::assign_reveal_to_commit;
 pub use parser::{
     ParsedCommit, ParsedCommitReveal, RevealSlotRange, extract_commit_reveal_payload,
     extract_payload_for_commit, extract_signed_reveal_envelope, parse_commit_candidate,
