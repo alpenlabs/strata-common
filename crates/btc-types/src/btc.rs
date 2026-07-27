@@ -1104,4 +1104,17 @@ mod tests {
 
         assert!(BitcoinAmount::from_ssz_bytes(&over.as_ssz_bytes()).is_err());
     }
+
+    // `BitcoinAmount` must implement `DecodeView` to be a field in a generated
+    // SSZ container view.
+    #[test]
+    fn bitcoin_amount_impls_ssz_view_decode() {
+        let amount = BitcoinAmount::try_from(100_000_000).unwrap();
+        let bytes = amount.as_ssz_bytes();
+
+        assert_eq!(
+            <BitcoinAmount as ssz::view::DecodeView>::from_ssz_bytes(&bytes).unwrap(),
+            amount,
+        );
+    }
 }
