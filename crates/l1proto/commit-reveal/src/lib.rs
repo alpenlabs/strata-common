@@ -29,6 +29,7 @@ use strata_l1_txfmt::MAGIC_BYTES_LEN;
 
 mod builder;
 mod errors;
+mod grouping;
 mod parser;
 
 #[cfg(test)]
@@ -52,6 +53,10 @@ pub use builder::{
     CommitRevealScripts, build_commit_reveal_scripts, build_commit_reveal_scripts_from_chunks,
 };
 pub use errors::{CommitRevealBuildError, CommitRevealParseError, MarkerTailArrayLengthError};
+pub use grouping::{
+    ParsedCommit, assign_reveal_to_commit, extract_payload_for_parsed_commit,
+    parse_commit_candidate,
+};
 pub use parser::{
     ParsedCommitReveal, RevealSlotRange, extract_payload_from_single_commit_set, read_commit_marker,
 };

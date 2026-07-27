@@ -12,7 +12,7 @@ use strata_l1_envelope_fmt::SIGNED_LEAF_PUBKEY_LEN;
 use strata_l1_envelope_fmt::builder::build_signed_envelope_leaf;
 use strata_l1_txfmt::MagicBytes;
 
-use crate::builder::build_commit_marker_script;
+use crate::builder::{build_commit_marker_script, build_commit_reveal_scripts_from_chunks};
 
 /// Magic used by fixtures unless a test needs a different one.
 pub(crate) const TEST_MAGIC: MagicBytes = MagicBytes::new(*b"TEST");
@@ -86,6 +86,45 @@ pub(crate) fn build_commit_tx(
         });
     }
     tx
+}
+
+/// A valid commit transaction and its reveal transactions.
+pub(crate) struct CommitRevealTxSet {
+    pub(crate) commit: Transaction,
+    pub(crate) reveals: Vec<Transaction>,
+}
+
+/// Builds one valid commit and one reveal per supplied chunk.
+pub(crate) fn build_commit_reveal_set(
+    magic: &MagicBytes,
+    tail: &[u8],
+    chunks: &[impl AsRef<[u8]>],
+    key_seed: u8,
+) -> CommitRevealTxSet {
+    let scripts = build_commit_reveal_scripts_from_chunks(
+        magic,
+        tail,
+        &make_xonly_pubkey_bytes(key_seed),
+        chunks,
+    )
+    .expect("valid commit-reveal set builds");
+    let (marker, leaves) = scripts.into_parts();
+    let commit = assemble_commit_tx(marker, leaves.len());
+    let commit_txid = commit.compute_txid();
+    let reveals = leaves
+        .into_iter()
+        .enumerate()
+        .map(|(idx, leaf)| {
+            build_reveal_tx(vec![build_reveal_input_from_leaf(
+                commit_txid,
+                idx as u32 + 1,
+                leaf,
+                key_seed,
+            )])
+        })
+        .collect();
+
+    CommitRevealTxSet { commit, reveals }
 }
 
 /// Assembles a commit tx from a prebuilt marker script and a slot count.

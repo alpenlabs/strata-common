@@ -109,6 +109,10 @@ pub enum CommitRevealParseError {
     #[error("reveal spends multiple reveal slots of the commit tx")]
     RevealMultipleCommitSpends,
 
+    /// A reveal transaction spends reveal slots of more than one known commit.
+    #[error("reveal tx spends reveal slots of multiple commits")]
+    RevealSpansMultipleCommits,
+
     /// Two reveal transactions claim the same commit output.
     #[error("duplicate reveal for commit output {vout}")]
     DuplicateReveal {

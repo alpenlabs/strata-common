@@ -3,7 +3,7 @@
 //! The enforcement side of the format: what a reader accepts back off chain.
 
 use std::collections::BTreeMap;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 
 use bitcoin::opcodes::all::OP_RETURN;
 use bitcoin::script::Instruction;
@@ -116,6 +116,11 @@ impl RevealSlotRange {
     /// Whether `vout` is a reveal slot of this commit.
     pub const fn contains(&self, vout: u32) -> bool {
         vout >= 1 && vout <= self.last_vout.get()
+    }
+
+    /// How many reveals a complete set has.
+    pub fn slot_count(&self) -> NonZeroUsize {
+        NonZeroUsize::new(self.last_vout.get() as usize).expect("a nonzero u32 is a nonzero usize")
     }
 }
 
@@ -249,8 +254,18 @@ fn assemble_parsed_commit_reveal<'c, 't>(
 ) -> Result<ParsedCommitReveal<'c>, CommitRevealParseError> {
     let slots =
         derive_reveal_slot_range(commit)?.ok_or(CommitRevealParseError::MissingRevealSlots)?;
-    let commit_txid = commit.compute_txid();
+    assemble_from_slots(commit.compute_txid(), marker_tail, slots, reveals)
+}
 
+/// Assembles a set from an already-resolved commit txid, marker tail, and slot
+/// range, enforcing slot coverage, no duplicate or unexpected reveals, and one
+/// pubkey across the set.
+pub(crate) fn assemble_from_slots<'c, 't>(
+    commit_txid: Txid,
+    marker_tail: &'c [u8],
+    slots: RevealSlotRange,
+    reveals: impl IntoIterator<Item = &'t Transaction>,
+) -> Result<ParsedCommitReveal<'c>, CommitRevealParseError> {
     let mut by_vout = BTreeMap::new();
     for reveal in reveals {
         let RevealChunk {
@@ -631,6 +646,14 @@ mod tests {
             error,
             CommitRevealParseError::EmptyRevealSlotRange
         ));
+    }
+
+    /// Slots run `1..=last_vout`, so a complete set has `last_vout` reveals.
+    #[test]
+    fn test_slot_range_slot_count_equals_the_run_length() {
+        let range = RevealSlotRange::try_new(3).expect("nonzero");
+
+        assert_eq!(range.slot_count().get(), 3);
     }
 
     // Chunk extraction.
