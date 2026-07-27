@@ -55,6 +55,12 @@
 //!     .unwrap();
 //! ```
 
+/// Required length of the x-only public key in a signed envelope leaf.
+///
+/// Any other non-zero length is a BIP342 unknown key type that `OP_CHECKSIG` accepts without
+/// a signature (anyone-can-spend).
+pub const SIGNED_LEAF_PUBKEY_LEN: usize = 32;
+
 /// Bitcoin script envelope builder utilities.
 pub mod builder;
 
