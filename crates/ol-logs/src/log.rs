@@ -82,6 +82,8 @@ impl OLLog {
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
+    use ssz::Encode;
+    use ssz::view::DecodeView;
 
     use super::*;
     use crate::{SimpleWithdrawalIntentLogData, SnarkAccountUpdateLogData};
@@ -124,6 +126,18 @@ mod tests {
             vec![0u8; MAX_LOG_PAYLOAD_LEN as usize],
         );
         assert_eq!(log.payload().len(), MAX_LOG_PAYLOAD_LEN as usize);
+    }
+
+    /// The generated view decodes the external `AccountSerial` field via
+    /// `DecodeView`, and `to_owned` rebuilds the container via `ToOwnedSsz`.
+    #[test]
+    fn view_round_trips_external_wrapper_field() {
+        let log = OLLog::new(AccountSerial::new(42), vec![1, 2, 3]);
+        let bytes = log.as_ssz_bytes();
+        let view = OLLogRef::from_ssz_bytes(&bytes).unwrap();
+
+        assert_eq!(view.account_serial().unwrap(), log.account_serial());
+        assert_eq!(view.to_owned(), log);
     }
 
     /// A payload one byte over the cap panics in `OLLog::new`.

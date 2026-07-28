@@ -362,6 +362,13 @@ macro_rules! impl_ssz_via_delegate {
                 ))
             }
         }
+
+        // View trait, so the type can be an external field in a generated SSZ container.
+        impl<'a> ::ssz::view::DecodeView<'a> for $type {
+            fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ::ssz::DecodeError> {
+                <$type as ::ssz::Decode>::from_ssz_bytes(bytes)
+            }
+        }
     };
 }
 
