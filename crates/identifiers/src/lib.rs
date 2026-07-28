@@ -17,6 +17,7 @@ mod acct;
 mod buf;
 mod epoch;
 mod exec;
+mod key_types;
 mod l1;
 mod ol;
 
@@ -42,6 +43,7 @@ pub use epoch::EpochCommitmentRef;
 #[cfg(feature = "borsh")]
 pub use exec::create_evm_extra_payload;
 pub use exec::{EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment, Hash};
+pub use key_types::ArrayKey;
 #[cfg(feature = "ssz")]
 pub use l1::L1BlockCommitmentRef;
 pub use l1::{L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
