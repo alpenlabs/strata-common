@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ssz::DecodeError;
 use ssz_primitives::FixedBytes;
-use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
+use strata_identifiers::{SszDelegate, SszDelegateRef, impl_ssz_via_delegate};
 
 use super::ThresholdSignatureError;
 use crate::ssz_generated::ssz::threshold::{IndexedSignatureSsz, SignatureSetSsz};
@@ -110,6 +110,9 @@ impl SszDelegate for IndexedSignature {
 
 impl_ssz_via_delegate!(IndexedSignature);
 
+/// SSZ view naming [`IndexedSignature`] for an `external_kind: container` field.
+pub type IndexedSignatureRef<'a> = SszDelegateRef<'a, IndexedSignature>;
+
 /// A set of indexed ECDSA signatures for threshold verification.
 ///
 /// Signatures are guaranteed duplicate-free.
@@ -149,6 +152,9 @@ impl SszDelegate for SignatureSet {
 }
 
 impl_ssz_via_delegate!(SignatureSet);
+
+/// SSZ view naming [`SignatureSet`] for an `external_kind: container` field.
+pub type SignatureSetRef<'a> = SszDelegateRef<'a, SignatureSet>;
 
 impl SignatureSet {
     /// Create a new signature set from a vector of indexed signatures.
@@ -200,7 +206,15 @@ impl SignatureSet {
 
 #[cfg(test)]
 mod tests {
+    use strata_ssz_tests::assert_ssz_view_traits;
+
     use super::*;
+
+    #[test]
+    fn test_signature_view_aliases_implement_view_traits() {
+        assert_ssz_view_traits::<IndexedSignature, IndexedSignatureRef<'_>>();
+        assert_ssz_view_traits::<SignatureSet, SignatureSetRef<'_>>();
+    }
 
     fn make_sig(index: u8) -> IndexedSignature {
         let mut signature = [0u8; 65];

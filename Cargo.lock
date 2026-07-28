@@ -4536,7 +4536,13 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-identifiers",
  "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]

@@ -9,7 +9,7 @@ use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use ssz::DecodeError;
 use ssz_primitives::FixedBytes;
-use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
+use strata_identifiers::{SszDelegate, SszDelegateRef, impl_ssz_via_delegate};
 
 use super::ThresholdSignatureError;
 use crate::keys::compressed::CompressedPublicKey;
@@ -119,6 +119,9 @@ impl SszDelegate for ThresholdConfig {
 }
 
 impl_ssz_via_delegate!(ThresholdConfig);
+
+/// SSZ view naming [`ThresholdConfig`] for an `external_kind: container` field.
+pub type ThresholdConfigRef<'a> = SszDelegateRef<'a, ThresholdConfig>;
 
 impl ThresholdConfig {
     /// Create a new threshold configuration.
@@ -383,12 +386,22 @@ impl SszDelegate for ThresholdConfigUpdate {
 
 impl_ssz_via_delegate!(ThresholdConfigUpdate);
 
+/// SSZ view naming [`ThresholdConfigUpdate`] for an `external_kind: container` field.
+pub type ThresholdConfigUpdateRef<'a> = SszDelegateRef<'a, ThresholdConfigUpdate>;
+
 #[cfg(test)]
 mod tests {
     use secp256k1::{Secp256k1, SecretKey};
+    use strata_ssz_tests::assert_ssz_view_traits;
 
     use super::*;
     use crate::test_helpers::ArbitraryGenerator;
+
+    #[test]
+    fn test_config_view_aliases_implement_view_traits() {
+        assert_ssz_view_traits::<ThresholdConfig, ThresholdConfigRef<'_>>();
+        assert_ssz_view_traits::<ThresholdConfigUpdate, ThresholdConfigUpdateRef<'_>>();
+    }
 
     fn make_key(seed: u8) -> CompressedPublicKey {
         let secp = Secp256k1::new();

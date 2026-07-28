@@ -51,7 +51,7 @@ pub use exec::{
 pub use l1::L1BlockCommitmentRef;
 pub use l1::{L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
 #[cfg(feature = "ssz")]
-pub use macros::ssz::SszDelegate;
+pub use macros::ssz::{SszDelegate, SszDelegateRef};
 pub use mmr::L1_HEIGHT_MMR_PREFILL_LEAF;
 #[cfg(feature = "ssz")]
 pub use ol::OLBlockCommitmentRef;

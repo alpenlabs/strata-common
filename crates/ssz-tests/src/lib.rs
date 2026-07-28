@@ -1,6 +1,8 @@
 //! Test utilities for SSZ types.
 //!
-//! This crate provides macros for property-based testing of SSZ-serializable types.
+//! [`ssz_proptest!`] covers encode/decode round-trips and tree-hash determinism.
+//! The delegate-view codegen fixtures live in `tests/`, which needs a
+//! compilation unit separate from the crates it exercises.
 
 #![allow(
     unused_crate_dependencies,
@@ -12,8 +14,18 @@
 pub use proptest;
 #[doc(hidden)]
 pub use ssz;
+use ssz::view::{DecodeView, SszTypeInfo};
+use ssz_types::view::ToOwnedSsz;
+use tree_hash::TreeHash;
 #[doc(hidden)]
 pub use tree_hash::{self, Sha256Hasher};
+
+/// Compiles only if `V` implements the SSZ view traits for owned type `T`.
+pub fn assert_ssz_view_traits<'a, T, V>()
+where
+    V: DecodeView<'a> + SszTypeInfo + TreeHash + ToOwnedSsz<T>,
+{
+}
 
 /// Generates property-based tests for SSZ encoding/decoding and tree hashing.
 ///
@@ -32,7 +44,7 @@ pub use tree_hash::{self, Sha256Hasher};
 ///
 /// Basic usage:
 /// ```ignore
-/// use strata_test_utils_ssz::ssz_proptest;
+/// use strata_ssz_tests::ssz_proptest;
 /// use proptest::prelude::*;
 ///
 /// ssz_proptest!(MyType, any::<u64>().prop_map(MyType::new));
