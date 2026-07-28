@@ -9,41 +9,76 @@ use super::{BoxedLayer, FileLoggingConfig, LoggerConfig, format_service_name, in
 
 /// Configuration parameters for logging initialization.
 ///
-/// Embed this in the binary's config struct (e.g. a `[logging]` TOML section)
-/// or populate it from CLI flags, then call [`init`](Self::init) /
-/// [`init_with_layers`](Self::init_with_layers). Every field is optional, so a
-/// partial or omitted section deserializes cleanly and falls back to the crate
-/// defaults.
+/// Embed this in the binary's config struct (e.g. as a `[logging]` TOML
+/// section) or populate it from CLI flags, then call [`init`](Self::init) /
+/// [`init_with_layers`](Self::init_with_layers) once at process startup.
 ///
-/// It carries only the operator-tunable subset of the settings. The two
-/// binary-provided constants — the base service name and the default log-file
-/// prefix — are passed to the init methods as arguments rather than
-/// serialized, so they never leak into a user's config file.
+/// Every field is optional, so a partial or omitted section deserializes
+/// cleanly. With everything unset, logs go to the console in compact text
+/// format at `info` level (override via `RUST_LOG`); file logging and
+/// OpenTelemetry export stay disabled until [`log_dir`](Self::log_dir) /
+/// [`otlp_url`](Self::otlp_url) are set.
+///
+/// # Example
+///
+/// A `[logging]` section an operator might write:
+///
+/// ```toml
+/// [logging]
+/// service_label = "prod"
+/// otlp_url = "http://localhost:4317"
+/// log_dir = "/var/log/strata"
+/// extra_filter_directives = ["jsonrpsee_server=warn"]
+/// ```
+///
+/// Wiring it up in the binary:
+///
+/// ```no_run
+/// use strata_logging::LoggingInitConfig;
+///
+/// # fn load_config() -> LoggingInitConfig { LoggingInitConfig::default() }
+/// let logging: LoggingInitConfig = load_config();
+/// logging.init("strata-client", "strata");
+/// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LoggingInitConfig {
-    /// Optional service label appended to the service name (e.g. `"prod"`, `"dev"`).
+    /// Label identifying this deployment (e.g. `"prod"`, `"dev"`), appended to
+    /// the base service name in log output and the OpenTelemetry
+    /// `service.name`. When unset, the base name is used as-is.
     pub service_label: Option<String>,
-    /// OpenTelemetry OTLP collector endpoint. When set, OTLP export is enabled.
+    /// OpenTelemetry collector endpoint traces are exported to over gRPC
+    /// (e.g. `"http://localhost:4317"`). When unset, no traces are exported.
     pub otlp_url: Option<String>,
-    /// Directory to write rolling log files into. When unset, file logging is disabled.
+    /// Directory to write rolling log files into, rotated daily. When unset,
+    /// file logging is disabled.
     pub log_dir: Option<PathBuf>,
-    /// Filename prefix for rolling log files. Falls back to the binary's default prefix.
+    /// Filename prefix for the rolling log files (they are named
+    /// `<prefix>.<date>`). When unset, the binary's default prefix is used.
     pub log_file_prefix: Option<String>,
-    /// Use JSON output format instead of the compact text format.
+    /// Emit console logs as JSON instead of compact text. Defaults to compact
+    /// text. File logs are unaffected and always use compact text.
     pub json_format: Option<bool>,
-    /// Extra `EnvFilter` directives applied before `RUST_LOG` (e.g. to silence
-    /// noisy dependencies). Empty when omitted.
+    /// Additional log-filter directives in `RUST_LOG` syntax (e.g.
+    /// `"sp1_core_executor=warn"`), typically used to silence noisy
+    /// dependencies by default. `RUST_LOG` still wins on conflicts.
     pub extra_filter_directives: Vec<String>,
 }
 
 impl LoggingInitConfig {
-    /// Initialize process-global logging from this config.
+    /// Initializes process-global logging from this config.
     ///
-    /// `service_base_name` and `default_log_prefix` are binary-provided
-    /// constants (not part of the serialized config). Must be called once from
-    /// a process entrypoint, inside a Tokio runtime context when `otlp_url` is
-    /// set (the OTLP exporter is built on the reactor).
+    /// Call this once from the process entrypoint; libraries should emit
+    /// `tracing` events and leave subscriber installation to the binary. When
+    /// [`otlp_url`](Self::otlp_url) is set, this must run inside a Tokio
+    /// runtime (the OTLP exporter runs on it), and the binary should call
+    /// [`finalize`](crate::finalize) before exiting to flush pending spans.
+    ///
+    /// `service_base_name` is the service name reported in log output and
+    /// OpenTelemetry metadata; `default_log_prefix` names the log files when
+    /// [`log_file_prefix`](Self::log_file_prefix) is unset. Both are fixed
+    /// per binary, which is why they are arguments here rather than fields
+    /// in the serialized config.
     pub fn init(&self, service_base_name: &str, default_log_prefix: &str) {
         self.init_with_layers(service_base_name, default_log_prefix, Vec::new());
     }
@@ -134,6 +169,9 @@ pub fn init_logging_from_config_with_layers(
     }
 
     // Configure file logging if log directory provided
+    // TODO: `json_format` only applies to the console layer; file logs are
+    // always compact even though `FileLoggingConfig::with_json_format` exists.
+    // Consider exposing a knob for JSON file logs if a consumer needs it.
     let file_logging_config = config.log_dir.map(|dir| {
         let prefix = config
             .log_file_prefix
