@@ -1,0 +1,40 @@
+[package]
+name = "strata-rkyv-utils"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-codec = { workspace = true, optional = true }
+
+# Only used by the `Debug` impls of the `ssz`/`codec` wrapper types.
+hex = { workspace = true, optional = true }
+
+# The `unaligned` rkyv feature is passed through this crate's own `unaligned`
+# feature (see `[features]` below), not hard-enabled here.  `unaligned` makes
+# archived multibyte primitives alignment-1 so the archived format imposes no
+# buffer-alignment requirement; without it rkyv's native format needs the
+# backing buffer aligned (e.g. 8 for a `u64`), which plain `Vec<u8>` /
+# `Box<[u8]>` allocations don't guarantee.
+rkyv = { workspace = true, features = ["alloc", "bytecheck"] }
+rkyv_impl = { workspace = true, optional = true }
+ssz = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Only used by the `ssz` feature's tests for the `Encode`/`Decode` derives.
+ssz_derive = { workspace = true }
+
+[lints]
+workspace = true
+
+[features]
+# Alignment mode, mirroring upstream rkyv's own feature rules: the default (no
+# feature) is rkyv's native aligned archived format, and `unaligned` is purely
+# additive on top of it.
+#
+# - default     rkyv's native archived format (cheaper in-guest reads, but the
+#               backing buffer must be aligned).
+# - `unaligned` makes archived multibyte primitives alignment-1, so the archived
+#               value can live zero-copy in any plain `Vec<u8>` / `Box<[u8]>`.
+unaligned = ["rkyv/unaligned"]
+ssz = ["dep:ssz", "dep:rkyv_impl", "dep:hex"]
+codec = ["dep:strata-codec", "strata-codec/derive", "dep:rkyv_impl", "dep:hex"]
