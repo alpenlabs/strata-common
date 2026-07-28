@@ -6,6 +6,7 @@ use std::time::Duration;
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry::{KeyValue, global};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
+use serde::Deserialize;
 
 use super::service::LoggingInitConfig;
 use super::types::*;
@@ -165,13 +166,43 @@ fn test_logging_init_config_partial_deserialize_uses_defaults() {
     assert!(config.extra_filter_directives.is_empty());
 }
 
-// An empty object deserializes to the full default, matching an omitted section.
+// An empty object (a present-but-empty `[logging]` section) deserializes to
+// the full default.
 #[test]
 fn test_logging_init_config_empty_deserialize_is_default() {
     let config: LoggingInitConfig = serde_json::from_str("{}").expect("should parse");
 
     assert!(config.otlp_url.is_none());
     assert!(config.extra_filter_directives.is_empty());
+}
+
+// Omitting the section entirely is a different serde path from an empty
+// section: the struct's own `#[serde(default)]` doesn't fire for a missing
+// field in the *containing* struct, so the embedding field must carry
+// `#[serde(default)]` itself — this is the pattern the struct docs prescribe.
+#[test]
+fn test_logging_init_config_omitted_section_needs_field_default() {
+    #[derive(Deserialize)]
+    struct Config {
+        #[serde(default)]
+        logging: LoggingInitConfig,
+    }
+
+    // Without the field-level default this would fail with `missing field`.
+    let config: Config = serde_json::from_str("{}").expect("should parse");
+
+    assert!(config.logging.otlp_url.is_none());
+    assert!(config.logging.extra_filter_directives.is_empty());
+
+    // A bare `Deserialize` embedding (no field default) must reject the same
+    // input, otherwise the documented requirement would be stale.
+    #[derive(Deserialize)]
+    struct StrictConfig {
+        #[expect(dead_code, reason = "only deserialization behavior is under test")]
+        logging: LoggingInitConfig,
+    }
+
+    assert!(serde_json::from_str::<StrictConfig>("{}").is_err());
 }
 
 #[test]

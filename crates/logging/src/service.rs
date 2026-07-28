@@ -13,8 +13,11 @@ use super::{BoxedLayer, FileLoggingConfig, LoggerConfig, format_service_name, in
 /// section) or populate it from CLI flags, then call [`init`](Self::init) /
 /// [`init_with_layers`](Self::init_with_layers) once at process startup.
 ///
-/// Every field is optional, so a partial or omitted section deserializes
-/// cleanly. With everything unset, logs go to the console in compact text
+/// Every field is optional, so a partial section deserializes cleanly. For an
+/// *omitted* section to also work, the embedding field must carry its own
+/// `#[serde(default)]` (as in the example below) — the `#[serde(default)]` on
+/// this struct only fills in missing fields once the section itself is
+/// present. With everything unset, logs go to the console in compact text
 /// format at `info` level (override via `RUST_LOG`); file logging and
 /// OpenTelemetry export stay disabled until [`log_dir`](Self::log_dir) /
 /// [`otlp_url`](Self::otlp_url) are set.
@@ -31,14 +34,22 @@ use super::{BoxedLayer, FileLoggingConfig, LoggerConfig, format_service_name, in
 /// extra_filter_directives = ["jsonrpsee_server=warn"]
 /// ```
 ///
-/// Wiring it up in the binary:
+/// Wiring it up in the binary — the `#[serde(default)]` on the field is what
+/// lets the whole `[logging]` section be omitted:
 ///
 /// ```no_run
+/// use serde::Deserialize;
 /// use strata_logging::LoggingInitConfig;
 ///
-/// # fn load_config() -> LoggingInitConfig { LoggingInitConfig::default() }
-/// let logging: LoggingInitConfig = load_config();
-/// logging.init("strata-client", "strata");
+/// #[derive(Deserialize)]
+/// struct Config {
+///     #[serde(default)]
+///     logging: LoggingInitConfig,
+/// }
+///
+/// # fn load_config() -> Config { Config { logging: LoggingInitConfig::default() } }
+/// let config: Config = load_config();
+/// config.logging.init("strata-client", "strata");
 /// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
