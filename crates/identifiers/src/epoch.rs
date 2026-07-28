@@ -25,6 +25,7 @@ use ssz_derive::{Decode, Encode};
 use strata_codec::Codec;
 
 use crate::buf::Buf32;
+use crate::key_types::decl_array_key_struct_impl;
 use crate::ol::{OLBlockCommitment, OLBlockId};
 use crate::{Epoch, Slot};
 
@@ -47,6 +48,11 @@ pub struct EpochCommitment {
 
 #[cfg(feature = "ssz")]
 crate::impl_ssz_fixed_container!(EpochCommitment, [epoch: Epoch, last_slot: Slot, last_blkid: OLBlockId]);
+
+decl_array_key_struct_impl!(
+    EpochCommitment,
+    [epoch: Epoch, last_slot: Slot, last_blkid: OLBlockId]
+);
 
 impl EpochCommitment {
     /// Creates a new epoch commitment from its components.

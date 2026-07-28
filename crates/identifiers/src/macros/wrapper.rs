@@ -93,5 +93,18 @@ macro_rules! impl_buf_wrapper {
                 ::core::fmt::Display::fmt(&self.0, f)
             }
         }
+
+        // Same encoding as the buffer we wrap.
+        impl $crate::ArrayKey for $wrapper {
+            const BYTES: usize = <$name as $crate::ArrayKey>::BYTES;
+
+            fn copy_into(&self, buf: &mut [u8]) {
+                <$name as $crate::ArrayKey>::copy_into(&self.0, buf);
+            }
+
+            fn copy_from(buf: &[u8]) -> Self {
+                Self(<$name as $crate::ArrayKey>::copy_from(buf))
+            }
+        }
     };
 }

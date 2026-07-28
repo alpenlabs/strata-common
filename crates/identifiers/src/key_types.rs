@@ -120,8 +120,69 @@ decl_array_key_int_impl!(i32);
 decl_array_key_int_impl!(i64);
 decl_array_key_int_impl!(i128);
 
+/// Declares an [`ArrayKey`] impl for a newtype wrapping another key type,
+/// giving it exactly the same encoding as the type it wraps.
+///
+/// This must be a newtype a la `struct Foo(Bar);`.
+macro_rules! decl_array_key_wrapper_impl {
+    ($ty:ty => $inner:ty) => {
+        impl $crate::ArrayKey for $ty {
+            const BYTES: usize = <$inner as $crate::ArrayKey>::BYTES;
+
+            fn copy_into(&self, buf: &mut [u8]) {
+                <$inner as $crate::ArrayKey>::copy_into(&self.0, buf);
+            }
+
+            fn copy_from(buf: &[u8]) -> Self {
+                Self(<$inner as $crate::ArrayKey>::copy_from(buf))
+            }
+        }
+    };
+}
+
+/// Declares an [`ArrayKey`] impl for a struct with named fields, encoding the
+/// fields in the order they're listed in.
+///
+/// Since each field is encoded big-endian with no padding, the byte ordering of
+/// the key matches the ordering of the fields as listed, which is usually what
+/// we want out of a composite database key.
+macro_rules! decl_array_key_struct_impl {
+    ($ty:ty, [$($field:ident: $field_ty:ty),+ $(,)?]) => {
+        impl $crate::ArrayKey for $ty {
+            const BYTES: usize = 0 $(+ <$field_ty as $crate::ArrayKey>::BYTES)+;
+
+            fn copy_into(&self, buf: &mut [u8]) {
+                $crate::key_types::assert_buf_len_eq::<Self>(buf);
+                let mut rest = buf;
+                $(
+                    let (cur, next) = core::mem::take(&mut rest)
+                        .split_at_mut(<$field_ty as $crate::ArrayKey>::BYTES);
+                    <$field_ty as $crate::ArrayKey>::copy_into(&self.$field, cur);
+                    rest = next;
+                )+
+                debug_assert!(rest.is_empty());
+            }
+
+            fn copy_from(buf: &[u8]) -> Self {
+                $crate::key_types::assert_buf_len_eq::<Self>(buf);
+                let mut rest = buf;
+                $(
+                    let (cur, next) = rest.split_at(<$field_ty as $crate::ArrayKey>::BYTES);
+                    let $field = <$field_ty as $crate::ArrayKey>::copy_from(cur);
+                    rest = next;
+                )+
+                debug_assert!(rest.is_empty());
+                Self { $($field,)+ }
+            }
+        }
+    };
+}
+
+pub(crate) use decl_array_key_struct_impl;
+pub(crate) use decl_array_key_wrapper_impl;
+
 #[inline(always)]
-fn assert_buf_len_eq<K: ArrayKey>(arr: &[u8]) {
+pub(crate) fn assert_buf_len_eq<K: ArrayKey>(arr: &[u8]) {
     #[cfg(debug_assertions)]
     {
         let len = arr.len();
@@ -226,6 +287,67 @@ mod tests {
         check_roundtrips_arb::<((u8, u16), (u32, u64))>(u);
         check_roundtrips_arb::<(u64, ([u8; 4], (i16, [u8; 0])), [u8; 1])>(u);
         check_roundtrips_arb::<((((u8, u8), u8), u8), u8)>(u);
+    }
+
+    /// Newtype to exercise `decl_array_key_wrapper_impl`.
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Arbitrary)]
+    struct TestWrapper([u8; 12]);
+
+    decl_array_key_wrapper_impl!(TestWrapper => [u8; 12]);
+
+    /// Struct to exercise `decl_array_key_struct_impl`, mixing widths and
+    /// including a wrapper member.
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Arbitrary)]
+    struct TestStruct {
+        idx: u32,
+        pad: [u8; 0],
+        id: TestWrapper,
+        flag: u8,
+    }
+
+    decl_array_key_struct_impl!(
+        TestStruct,
+        [idx: u32, pad: [u8; 0], id: TestWrapper, flag: u8]
+    );
+
+    #[test]
+    fn test_roundtrip_wrapper_and_struct() {
+        let ent = gen_entropy(0xdef0, 16 * 1024);
+        let u = &mut Unstructured::new(&ent);
+
+        check_roundtrips_arb::<TestWrapper>(u);
+        check_roundtrips_arb::<TestStruct>(u);
+
+        // They compose with the other impls like anything else.
+        check_roundtrips_arb::<(TestWrapper, u64)>(u);
+        check_roundtrips_arb::<(TestStruct, [u8; 3])>(u);
+    }
+
+    #[test]
+    fn test_wrapper_and_struct_layout() {
+        assert_eq!(TestWrapper::BYTES, 12);
+        assert_eq!(TestStruct::BYTES, 17);
+
+        // A wrapper encodes exactly like the value it wraps.
+        let inner = [0x11u8; 12];
+        assert_eq!(
+            check_roundtrip(TestWrapper(inner)),
+            check_roundtrip(inner),
+            "wrapper should not change the encoding"
+        );
+
+        // A struct encodes exactly like a tuple of its fields, in order.
+        let s = TestStruct {
+            idx: 0x01020304,
+            pad: [],
+            id: TestWrapper(inner),
+            flag: 0xff,
+        };
+        assert_eq!(
+            check_roundtrip(s),
+            check_roundtrip((s.idx, s.pad, s.id, s.flag)),
+            "struct should encode as its fields in order"
+        );
     }
 
     #[test]

@@ -13,6 +13,7 @@ use ssz_derive::{Decode, Encode};
 use strata_codec::Codec;
 
 use crate::buf::{Buf32, RBuf32};
+use crate::key_types::decl_array_key_struct_impl;
 
 /// L1 block height (as a simple u32)
 pub type L1Height = u32;
@@ -83,6 +84,8 @@ pub struct L1BlockCommitment {
 
 #[cfg(feature = "ssz")]
 crate::impl_ssz_fixed_container!(L1BlockCommitment, [height: L1Height, blkid: L1BlockId]);
+
+decl_array_key_struct_impl!(L1BlockCommitment, [height: L1Height, blkid: L1BlockId]);
 
 impl fmt::Display for L1BlockCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

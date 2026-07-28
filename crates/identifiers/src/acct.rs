@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "ssz")]
 use ssz_derive::{Decode, Encode};
 
+use crate::key_types::decl_array_key_wrapper_impl;
+
 const ACCT_ID_LEN: usize = 32;
 /// Length in bytes of a subject identifier.
 pub const SUBJ_ID_LEN: usize = 32;
@@ -32,6 +34,7 @@ type RawAccountId = [u8; ACCT_ID_LEN];
 pub struct AccountId(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] RawAccountId);
 
 impl_opaque_thin_wrapper!(AccountId => RawAccountId);
+decl_array_key_wrapper_impl!(AccountId => RawAccountId);
 
 impl AccountId {
     /// The "zero" account ID.
@@ -94,6 +97,7 @@ type RawAccountSerial = u32;
 pub struct AccountSerial(RawAccountSerial);
 
 impl_opaque_thin_wrapper!(AccountSerial => RawAccountSerial);
+decl_array_key_wrapper_impl!(AccountSerial => RawAccountSerial);
 
 impl AccountSerial {
     /// Returns the zero serial.
@@ -168,6 +172,7 @@ type RawSubjectId = [u8; SUBJ_ID_LEN];
 pub struct SubjectId(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] RawSubjectId);
 
 impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
+decl_array_key_wrapper_impl!(SubjectId => RawSubjectId);
 
 impl fmt::Display for SubjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
