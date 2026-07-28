@@ -6,7 +6,9 @@ use std::time::Duration;
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry::{KeyValue, global};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
+use serde::Deserialize;
 
+use super::service::LoggingInitConfig;
 use super::types::*;
 
 #[test]
@@ -145,6 +147,62 @@ fn test_logger_config_with_extra_filter_directives() {
             "jsonrpsee_server::server=warn".to_string(),
         ]
     );
+}
+
+// A config that only sets one field must deserialize cleanly and leave every
+// other field at its default — the `#[serde(default)]` on the struct is what
+// lets consumers embed a partial `[logging]` section without hitting
+// `missing field` errors.
+#[test]
+fn test_logging_init_config_partial_deserialize_uses_defaults() {
+    let config: LoggingInitConfig =
+        serde_json::from_str(r#"{ "otlp_url": "http://localhost:4317" }"#).expect("should parse");
+
+    assert_eq!(config.otlp_url.as_deref(), Some("http://localhost:4317"));
+    assert!(config.service_label.is_none());
+    assert!(config.log_dir.is_none());
+    assert!(config.log_file_prefix.is_none());
+    assert!(config.json_format.is_none());
+    assert!(config.extra_filter_directives.is_empty());
+}
+
+// An empty object (a present-but-empty `[logging]` section) deserializes to
+// the full default.
+#[test]
+fn test_logging_init_config_empty_deserialize_is_default() {
+    let config: LoggingInitConfig = serde_json::from_str("{}").expect("should parse");
+
+    assert!(config.otlp_url.is_none());
+    assert!(config.extra_filter_directives.is_empty());
+}
+
+// Omitting the section entirely is a different serde path from an empty
+// section: the struct's own `#[serde(default)]` doesn't fire for a missing
+// field in the *containing* struct, so the embedding field must carry
+// `#[serde(default)]` itself — this is the pattern the struct docs prescribe.
+#[test]
+fn test_logging_init_config_omitted_section_needs_field_default() {
+    #[derive(Deserialize)]
+    struct Config {
+        #[serde(default)]
+        logging: LoggingInitConfig,
+    }
+
+    // Without the field-level default this would fail with `missing field`.
+    let config: Config = serde_json::from_str("{}").expect("should parse");
+
+    assert!(config.logging.otlp_url.is_none());
+    assert!(config.logging.extra_filter_directives.is_empty());
+
+    // A bare `Deserialize` embedding (no field default) must reject the same
+    // input, otherwise the documented requirement would be stale.
+    #[derive(Deserialize)]
+    struct StrictConfig {
+        #[expect(dead_code, reason = "only deserialization behavior is under test")]
+        logging: LoggingInitConfig,
+    }
+
+    assert!(serde_json::from_str::<StrictConfig>("{}").is_err());
 }
 
 #[test]
