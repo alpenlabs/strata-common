@@ -7,22 +7,18 @@ use tracing::info;
 
 use super::{BoxedLayer, FileLoggingConfig, LoggerConfig, format_service_name, init_with_layers};
 
-/// Owned, serde-serializable logging configuration.
+/// Configuration parameters for logging initialization.
 ///
-/// This is the type binaries should embed in their own config structs (e.g. a
-/// `[logging]` TOML section) or populate from CLI flags. Every field is
-/// optional, so a partial or omitted section deserializes cleanly and falls
-/// back to the crate defaults.
+/// Embed this in the binary's config struct (e.g. a `[logging]` TOML section)
+/// or populate it from CLI flags, then call [`init`](Self::init) /
+/// [`init_with_layers`](Self::init_with_layers). Every field is optional, so a
+/// partial or omitted section deserializes cleanly and falls back to the crate
+/// defaults.
 ///
 /// It carries only the operator-tunable subset of the settings. The two
 /// binary-provided constants — the base service name and the default log-file
-/// prefix — are passed to [`init`](Self::init) / [`init_with_layers`](Self::init_with_layers)
-/// as arguments rather than serialized, so they never leak into a user's config
-/// file.
-///
-/// Under the hood these methods build a [`LoggingInitConfigRef`] (the borrowed,
-/// zero-copy view the init routines consume) and forward to
-/// [`init_logging_from_config`] / [`init_logging_from_config_with_layers`].
+/// prefix — are passed to the init methods as arguments rather than
+/// serialized, so they never leak into a user's config file.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LoggingInitConfig {
@@ -80,13 +76,12 @@ impl LoggingInitConfig {
     }
 }
 
-/// Borrowed, zero-copy view of the parameters [`init_logging_from_config`]
-/// consumes.
+/// Zero-copy view of [`LoggingInitConfig`], consumed by
+/// [`init_logging_from_config`] / [`init_logging_from_config_with_layers`].
 ///
-/// Prefer the owned [`LoggingInitConfig`] for config-file / CLI wiring. Reach
-/// for this only when you are assembling the parameters transiently at the call
-/// site (e.g. mixing borrowed CLI args with compile-time string literals) and
-/// don't want an owning struct.
+/// Prefer [`LoggingInitConfig`] for config-file / CLI wiring. Reach for this
+/// only when assembling the parameters transiently at the call site (e.g.
+/// mixing CLI args with compile-time string literals).
 #[derive(Debug)]
 pub struct LoggingInitConfigRef<'a> {
     /// Base service name
