@@ -19,7 +19,9 @@ use serde::{Deserialize, Serialize};
 use ssz::DecodeError;
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_identifiers::{Buf32, SszDelegate, impl_ssz_transparent_wrapper, impl_ssz_via_delegate};
+use strata_identifiers::{
+    Buf32, SszDelegate, SszDelegateRef, impl_ssz_transparent_wrapper, impl_ssz_via_delegate,
+};
 
 use crate::ParseError;
 use crate::ssz_generated::ssz::btc::{
@@ -71,6 +73,9 @@ impl SszDelegate for BitcoinOutPoint {
 }
 
 impl_ssz_via_delegate!(BitcoinOutPoint);
+
+/// SSZ view naming `BitcoinOutPoint` for an `external_kind: container` field.
+pub type BitcoinOutPointRef<'a> = SszDelegateRef<'a, BitcoinOutPoint>;
 
 impl From<OutPoint> for BitcoinOutPoint {
     fn from(value: OutPoint) -> Self {
@@ -272,6 +277,9 @@ impl SszDelegate for BitcoinAmount {
 
 impl_ssz_via_delegate!(BitcoinAmount);
 
+/// SSZ view naming [`BitcoinAmount`] for an `external_kind: container` field.
+pub type BitcoinAmountRef<'a> = SszDelegateRef<'a, BitcoinAmount>;
+
 /// [Borsh](borsh)-friendly Bitcoin [`Txid`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitcoinTxid(Txid);
@@ -291,6 +299,9 @@ impl SszDelegate for BitcoinTxid {
 }
 
 impl_ssz_via_delegate!(BitcoinTxid);
+
+/// SSZ view naming `BitcoinTxid` for an `external_kind: container` field.
+pub type BitcoinTxidRef<'a> = SszDelegateRef<'a, BitcoinTxid>;
 
 impl From<Txid> for BitcoinTxid {
     fn from(value: Txid) -> Self {
@@ -420,6 +431,9 @@ impl SszDelegate for BitcoinTxOut {
 }
 
 impl_ssz_via_delegate!(BitcoinTxOut);
+
+/// SSZ view naming [`BitcoinTxOut`] for an `external_kind: container` field.
+pub type BitcoinTxOutRef<'a> = SszDelegateRef<'a, BitcoinTxOut>;
 
 impl BitcoinTxOut {
     /// Returns a reference to the inner [`TxOut`].
@@ -730,6 +744,9 @@ impl SszDelegate for BitcoinScriptBuf {
 }
 
 impl_ssz_via_delegate!(BitcoinScriptBuf);
+
+/// SSZ view naming `BitcoinScriptBuf` for an `external_kind: container` field.
+pub type BitcoinScriptBufRef<'a> = SszDelegateRef<'a, BitcoinScriptBuf>;
 
 impl BitcoinScriptBuf {
     /// Returns a reference to the inner [`ScriptBuf`].

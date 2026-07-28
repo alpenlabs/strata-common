@@ -2,12 +2,22 @@
 name = "strata-ssz-tests"
 version = "0.1.0"
 edition = "2024"
-description = "Property testing macros for SSZ-serializable types"
+description = "SSZ test support: property-testing macros, and codegen integration tests for delegate views"
 
 [dependencies]
 proptest.workspace = true
 ssz.workspace = true
 tree_hash.workspace = true
+
+# Used by the delegate codegen fixtures in `tests/`.
+ssz_derive.workspace = true
+ssz_primitives.workspace = true
+ssz_types.workspace = true
+strata-identifiers.workspace = true
+tree_hash_derive.workspace = true
+
+[build-dependencies]
+ssz_codegen.workspace = true
 
 [lints]
 workspace = true

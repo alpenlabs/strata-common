@@ -4,7 +4,7 @@ use bitcoin::params::{MAINNET, Params};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz::DecodeError;
-use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
+use strata_identifiers::{SszDelegate, SszDelegateRef, impl_ssz_via_delegate};
 
 /// Wrapper around Bitcoin consensus [`Params`] with serialization support.
 #[derive(Debug, Clone)]
@@ -58,6 +58,9 @@ impl SszDelegate for BtcParams {
 }
 
 impl_ssz_via_delegate!(BtcParams);
+
+/// SSZ view naming [`BtcParams`] for an `external_kind: container` field.
+pub type BtcParamsRef<'a> = SszDelegateRef<'a, BtcParams>;
 
 impl PartialEq for BtcParams {
     fn eq(&self, other: &Self) -> bool {

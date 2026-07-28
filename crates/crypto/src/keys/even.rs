@@ -13,7 +13,7 @@ use secp256k1::{Parity, PublicKey, SECP256K1, SecretKey, XOnlyPublicKey};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Serialize};
 use ssz::DecodeError;
-use strata_identifiers::{Buf32, SszDelegate, impl_ssz_via_delegate};
+use strata_identifiers::{Buf32, SszDelegate, SszDelegateRef, impl_ssz_via_delegate};
 
 /// Represents a secret key whose x-only public key has even parity.
 ///
@@ -75,6 +75,9 @@ impl SszDelegate for EvenPublicKey {
 }
 
 impl_ssz_via_delegate!(EvenPublicKey);
+
+/// SSZ view naming [`EvenPublicKey`] for an `external_kind: container` field.
+pub type EvenPublicKeyRef<'a> = SszDelegateRef<'a, EvenPublicKey>;
 
 impl Deref for EvenPublicKey {
     type Target = PublicKey;

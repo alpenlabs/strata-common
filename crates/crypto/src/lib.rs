@@ -28,10 +28,12 @@ pub mod test_utils;
 pub mod threshold_signature;
 
 // Re-export even parity key types
-pub use keys::even::{EvenPublicKey, EvenSecretKey, even_kp};
+pub use keys::compressed::{CompressedPublicKey, CompressedPublicKeyRef};
+pub use keys::even::{EvenPublicKey, EvenPublicKeyRef, EvenSecretKey, even_kp};
 // Re-export MuSig2 key aggregation
 pub use musig2::{Musig2Error, aggregate_schnorr_keys};
 pub use schnorr::*;
+pub use threshold_signature::*;
 
 #[cfg(test)]
 mod test_helpers;

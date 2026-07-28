@@ -2938,8 +2938,8 @@ dependencies = [
 
 [[package]]
 name = "sizzle-parser"
-version = "0.17.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.17.0#9e33fe8a5cafea88058c0e28dd7ef8b6716352bf"
+version = "0.17.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=feat%2Fsupport-delegates#092550dca946af20e2deb822dbef2b493f78901d"
 dependencies = [
  "thiserror 2.0.19",
 ]
@@ -3575,8 +3575,8 @@ dependencies = [
 
 [[package]]
 name = "ssz"
-version = "0.17.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.17.0#9e33fe8a5cafea88058c0e28dd7ef8b6716352bf"
+version = "0.17.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=feat%2Fsupport-delegates#092550dca946af20e2deb822dbef2b493f78901d"
 dependencies = [
  "hex",
  "itertools 0.15.0",
@@ -3588,8 +3588,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_codegen"
-version = "0.17.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.17.0#9e33fe8a5cafea88058c0e28dd7ef8b6716352bf"
+version = "0.17.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=feat%2Fsupport-delegates#092550dca946af20e2deb822dbef2b493f78901d"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -3608,8 +3608,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_derive"
-version = "0.17.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.17.0#9e33fe8a5cafea88058c0e28dd7ef8b6716352bf"
+version = "0.17.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=feat%2Fsupport-delegates#092550dca946af20e2deb822dbef2b493f78901d"
 dependencies = [
  "darling",
  "quote",
@@ -3618,8 +3618,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_primitives"
-version = "0.17.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.17.0#9e33fe8a5cafea88058c0e28dd7ef8b6716352bf"
+version = "0.17.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=feat%2Fsupport-delegates#092550dca946af20e2deb822dbef2b493f78901d"
 dependencies = [
  "hex",
  "rand 0.8.7",
@@ -3628,8 +3628,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_types"
-version = "0.17.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.17.0#9e33fe8a5cafea88058c0e28dd7ef8b6716352bf"
+version = "0.17.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=feat%2Fsupport-delegates#092550dca946af20e2deb822dbef2b493f78901d"
 dependencies = [
  "itertools 0.15.0",
  "serde",
@@ -3959,7 +3959,13 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-identifiers",
  "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -4561,8 +4567,8 @@ dependencies = [
 
 [[package]]
 name = "tree_hash"
-version = "0.17.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.17.0#9e33fe8a5cafea88058c0e28dd7ef8b6716352bf"
+version = "0.17.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=feat%2Fsupport-delegates#092550dca946af20e2deb822dbef2b493f78901d"
 dependencies = [
  "digest",
  "sha2",
@@ -4574,8 +4580,8 @@ dependencies = [
 
 [[package]]
 name = "tree_hash_derive"
-version = "0.17.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.17.0#9e33fe8a5cafea88058c0e28dd7ef8b6716352bf"
+version = "0.17.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=feat%2Fsupport-delegates#092550dca946af20e2deb822dbef2b493f78901d"
 dependencies = [
  "darling",
  "quote",
