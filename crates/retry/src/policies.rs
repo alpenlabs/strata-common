@@ -33,6 +33,12 @@ impl ExponentialBackoff {
         max_delay_ms: Option<u64>,
     ) -> Self {
         assert!(multiplier_base != 0, "multiplier_base must be non-zero");
+        // Clamp so `max_delay_ms` is a real upper bound from the first retry
+        // onward, not just once `next_delay_ms()` has had a chance to apply it.
+        let base_delay_ms = match max_delay_ms {
+            Some(cap) => base_delay_ms.min(cap),
+            None => base_delay_ms,
+        };
         Self {
             base_delay_ms,
             multiplier,
@@ -73,6 +79,12 @@ mod tests {
             d = b.next_delay_ms(d);
         }
         assert_eq!(d, 60_000);
+    }
+
+    #[test]
+    fn base_delay_above_cap_is_clamped() {
+        let b = ExponentialBackoff::new(100_000, 20, 10, Some(60_000));
+        assert_eq!(b.base_delay_ms(), 60_000);
     }
 
     #[test]
