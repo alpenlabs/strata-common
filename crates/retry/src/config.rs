@@ -20,8 +20,10 @@ const DEFAULT_MAX_DELAY_MS: u64 = 60_000;
 /// [`ExponentialBackoff`]. Mirrors `ExponentialBackoff`'s fields (so it can
 /// build one) and adds the `max_retries` count consumed by the retry helper.
 ///
-/// See the `DEFAULT_*` consts in this module for the default values; together
-/// they give roughly 17 minutes of patience.
+/// See the `DEFAULT_*` consts in this module for the default values. Delays
+/// double each retry (1, 2, 4, ... seconds) but `DEFAULT_MAX_DELAY_MS` caps
+/// growth at 60s, so the 10 retries total 303s (~5 minutes) of patience, not
+/// the ~17 minutes an uncapped doubling schedule would reach.
 ///
 /// [`retry_with_backoff_async`]: crate::retry_with_backoff_async
 #[derive(Debug, Clone, Serialize, Deserialize)]
