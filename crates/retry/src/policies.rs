@@ -54,7 +54,12 @@ impl Backoff for ExponentialBackoff {
     }
 
     fn next_delay_ms(&self, curr_delay_ms: u64) -> u64 {
-        let next = curr_delay_ms.saturating_mul(self.multiplier) / self.multiplier_base;
+        // Widen to u128 before multiplying: a u64 `saturating_mul` can clip the
+        // product to u64::MAX ahead of the division, distorting the fixed-point
+        // ratio (e.g. multiplier == multiplier_base == u64::MAX, which should be
+        // a 1x no-op, would otherwise collapse to a near-zero delay).
+        let product = curr_delay_ms as u128 * self.multiplier as u128;
+        let next = (product / self.multiplier_base as u128).min(u64::MAX as u128) as u64;
         match self.max_delay_ms {
             Some(cap) => next.min(cap),
             None => next,
@@ -85,6 +90,14 @@ mod tests {
     fn base_delay_above_cap_is_clamped() {
         let b = ExponentialBackoff::new(100_000, 20, 10, Some(60_000));
         assert_eq!(b.base_delay_ms(), 60_000);
+    }
+
+    #[test]
+    fn ratio_survives_multiplication_overflow() {
+        // multiplier == multiplier_base is a 1x ratio; with u64 math the
+        // product would saturate to u64::MAX and divide back down to ~1ms.
+        let b = ExponentialBackoff::new(1000, u64::MAX, u64::MAX, None);
+        assert_eq!(b.next_delay_ms(1000), 1000);
     }
 
     #[test]
