@@ -10,7 +10,14 @@ workspace = true
 anyhow.workspace = true
 futures-util.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = [
+  "macros",
+  "rt",
+  "signal",
+  "sync",
+  "time",
+] }
 tracing.workspace = true
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread"] }
