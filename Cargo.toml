@@ -17,6 +17,7 @@ members = [
   "crates/msg-fmt",
   "crates/ol-logs",
   "crates/predicate",
+  "crates/retry",
   "crates/serde-utils",
   "crates/service",
   "crates/ssz-tests",
@@ -42,6 +43,7 @@ strata-metrics = { path = "crates/metrics" }
 strata-msg-fmt = { path = "crates/msg-fmt" }
 strata-ol-logs = { path = "crates/ol-logs" }
 strata-predicate = { path = "crates/predicate" }
+strata-retry = { path = "crates/retry" }
 strata-serde-utils = { path = "crates/serde-utils" }
 strata-service = { path = "crates/service" }
 strata-ssz-tests = { path = "crates/ssz-tests" }
@@ -93,7 +95,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.94"
 sha2 = "0.10"
 thiserror = "2"
-tokio = { version = "1.37", features = ["full"] }
+tokio = { version = "1.37", default-features = false }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-opentelemetry = "0.32"
