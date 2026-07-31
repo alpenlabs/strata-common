@@ -245,16 +245,13 @@ pub(crate) use decl_array_key_wrapper_impl;
 
 #[inline(always)]
 pub(crate) fn assert_buf_len_eq<K: ArrayKey>(arr: &[u8]) {
-    #[cfg(debug_assertions)]
-    {
-        let len = arr.len();
-        assert_eq!(
-            arr.len(),
-            K::BYTES,
-            "arraykey: passed invalid array (exp {}, got {len})",
-            K::BYTES
-        );
-    }
+    let len = arr.len();
+    assert_eq!(
+        arr.len(),
+        K::BYTES,
+        "arraykey: passed invalid array (exp {}, got {len})",
+        K::BYTES
+    );
 }
 
 #[cfg(all(test, feature = "arbitrary"))]
