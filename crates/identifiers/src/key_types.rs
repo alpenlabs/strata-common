@@ -42,6 +42,68 @@ impl<const N: usize> ArrayKey for [u8; N] {
     }
 }
 
+/// Extension trait for "buffer types" that we might want to decode as an [`ArrayKey`].
+pub trait ArrayKeyBuf {
+    /// Attempts to decode the buf into an [`ArrayKey`] type.
+    ///
+    /// Returns `None` if the array is not the right size.
+    fn try_into_key<K: ArrayKey>(&self) -> Option<K>;
+}
+
+impl<T: AsRef<[u8]>> ArrayKeyBuf for T {
+    fn try_into_key<K: ArrayKey>(&self) -> Option<K> {
+        let buf = <Self as AsRef<[u8]>>::as_ref(self);
+        if buf.len() == K::BYTES {
+            Some(K::copy_from(buf))
+        } else {
+            None
+        }
+    }
+}
+
+/// Extension trait for array types that we might want to decode as an [`ArrayKey`].
+///
+/// Unlike [`ArrayKeyBuf`], this is infallible, since the array length is known
+/// statically and MUST be checked at compile time.
+///
+/// You shouldn't have to implement this on your own types, it's just so we can
+/// add trait member fn to `[u8; N]`.
+pub trait ArrayKeyArr<const N: usize> {
+    /// Decodes the array into an [`ArrayKey`] type of exactly the same width.
+    ///
+    /// Instantiating this with a key type whose width isn't `N` MUST fail to
+    /// compile.
+    fn into_key<K: ArrayKey>(self) -> K;
+}
+
+/// Impl for `[u8; N]` arrays that provides the guarantees we expect.
+impl<const N: usize> ArrayKeyArr<N> for [u8; N] {
+    fn into_key<K: ArrayKey>(self) -> K {
+        // Ideally this would be a bound like `K: ArrayKey<BYTES = { N }>`, but
+        // that needs `associated_const_equality`, which isn't stable.  An
+        // inline const inherits the generics of the fn it's in, so we can check
+        // the same thing here, just at monomorphization time instead of when
+        // typechecking the call.
+        assert_key_width_eq::<N, K>();
+        K::copy_from(&self)
+    }
+}
+
+/// Fails to compile if `K` is not exactly `N` bytes wide.
+///
+/// This is a post-monomorphization error, so it only fires where this is
+/// actually instantiated.  That's every real call, but it does mean a bad
+/// instantiation sitting in generic code that's never called goes unreported.
+#[inline(always)]
+fn assert_key_width_eq<const N: usize, K: ArrayKey>() {
+    const {
+        assert!(
+            N == K::BYTES,
+            "arraykey: array length does not match key width"
+        )
+    };
+}
+
 /// Declares an [`ArrayKey`] impl for a tuple of the arity implied by the number
 /// of type parameter names passed to it.
 ///
@@ -189,7 +251,7 @@ pub(crate) fn assert_buf_len_eq<K: ArrayKey>(arr: &[u8]) {
         assert_eq!(
             arr.len(),
             K::BYTES,
-            "dbkey: passed invalid array (exp {}, got {len})",
+            "arraykey: passed invalid array (exp {}, got {len})",
             K::BYTES
         );
     }
@@ -210,7 +272,7 @@ mod tests {
         let mut buf = vec![0u8; K::BYTES];
         k.copy_into(&mut buf);
         let dec = K::copy_from(&buf);
-        assert_eq!(dec, k, "dbkey: roundtrip mismatch (buf {buf:?})");
+        assert_eq!(dec, k, "test: roundtrip mismatch (buf {buf:?})");
         buf
     }
 
@@ -348,6 +410,29 @@ mod tests {
             check_roundtrip((s.idx, s.pad, s.id, s.flag)),
             "struct should encode as its fields in order"
         );
+    }
+
+    #[test]
+    fn test_into_key_from_arr() {
+        // Arrays are their own key type, so this is just a passthrough.
+        assert_eq!([1u8, 2, 3, 4].into_key::<[u8; 4]>(), [1, 2, 3, 4]);
+        assert_eq!([].into_key::<[u8; 0]>(), [0u8; 0]);
+
+        // Ints decode big-endian, matching `copy_from`.
+        assert_eq!([0x01u8, 0x02, 0x03, 0x04].into_key::<u32>(), 0x01020304);
+        assert_eq!([0xffu8].into_key::<i8>(), -1);
+
+        // Composites work too, which is the case a length marker trait
+        // couldn't have covered.
+        let (a, b) = [0x01u8, 0x02, 0x03, 0x04, 0x05].into_key::<(u8, u32)>();
+        assert_eq!((a, b), (0x01, 0x02030405));
+
+        let w = [0x11u8; 12].into_key::<TestWrapper>();
+        assert_eq!(w, TestWrapper([0x11; 12]));
+
+        // ...and it agrees with going through `copy_from` directly.
+        let buf = [0xa5u8; 17];
+        assert_eq!(buf.into_key::<TestStruct>(), TestStruct::copy_from(&buf));
     }
 
     #[test]
