@@ -69,21 +69,13 @@ impl PredicateKey {
             .expect("empty condition is always within the length limit")
     }
 
-    /// Returns a borrowed view of this predicate key as a `PredicateKeyBuf`.
+    /// Attempts to borrow this predicate key as a `PredicateKeyBuf`.
     ///
-    /// This provides zero-copy access to the predicate key condition bytes.
-    ///
-    /// # Panics
-    /// Panics if the raw type identifier doesn't map to a known [`PredicateTypeId`]. This can't
-    /// happen for a key built through [`PredicateKey::try_new`], but the SSZ-decoded `id` field is
-    /// an unvalidated raw byte, so a key decoded from untrusted bytes (e.g. `from_ssz_bytes`) can
-    /// carry an unregistered type. Use [`Self::try_as_buf_ref`] for keys of unknown provenance.
-    pub fn as_buf_ref(&self) -> PredicateKeyBuf<'_> {
-        self.try_as_buf_ref()
-            .expect("predicate type should be validated at construction")
-    }
-
-    /// Attempts to borrow this predicate key as a `PredicateKeyBuf` without panicking.
+    /// # Errors
+    /// Returns an error if the raw type identifier doesn't map to a known [`PredicateTypeId`].
+    /// This can't happen for a key built through [`PredicateKey::try_new`], but the SSZ-decoded
+    /// `id` field is an unvalidated raw byte, so a key decoded from untrusted bytes (e.g.
+    /// `from_ssz_bytes`) can carry an unregistered type.
     pub fn try_as_buf_ref(&self) -> PredicateResult<PredicateKeyBuf<'_>> {
         Ok(PredicateKeyBuf {
             id: self.id.try_into()?,
@@ -201,7 +193,7 @@ mod tests {
             let condition = predkey.condition().to_vec();
             let id: PredicateTypeId = predkey.id().try_into().unwrap();
             let predkey = PredicateKey::try_new(id, condition.clone()).unwrap();
-            let buf = predkey.as_buf_ref();
+            let buf = predkey.try_as_buf_ref().unwrap();
 
             prop_assert_eq!(buf.id(), id);
             prop_assert_eq!(buf.condition(), condition.as_slice());

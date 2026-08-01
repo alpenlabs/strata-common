@@ -49,7 +49,7 @@
 //! let witness = b"test_signature";
 //!
 //! // Verify using the global function
-//! let predicate_bytes = predkey.as_buf_ref().to_bytes();
+//! let predicate_bytes = predkey.try_as_buf_ref().unwrap().to_bytes();
 //! strata_predicate::verify_claim_witness(&predicate_bytes, claim, witness).unwrap();
 //!
 //! // Or verify using the predicate key method
