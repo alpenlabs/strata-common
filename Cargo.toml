@@ -61,7 +61,7 @@ tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.17.
 # External dependencies
 anyhow = "1"
 arbitrary = { version = "1.4", features = ["derive"] }
-bincode = "1.3"
+bincode = "3.0"
 bitcoin = { version = "0.32.9" }
 bitcoin-bosd = { git = "https://github.com/alpenlabs/bitcoin-bosd", tag = "v0.12.0", default-features = false }
 borsh = { version = "1.5.0", features = ["derive"] }
