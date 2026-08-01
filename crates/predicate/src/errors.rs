@@ -21,6 +21,15 @@ pub enum PredicateError {
     #[error("missing predicate type")]
     MissingPredicateType,
 
+    /// Predicate condition bytes exceed the maximum allowed length.
+    #[error("condition length {len} exceeds maximum of {max} bytes")]
+    ConditionTooLong {
+        /// The length of the provided condition bytes.
+        len: usize,
+        /// The maximum allowed condition length.
+        max: usize,
+    },
+
     /// Unknown predicate type name in string parsing.
     #[error("unknown predicate type name: {0}")]
     UnknownPredicateTypeName(String),

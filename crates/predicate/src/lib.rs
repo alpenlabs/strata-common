@@ -41,7 +41,8 @@
 //! use strata_predicate::{PredicateKey, PredicateTypeId};
 //!
 //! // Create a predicate key (always accept type for testing)
-//! let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test_condition".to_vec());
+//! let predkey =
+//!     PredicateKey::try_new(PredicateTypeId::AlwaysAccept, b"test_condition".to_vec()).unwrap();
 //!
 //! // Define claim and witness data
 //! let claim = b"hello world";

@@ -74,5 +74,5 @@ pub(crate) fn bounded_condition_strategy(max_len: usize) -> impl Strategy<Value 
 
 pub(crate) fn predicate_key_strategy() -> impl Strategy<Value = PredicateKey> {
     (predicate_type_id_strategy(), condition_strategy())
-        .prop_map(|(id, condition)| PredicateKey::new(id, condition))
+        .prop_map(|(id, condition)| PredicateKey::try_new(id, condition).unwrap())
 }
