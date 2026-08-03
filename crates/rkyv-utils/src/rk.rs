@@ -15,7 +15,7 @@ use rkyv::{Archive, Portable, Serialize};
 use crate::raw_vec::{
     RAW_VEC_ALIGN, RawRkVec, SerVec, into_raw_buf, raw_from_slice, ser_buf_into_raw,
 };
-use crate::stable_buf::StableBuf;
+use crate::stable_buf::{CloneBuf, StableBuf};
 
 /// Compile-time guard for the [`RkVec`] constructors that skip validation.
 ///
@@ -67,10 +67,24 @@ pub struct Rk<B: AsRef<[u8]>, T: Portable>(B, PhantomData<T>);
 // `Clone`, e.g. `ArchivedString`).  A `#[derive]` would wrongly add a `T: Clone`
 // bound.  This is what lets, say, an `Rk<Arc<[u8]>, _>` clone by simply bumping
 // the `Arc` refcount.
-impl<B: AsRef<[u8]> + Copy, T: Portable> Copy for Rk<B, T> {}
+//
+// The bound is [`CloneBuf`] rather than plain `Clone` because a clone must not
+// weaken the alignment the archive was validated at: a backing that reallocates
+// (`Vec<u8>`, `Box<[u8]>`) hands back an allocation with no alignment guarantee,
+// and `as_ref` would then feed a misaligned buffer to `access_unchecked`.  The
+// const guard below checks `T` against what the backing's clone does promise.
+impl<B: CloneBuf + Copy, T: Portable> Copy for Rk<B, T> {}
 
-impl<B: AsRef<[u8]> + Clone, T: Portable> Clone for Rk<B, T> {
+impl<B: CloneBuf, T: Portable> Clone for Rk<B, T> {
     fn clone(&self) -> Self {
+        const {
+            assert!(
+                align_of::<T>() <= B::CLONE_ALIGN,
+                "rkyv-utils: cloning this backing buffer would drop the alignment \
+                 the archive was validated at; copy into an owned `RkVec` with \
+                 `to_rkvec()` instead"
+            )
+        };
         Self(self.0.clone(), PhantomData)
     }
 }
@@ -679,6 +693,38 @@ mod tests {
         // Dropping one clone returns the count to a single strong reference.
         drop(cloned);
         assert_eq!(Arc::strong_count(rk.inner()), 1);
+    }
+
+    #[test]
+    fn clone_of_reallocating_backing_stays_aligned() {
+        // The counterpart of the `Arc` case above: a `RawRkVec` backing does
+        // *not* share its allocation on clone, it reallocates.  `Rk`'s `Clone`
+        // never re-validates, so the fresh allocation has to carry the archived
+        // type's alignment on its own, which is exactly what the `CloneBuf`
+        // const guard is there to guarantee (`CLONE_ALIGN` is 16 for the
+        // `AlignedVec` backing, 1 for the `Vec<u8>` one under `unaligned`).
+        let val = keyed("epsilon", 0xFEED_FACE_DEAD_BEEF, &["p", "q"]);
+        let rk = RkVec::<ArchivedKeyed>::from_val(&val);
+        let cloned = rk.clone();
+
+        // A genuine copy into a separate allocation...
+        assert_ne!(cloned.as_slice().as_ptr(), rk.as_slice().as_ptr());
+        assert_eq!(cloned.as_slice(), rk.as_slice());
+
+        // ...whose base pointer still satisfies the archived type's alignment,
+        // so reading through the clone is sound.
+        assert!(is_aligned_for::<ArchivedKeyed>(cloned.as_slice()));
+
+        // And it resolves to the same archived value, outliving the original.
+        drop(rk);
+        assert_eq!(cloned.as_ref().label.as_str(), "epsilon");
+        assert_eq!(cloned.as_ref().id.to_native(), 0xFEED_FACE_DEAD_BEEF);
+        assert_eq!(
+            rkyv::deserialize::<Keyed, Error>(cloned.as_ref())
+                .unwrap()
+                .tags,
+            val.tags
+        );
     }
 
     // --- value semantics (delegate to the archived value) ---

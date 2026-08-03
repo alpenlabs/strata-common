@@ -33,7 +33,7 @@ mod stable_buf;
 
 pub use raw_vec::{RAW_VEC_ALIGN, RawRkVec};
 pub use rk::{Rk, RkBox, RkRef, RkVec};
-pub use stable_buf::StableBuf;
+pub use stable_buf::{CloneBuf, StableBuf};
 
 #[cfg(feature = "ssz")]
 mod ssz_shims;
