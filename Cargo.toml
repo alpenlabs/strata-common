@@ -18,6 +18,7 @@ members = [
   "crates/ol-logs",
   "crates/predicate",
   "crates/retry",
+  "crates/rpc-tracing",
   "crates/serde-utils",
   "crates/service",
   "crates/ssz-tests",
@@ -44,6 +45,7 @@ strata-msg-fmt = { path = "crates/msg-fmt" }
 strata-ol-logs = { path = "crates/ol-logs" }
 strata-predicate = { path = "crates/predicate" }
 strata-retry = { path = "crates/retry" }
+strata-rpc-tracing = { path = "crates/rpc-tracing" }
 strata-serde-utils = { path = "crates/serde-utils" }
 strata-service = { path = "crates/service" }
 strata-ssz-tests = { path = "crates/ssz-tests" }
@@ -71,7 +73,9 @@ digest = "0.10"
 futures = "0.3"
 futures-util = "0.3"
 hex = { version = "0.4", features = ["serde"] }
+http = "1"
 int-enum = "1"
+jsonrpsee = "0.26"
 metrics = "0.24"
 metrics-exporter-otel = "0.3"
 metrics-exporter-prometheus = { version = "0.18", default-features = false, features = [
@@ -100,6 +104,7 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-opentelemetry = "0.32"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+tower = "0.5"
 zeroize = { version = "1.8.1", features = ["derive"] }
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.3.0" }
 zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.3.0" }
