@@ -1,9 +1,9 @@
 //! Predicate key implementation and type registry.
 
-use crate::PredicateKey;
 use crate::errors::{PredicateError, PredicateResult};
 use crate::type_ids::PredicateTypeId;
 use crate::verifiers::VerifierType;
+use crate::{MAX_CONDITION_LEN, PredicateKey};
 
 /// A zero-copy predicate key that borrows from a buffer.
 ///
@@ -25,17 +25,21 @@ impl PredicateKey {
     /// * `id` - The predicate type identifier indicating which backend to use
     /// * `condition` - The backend-specific predicate condition bytes
     ///
-    /// # Examples
-    /// ```
-    /// use strata_predicate::{PredicateKey, PredicateTypeId};
-    ///
-    /// let predkey = PredicateKey::new(PredicateTypeId::AlwaysAccept, b"test".to_vec());
-    /// ```
-    pub fn new(id: PredicateTypeId, condition: Vec<u8>) -> Self {
-        Self {
+    /// # Errors
+    /// Returns [`PredicateError::ConditionTooLong`] if `condition` is longer than
+    /// [`MAX_CONDITION_LEN`].
+    pub fn try_new(id: PredicateTypeId, condition: Vec<u8>) -> PredicateResult<Self> {
+        let len = condition.len();
+        let condition = condition
+            .try_into()
+            .map_err(|_| PredicateError::ConditionTooLong {
+                len,
+                max: MAX_CONDITION_LEN as usize,
+            })?;
+        Ok(Self {
             id: id.as_u8(),
-            condition: condition.try_into().expect("valid length"),
-        }
+            condition,
+        })
     }
 
     /// Returns the raw predicate type identifier.
@@ -53,25 +57,25 @@ impl PredicateKey {
     /// This is useful for testing scenarios where you need a predicate that
     /// unconditionally validates any input.
     pub fn always_accept() -> Self {
-        Self::new(PredicateTypeId::AlwaysAccept, Vec::new())
+        Self::try_new(PredicateTypeId::AlwaysAccept, Vec::new())
+            .expect("empty condition is always within the length limit")
     }
 
     /// Creates a predicate key that never accepts any witness for any claim.
     ///
     /// This represents an empty/invalid predicate that will reject all verification attempts.
     pub fn never_accept() -> Self {
-        Self::new(PredicateTypeId::NeverAccept, Vec::new())
+        Self::try_new(PredicateTypeId::NeverAccept, Vec::new())
+            .expect("empty condition is always within the length limit")
     }
 
-    /// Returns a borrowed view of this predicate key as a `PredicateKeyBuf`.
+    /// Attempts to borrow this predicate key as a `PredicateKeyBuf`.
     ///
-    /// This provides zero-copy access to the predicate key condition bytes.
-    pub fn as_buf_ref(&self) -> PredicateKeyBuf<'_> {
-        self.try_as_buf_ref()
-            .expect("predicate type should be validated at construction")
-    }
-
-    /// Attempts to borrow this predicate key as a `PredicateKeyBuf` without panicking.
+    /// # Errors
+    /// Returns an error if the raw type identifier doesn't map to a known [`PredicateTypeId`].
+    /// This can't happen for a key built through [`PredicateKey::try_new`], but the SSZ-decoded
+    /// `id` field is an unvalidated raw byte, so a key decoded from untrusted bytes (e.g.
+    /// `from_ssz_bytes`) can carry an unregistered type.
     pub fn try_as_buf_ref(&self) -> PredicateResult<PredicateKeyBuf<'_>> {
         Ok(PredicateKeyBuf {
             id: self.id.try_into()?,
@@ -107,10 +111,16 @@ impl<'b> TryFrom<&'b [u8]> for PredicateKeyBuf<'b> {
         }
 
         let id = PredicateTypeId::try_from(bytes[0])?;
-        Ok(Self {
-            id,
-            condition: &bytes[1..],
-        })
+        let condition = &bytes[1..];
+        let max = MAX_CONDITION_LEN as usize;
+        if condition.len() > max {
+            return Err(PredicateError::ConditionTooLong {
+                len: condition.len(),
+                max,
+            });
+        }
+
+        Ok(Self { id, condition })
     }
 }
 
@@ -141,7 +151,14 @@ impl<'b> PredicateKeyBuf<'b> {
     pub fn to_owned(&self) -> PredicateKey {
         PredicateKey {
             id: self.id.as_u8(),
-            condition: self.condition.to_vec().try_into().expect("valid length"),
+            // Every `PredicateKeyBuf` is built either from `TryFrom<&[u8]>` (which enforces the
+            // length bound) or from `PredicateKey::try_as_buf_ref` (whose condition is already a
+            // bounded `VariableList`), so this can never exceed `MAX_CONDITION_LEN`.
+            condition: self
+                .condition
+                .to_vec()
+                .try_into()
+                .expect("condition length bounded by construction"),
         }
     }
 
@@ -175,8 +192,8 @@ mod tests {
         proptest!(|(predkey in predicate_key_strategy())| {
             let condition = predkey.condition().to_vec();
             let id: PredicateTypeId = predkey.id().try_into().unwrap();
-            let predkey = PredicateKey::new(id, condition.clone());
-            let buf = predkey.as_buf_ref();
+            let predkey = PredicateKey::try_new(id, condition.clone()).unwrap();
+            let buf = predkey.try_as_buf_ref().unwrap();
 
             prop_assert_eq!(buf.id(), id);
             prop_assert_eq!(buf.condition(), condition.as_slice());
@@ -236,9 +253,33 @@ mod tests {
     }
 
     #[test]
+    fn test_try_new_rejects_oversized_condition() {
+        let oversized = vec![0u8; MAX_CONDITION_LEN as usize + 1];
+        let result = PredicateKey::try_new(PredicateTypeId::AlwaysAccept, oversized);
+        assert!(matches!(
+            result,
+            Err(PredicateError::ConditionTooLong { len, max })
+            if len == MAX_CONDITION_LEN as usize + 1 && max == MAX_CONDITION_LEN as usize
+        ));
+    }
+
+    #[test]
+    fn test_try_from_rejects_oversized_condition() {
+        let mut bytes = vec![PredicateTypeId::AlwaysAccept.as_u8()];
+        bytes.extend(vec![0u8; MAX_CONDITION_LEN as usize + 1]);
+
+        let result = PredicateKeyBuf::try_from(bytes.as_slice());
+        assert!(matches!(
+            result,
+            Err(PredicateError::ConditionTooLong { len, max })
+            if len == MAX_CONDITION_LEN as usize + 1 && max == MAX_CONDITION_LEN as usize
+        ));
+    }
+
+    #[test]
     #[cfg(not(feature = "schnorr"))]
     fn test_unsupported_schnorr_gives_helpful_error() {
-        let predkey = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32]);
+        let predkey = PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32]).unwrap();
         let claim = b"test claim";
         let witness = b"test witness";
 
@@ -256,7 +297,7 @@ mod tests {
     #[test]
     #[cfg(not(feature = "sp1-groth16"))]
     fn test_unsupported_sp1_gives_helpful_error() {
-        let predkey = PredicateKey::new(PredicateTypeId::Sp1Groth16, vec![0u8; 32]);
+        let predkey = PredicateKey::try_new(PredicateTypeId::Sp1Groth16, vec![0u8; 32]).unwrap();
         let claim = b"test claim";
         let witness = b"test witness";
 
