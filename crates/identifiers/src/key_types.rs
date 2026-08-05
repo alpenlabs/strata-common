@@ -16,14 +16,14 @@ pub trait ArrayKey {
     ///
     /// # Panics
     ///
-    /// If called with a slice that is not [`Self::WIDTH`] bytes.
+    /// If called with a slice that is not [`Self::BYTES`] bytes.
     fn copy_into(&self, buf: &mut [u8]);
 
     /// Constructs an instance of the key by decoding from bytes.
     ///
     /// # Panics
     ///
-    /// If called with a slice that is not [`Self::WIDTH`] bytes.
+    /// If called with a slice that is not [`Self::BYTES`] bytes.
     fn copy_from(buf: &[u8]) -> Self;
 }
 
