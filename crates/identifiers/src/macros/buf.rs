@@ -97,7 +97,7 @@ macro_rules! impl_buf_core {
             }
         }
 
-        $crate::key_types::decl_array_key_wrapper_impl!($name => [u8; $len]);
+        $crate::array_keys::decl_array_key_wrapper_impl!($name => [u8; $len]);
     };
 }
 

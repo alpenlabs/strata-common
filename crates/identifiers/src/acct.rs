@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "ssz")]
 use ssz_derive::{Decode, Encode};
 
-use crate::key_types::decl_array_key_wrapper_impl;
+use crate::array_keys::decl_array_key_wrapper_impl;
 
 const ACCT_ID_LEN: usize = 32;
 /// Length in bytes of a subject identifier.

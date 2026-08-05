@@ -14,10 +14,10 @@ use strata_ssz_tests as _;
 mod macros;
 
 mod acct;
+mod array_keys;
 mod buf;
 mod epoch;
 mod exec;
-mod key_types;
 mod l1;
 mod ol;
 
@@ -36,6 +36,7 @@ pub use acct::{
     AccountId, AccountSerial, AccountTypeId, BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL,
     RawAccountTypeId, SUBJ_ID_LEN, SYSTEM_RESERVED_ACCTS, SubjectId, SubjectIdBytes,
 };
+pub use array_keys::{ArrayKey, ArrayKeyArr, ArrayKeyBuf};
 pub use buf::{Buf20, Buf32, Buf64, RBuf32};
 pub use epoch::EpochCommitment;
 #[cfg(feature = "ssz")]
@@ -43,7 +44,6 @@ pub use epoch::EpochCommitmentRef;
 #[cfg(feature = "borsh")]
 pub use exec::create_evm_extra_payload;
 pub use exec::{EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment, Hash};
-pub use key_types::{ArrayKey, ArrayKeyArr, ArrayKeyBuf};
 #[cfg(feature = "ssz")]
 pub use l1::L1BlockCommitmentRef;
 pub use l1::{L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};

@@ -5,8 +5,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::array_keys::decl_array_key_struct_impl;
 use crate::buf::Buf32;
-use crate::key_types::decl_array_key_struct_impl;
 
 /// Alias to [`Buf32`] used as a universal hash type in EE.
 pub type Hash = Buf32;

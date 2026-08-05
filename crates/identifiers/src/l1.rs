@@ -12,8 +12,8 @@ use ssz_derive::{Decode, Encode};
 #[cfg(feature = "codec")]
 use strata_codec::Codec;
 
+use crate::array_keys::decl_array_key_struct_impl;
 use crate::buf::{Buf32, RBuf32};
-use crate::key_types::decl_array_key_struct_impl;
 
 /// L1 block height (as a simple u32)
 pub type L1Height = u32;

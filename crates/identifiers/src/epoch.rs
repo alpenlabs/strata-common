@@ -24,8 +24,8 @@ use ssz_derive::{Decode, Encode};
 #[cfg(feature = "codec")]
 use strata_codec::Codec;
 
+use crate::array_keys::decl_array_key_struct_impl;
 use crate::buf::Buf32;
-use crate::key_types::decl_array_key_struct_impl;
 use crate::ol::{OLBlockCommitment, OLBlockId};
 use crate::{Epoch, Slot};
 
