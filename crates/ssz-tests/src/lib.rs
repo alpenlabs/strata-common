@@ -1,6 +1,8 @@
 //! Test utilities for SSZ types.
 //!
-//! This crate provides macros for property-based testing of SSZ-serializable types.
+//! [`ssz_proptest!`] covers encode/decode round-trips and tree-hash determinism.
+//! The delegate-view codegen fixtures live in `tests/`, which needs a
+//! compilation unit separate from the crates it exercises.
 
 #![allow(
     unused_crate_dependencies,

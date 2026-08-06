@@ -1,0 +1,121 @@
+# Schema exercising both delegate-wrapper classes as external containers.
+#
+# `consumer` is the integration test's own module, which declares the wrappers
+# and the aliases naming their views. Resolving through a module rather than an
+# external crate keeps the fixtures out of any production crate's API.
+
+import consumer
+
+### Delegate for the representation wrapper.
+class PairSsz(Container):
+    ### Arbitrary payload.
+    a: uint64
+    ### Second field, so the delegate is a multi-field container.
+    b: uint32
+
+### Holds a representation wrapper, whose view borrows.
+class RepresentationContainer(Container):
+    ### Resolves to `crate::consumer::PairRef<'a>`.
+    #~# external_kind: container
+    pair: consumer.Pair
+
+    ### Trailing field: a wrong view layout shifts this and is detected.
+    n: uint64
+
+### Holds a refinement wrapper, whose view decodes.
+class RefinementContainer(Container):
+    ### Resolves to `crate::consumer::CheckedAmountRef<'a>`.
+    #~# external_kind: container
+    amount: consumer.CheckedAmount
+
+    ### Trailing field: a wrong view layout shifts this and is detected.
+    n: uint64
+
+### Representation wrappers inside a List, via the same path.
+class RepresentationListContainer(Container):
+    ### Resolves to `ListRef<'a, PairRef<'a>, 4>`.
+    #~# external_kind: container
+    pairs: List[consumer.Pair, 4]
+
+### Holds a wrapper whose delegate is a raw `[u8; N]`, viewed through
+### `SszFixedByteArrayRef`.
+class ByteArrayContainer(Container):
+    ### Resolves to `crate::consumer::TagRef<'a>`.
+    #~# external_kind: container
+    tag: consumer.Tag
+
+    ### Trailing field: a wrong view layout shifts this and is detected.
+    n: uint64
+
+### Delegate whose bound is checked lazily: a container view validates only the
+### offset table, deferring the list bound to field access.
+class BoundedListSsz(Container):
+    ### Payload bounded at 4 bytes.
+    data: List[byte, 4]
+
+### Holds a wrapper over that delegate.
+class BoundedListContainer(Container):
+    ### Resolves to `crate::consumer::BoundedListRef<'a>`.
+    #~# external_kind: container
+    bounded: consumer.BoundedList
+
+### Delegate that is a `StableContainer` with `Optional` fields, one of them a
+### `Bitlist`. Exercises the stable-container and optional conversion paths.
+class StableDelegateSsz(StableContainer[4]):
+    ### Optional primitive.
+    a: Optional[uint64]
+
+    ### Optional bitlist, so the optional-complex path is covered too.
+    b: Optional[Bitlist[32]]
+
+### Holds a wrapper over that delegate.
+class StableDelegateContainer(Container):
+    ### Resolves to `crate::consumer::StableDelegateRef<'a>`.
+    #~# external_kind: container
+    stable: consumer.StableDelegate
+
+### `Union[null, T]` resolves to a Rust `Option`, a distinct conversion branch.
+MaybeAmount = Union[null, uint64]
+
+### Delegate exercising a vector of containers and a union.
+###
+### A `Bitvector` field belongs here too, but the generated getter returns
+### `BitVectorRef<'a, N>` without carrying that type's
+### `where [(); bytes_for_bits(N)]:` bound, so it does not compile. Pre-existing
+### upstream; unrelated to `try_to_owned`.
+Choice = Union[uint8, uint16]
+
+class WideDelegateSsz(Container):
+    ### Vector of a non-byte element type.
+    pairs: Vector[PairSsz, 2]
+
+    ### Bare bitlist, distinct from the `Optional[Bitlist]` path above.
+    marks: Bitlist[16]
+
+    ### Union with no null arm, which generates an enum rather than an `Option`.
+    tag: Choice
+
+    ### Union carrying a null arm.
+    choice: MaybeAmount
+
+### Holds a wrapper over that delegate.
+class WideDelegateContainer(Container):
+    ### Resolves to `crate::consumer::WideDelegateRef<'a>`.
+    #~# external_kind: container
+    wide: consumer.WideDelegate
+
+### Union whose variant is a `List`, and one whose variant is itself a
+### `Union[null, List[...]]` (an `Option<List<...>>` after resolution).
+ListChoice = Union[uint8, List[uint64, 4]]
+
+### Three-arm union with a leading null: the flat spelling of "nothing, or a
+### uint8, or a list". `null` becomes a unit variant of the enum.
+FlatChoice = Union[null, uint8, List[uint64, 4]]
+
+### Container holding both, to force their views to materialize.
+class UnionVariantContainer(Container):
+    ### Union with a list arm.
+    listy: ListChoice
+
+    ### Union with a leading null arm.
+    flat: FlatChoice
