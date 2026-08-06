@@ -5,6 +5,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::array_keys::decl_array_key_struct_impl;
 use crate::buf::Buf32;
 
 /// Alias to [`Buf32`] used as a universal hash type in EE.
@@ -47,6 +48,8 @@ pub struct ExecBlockCommitment {
     slot: u64,
     blkid: Buf32,
 }
+
+decl_array_key_struct_impl!(ExecBlockCommitment, [slot: u64, blkid: Buf32]);
 
 impl ExecBlockCommitment {
     /// Creates a new execution block commitment.

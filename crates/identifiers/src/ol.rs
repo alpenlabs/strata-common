@@ -11,6 +11,7 @@ use ssz_derive::{Decode, Encode};
 #[cfg(feature = "codec")]
 use strata_codec::Codec;
 
+use crate::array_keys::decl_array_key_struct_impl;
 use crate::buf::Buf32;
 
 /// Sequential slot number within the OL chain.
@@ -63,6 +64,8 @@ pub struct OLBlockCommitment {
 
 #[cfg(feature = "ssz")]
 crate::impl_ssz_fixed_container!(OLBlockCommitment, [slot: Slot, blkid: OLBlockId]);
+
+decl_array_key_struct_impl!(OLBlockCommitment, [slot: Slot, blkid: OLBlockId]);
 
 impl OLBlockCommitment {
     /// Creates a new block commitment from a slot and block ID.
