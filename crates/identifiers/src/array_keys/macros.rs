@@ -75,12 +75,6 @@ decl_array_key_int_impl!(u32);
 decl_array_key_int_impl!(u64);
 decl_array_key_int_impl!(u128);
 
-decl_array_key_int_impl!(i8);
-decl_array_key_int_impl!(i16);
-decl_array_key_int_impl!(i32);
-decl_array_key_int_impl!(i64);
-decl_array_key_int_impl!(i128);
-
 /// Declares an [`ArrayKey`] impl for a newtype wrapping another key type,
 /// giving it exactly the same encoding as the type it wraps.
 ///
@@ -197,12 +191,6 @@ mod tests {
         check_roundtrips_arb::<u32>(u);
         check_roundtrips_arb::<u64>(u);
         check_roundtrips_arb::<u128>(u);
-
-        check_roundtrips_arb::<i8>(u);
-        check_roundtrips_arb::<i16>(u);
-        check_roundtrips_arb::<i32>(u);
-        check_roundtrips_arb::<i64>(u);
-        check_roundtrips_arb::<i128>(u);
     }
 
     #[test]
@@ -226,14 +214,14 @@ mod tests {
         check_roundtrips_arb::<(u32, [u8; 32])>(u);
         check_roundtrips_arb::<(u64, u32, [u8; 20])>(u);
         check_roundtrips_arb::<(u8, u16, u32, u64)>(u);
-        check_roundtrips_arb::<(i8, u16, [u8; 3], u64, u128)>(u);
+        check_roundtrips_arb::<(u8, u16, [u8; 3], u64, u128)>(u);
         check_roundtrips_arb::<(u8, u16, u32, u64, u128, [u8; 7])>(u);
 
         // Weirder cases, mostly to make sure composition and zero-width members
         // behave.
         check_roundtrips_arb::<([u8; 0], u32, [u8; 0])>(u);
         check_roundtrips_arb::<((u8, u16), (u32, u64))>(u);
-        check_roundtrips_arb::<(u64, ([u8; 4], (i16, [u8; 0])), [u8; 1])>(u);
+        check_roundtrips_arb::<(u64, ([u8; 4], (u16, [u8; 0])), [u8; 1])>(u);
         check_roundtrips_arb::<((((u8, u8), u8), u8), u8)>(u);
     }
 
@@ -306,7 +294,7 @@ mod tests {
 
         // Ints decode big-endian, matching `copy_from`.
         assert_eq!([0x01u8, 0x02, 0x03, 0x04].into_key::<u32>(), 0x01020304);
-        assert_eq!([0xffu8].into_key::<i8>(), -1);
+        assert_eq!([0xffu8].into_key::<u8>(), 0xff);
 
         // Composites work too, which is the case a length marker trait
         // couldn't have covered.
@@ -326,7 +314,7 @@ mod tests {
         assert_eq!(<(u32, [u8; 32])>::BYTES, 36);
         assert_eq!(<([u8; 0], u32, [u8; 0])>::BYTES, 4);
         assert_eq!(<(u8, u16, u32, u64, u128, [u8; 7])>::BYTES, 38);
-        assert_eq!(<(u64, ([u8; 4], (i16, [u8; 0])), [u8; 1])>::BYTES, 15);
+        assert_eq!(<(u64, ([u8; 4], (u16, [u8; 0])), [u8; 1])>::BYTES, 15);
     }
 
     #[test]
