@@ -15,17 +15,27 @@
 //!
 //! # Envelope Container
 //!
-//! An envelope container wraps one or more envelopes with a pubkey and CHECKSIGVERIFY:
+//! An envelope container wraps one or more envelopes with a pubkey and OP_CHECKSIG:
 //! ```text
 //! <pubkey>
-//! CHECKSIGVERIFY
+//! OP_CHECKSIG
 //! <envelope_0>
 //! ...
 //! <envelope_n>
 //! ```
 //!
-//! The envelope container is typically placed in a transaction input's script_sig,
-//! allowing arbitrary data to be included in Bitcoin transactions.
+//! The envelope container is carried in a transaction input's script context —
+//! a tapscript leaf or a script_sig — allowing arbitrary data to be included in
+//! Bitcoin transactions.
+//!
+//! # Lenient and strict parsing
+//!
+//! The **lenient** parsers scan for envelopes and ignore trailing opcodes —
+//! fine for scripts whose only job is to carry data.
+//! The **strict** [`parser::parse_signed_envelope_leaf`] requires exactly
+//! `<32-byte pubkey> OP_CHECKSIG` + one envelope and nothing else; use it where
+//! the shape authenticates, since only then can no later opcode discard or
+//! invert the `OP_CHECKSIG` result.
 //!
 //! # Examples
 //!
@@ -54,6 +64,12 @@
 //!     .build()
 //!     .unwrap();
 //! ```
+
+/// Required length of the x-only public key in a signed envelope leaf.
+///
+/// Any other non-zero length is a BIP342 unknown key type that `OP_CHECKSIG` accepts without
+/// a signature (anyone-can-spend).
+pub const SIGNED_LEAF_PUBKEY_LEN: usize = 32;
 
 /// Bitcoin script envelope builder utilities.
 pub mod builder;

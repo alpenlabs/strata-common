@@ -752,13 +752,13 @@ dependencies = [
 
 [[package]]
 name = "displaydoc"
-version = "0.2.6"
+version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ac70aa55017e108007fbaf5aa0f54b021c98f92ff8af59d42eda9da96e3dd4f"
+checksum = "c6232dd377dcc64799954cbd3a9bb882e9cdc1308ccd87b1c098f1fb2eaf82a8"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -3778,6 +3778,16 @@ dependencies = [
  "strata-ssz-tests",
  "tree_hash",
  "zeroize",
+]
+
+[[package]]
+name = "strata-l1-commit-reveal-fmt"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "strata-l1-envelope-fmt",
+ "strata-l1-txfmt",
+ "thiserror 2.0.19",
 ]
 
 [[package]]

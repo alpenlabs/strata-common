@@ -1,0 +1,19 @@
+[package]
+name = "strata-l1-commit-reveal-fmt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-l1-envelope-fmt.workspace = true
+# Use txfmt without default features: the zkVM guest build needs only MagicBytes,
+# not serde/borsh/arbitrary.
+strata-l1-txfmt = { path = "../txfmt", default-features = false }
+
+bitcoin.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+test-utils = []
