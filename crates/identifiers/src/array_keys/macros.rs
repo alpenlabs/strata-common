@@ -136,15 +136,12 @@ macro_rules! decl_array_key_struct_impl {
 pub(crate) use decl_array_key_struct_impl;
 pub(crate) use decl_array_key_wrapper_impl;
 
-#[cfg(all(test, feature = "arbitrary"))]
+#[cfg(test)]
 mod tests {
-    use arbitrary::{Arbitrary, Unstructured};
+    use proptest::prelude::*;
 
     use super::*;
     use crate::array_keys::traits::ArrayKeyArr;
-
-    /// Number of instances we check per type.
-    const ROUNDS: usize = 64;
 
     /// Encodes a key and decodes it again, checking we get the same value back
     /// and that we used exactly the number of bytes we said we would.
@@ -156,84 +153,19 @@ mod tests {
         buf
     }
 
-    /// Generates a bunch of arbitrary instances of a key type and roundtrips
-    /// each of them.
-    fn check_roundtrips_arb<'a, K>(u: &mut Unstructured<'a>)
-    where
-        K: ArrayKey + Arbitrary<'a> + Eq + core::fmt::Debug,
-    {
-        for _ in 0..ROUNDS {
-            let k = K::arbitrary(u).expect("test: generate key");
-            check_roundtrip(k);
-        }
-    }
-
-    /// Deterministic pseudorandom byte source so that failures are reproducible.
-    fn gen_entropy(seed: u64, len: usize) -> Vec<u8> {
-        let mut state = seed | 1;
-        (0..len)
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 7;
-                state ^= state << 17;
-                (state >> 24) as u8
-            })
-            .collect()
-    }
-
-    #[test]
-    fn test_roundtrip_ints() {
-        let ent = gen_entropy(0x1234, 16 * 1024);
-        let u = &mut Unstructured::new(&ent);
-
-        check_roundtrips_arb::<u8>(u);
-        check_roundtrips_arb::<u16>(u);
-        check_roundtrips_arb::<u32>(u);
-        check_roundtrips_arb::<u64>(u);
-        check_roundtrips_arb::<u128>(u);
-    }
-
-    #[test]
-    fn test_roundtrip_arrays() {
-        let ent = gen_entropy(0x5678, 16 * 1024);
-        let u = &mut Unstructured::new(&ent);
-
-        check_roundtrips_arb::<[u8; 0]>(u);
-        check_roundtrips_arb::<[u8; 1]>(u);
-        check_roundtrips_arb::<[u8; 4]>(u);
-        check_roundtrips_arb::<[u8; 20]>(u);
-        check_roundtrips_arb::<[u8; 32]>(u);
-    }
-
-    #[test]
-    fn test_roundtrip_tuples() {
-        let ent = gen_entropy(0x9abc, 64 * 1024);
-        let u = &mut Unstructured::new(&ent);
-
-        // Simple cases for each arity we declared impls for.
-        check_roundtrips_arb::<(u32, [u8; 32])>(u);
-        check_roundtrips_arb::<(u64, u32, [u8; 20])>(u);
-        check_roundtrips_arb::<(u8, u16, u32, u64)>(u);
-        check_roundtrips_arb::<(u8, u16, [u8; 3], u64, u128)>(u);
-        check_roundtrips_arb::<(u8, u16, u32, u64, u128, [u8; 7])>(u);
-
-        // Weirder cases, mostly to make sure composition and zero-width members
-        // behave.
-        check_roundtrips_arb::<([u8; 0], u32, [u8; 0])>(u);
-        check_roundtrips_arb::<((u8, u16), (u32, u64))>(u);
-        check_roundtrips_arb::<(u64, ([u8; 4], (u16, [u8; 0])), [u8; 1])>(u);
-        check_roundtrips_arb::<((((u8, u8), u8), u8), u8)>(u);
-    }
-
     /// Newtype to exercise `decl_array_key_wrapper_impl`.
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Arbitrary)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
     struct TestWrapper([u8; 12]);
 
     decl_array_key_wrapper_impl!(TestWrapper => [u8; 12]);
 
+    fn arb_test_wrapper() -> impl Strategy<Value = TestWrapper> {
+        any::<[u8; 12]>().prop_map(TestWrapper)
+    }
+
     /// Struct to exercise `decl_array_key_struct_impl`, mixing widths and
     /// including a wrapper member.
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Arbitrary)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
     struct TestStruct {
         idx: u32,
         pad: [u8; 0],
@@ -246,17 +178,74 @@ mod tests {
         [idx: u32, pad: [u8; 0], id: TestWrapper, flag: u8]
     );
 
-    #[test]
-    fn test_roundtrip_wrapper_and_struct() {
-        let ent = gen_entropy(0xdef0, 16 * 1024);
-        let u = &mut Unstructured::new(&ent);
+    fn arb_test_struct() -> impl Strategy<Value = TestStruct> {
+        (
+            any::<u32>(),
+            any::<[u8; 0]>(),
+            arb_test_wrapper(),
+            any::<u8>(),
+        )
+            .prop_map(|(idx, pad, id, flag)| TestStruct { idx, pad, id, flag })
+    }
 
-        check_roundtrips_arb::<TestWrapper>(u);
-        check_roundtrips_arb::<TestStruct>(u);
+    proptest! {
+        #[test]
+        fn test_roundtrip_ints(a in any::<u8>(), b in any::<u16>(), c in any::<u32>(), d in any::<u64>(), e in any::<u128>()) {
+            check_roundtrip(a);
+            check_roundtrip(b);
+            check_roundtrip(c);
+            check_roundtrip(d);
+            check_roundtrip(e);
+        }
 
-        // They compose with the other impls like anything else.
-        check_roundtrips_arb::<(TestWrapper, u64)>(u);
-        check_roundtrips_arb::<(TestStruct, [u8; 3])>(u);
+        #[test]
+        fn test_roundtrip_arrays(a0 in any::<[u8; 0]>(), a1 in any::<[u8; 1]>(), a4 in any::<[u8; 4]>(), a20 in any::<[u8; 20]>(), a32 in any::<[u8; 32]>()) {
+            check_roundtrip(a0);
+            check_roundtrip(a1);
+            check_roundtrip(a4);
+            check_roundtrip(a20);
+            check_roundtrip(a32);
+        }
+
+        #[test]
+        fn test_roundtrip_tuples(
+            t1 in any::<(u32, [u8; 32])>(),
+            t2 in any::<(u64, u32, [u8; 20])>(),
+            t3 in any::<(u8, u16, u32, u64)>(),
+            t4 in any::<(u8, u16, [u8; 3], u64, u128)>(),
+            t5 in any::<(u8, u16, u32, u64, u128, [u8; 7])>(),
+            // Weirder cases, mostly to make sure composition and zero-width
+            // members behave.
+            t6 in any::<([u8; 0], u32, [u8; 0])>(),
+            t7 in any::<((u8, u16), (u32, u64))>(),
+            t8 in any::<(u64, ([u8; 4], (u16, [u8; 0])), [u8; 1])>(),
+            t9 in any::<((((u8, u8), u8), u8), u8)>(),
+        ) {
+            check_roundtrip(t1);
+            check_roundtrip(t2);
+            check_roundtrip(t3);
+            check_roundtrip(t4);
+            check_roundtrip(t5);
+            check_roundtrip(t6);
+            check_roundtrip(t7);
+            check_roundtrip(t8);
+            check_roundtrip(t9);
+        }
+
+        #[test]
+        fn test_roundtrip_wrapper_and_struct(
+            w in arb_test_wrapper(),
+            s in arb_test_struct(),
+            wt in (arb_test_wrapper(), any::<u64>()),
+            st in (arb_test_struct(), any::<[u8; 3]>()),
+        ) {
+            check_roundtrip(w);
+            check_roundtrip(s);
+
+            // They compose with the other impls like anything else.
+            check_roundtrip(wt);
+            check_roundtrip(st);
+        }
     }
 
     #[test]
