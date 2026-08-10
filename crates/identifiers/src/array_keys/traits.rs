@@ -12,7 +12,7 @@ pub trait ArrayKey {
 
     /// Copies the key bytes into the array.
     ///
-    /// This must be big-endian.
+    /// This MUST be big-endian for integer-like types.
     ///
     /// # Panics
     ///
@@ -27,7 +27,7 @@ pub trait ArrayKey {
     fn copy_from(buf: &[u8]) -> Self;
 }
 
-/// General impl for all bytebufs since they're already of the right format.
+/// General impl for all bytebufs since they're already of the right structure.
 impl<const N: usize> ArrayKey for [u8; N] {
     const BYTES: usize = N;
 
@@ -69,11 +69,18 @@ impl<T: AsRef<[u8]>> ArrayKeyBuf for T {
 /// You shouldn't have to implement this on your own types, it's just so we can
 /// add trait member fn to `[u8; N]`.
 pub trait ArrayKeyArr<const N: usize> {
-    /// Decodes the array into an [`ArrayKey`] type of exactly the same width.
+    /// Decodes the array into an [`ArrayKey`] type of exactly the same size.
     ///
     /// Instantiating this with a key type whose width isn't `N` MUST fail to
     /// compile.
     fn into_key<K: ArrayKey>(self) -> K;
+
+    /// Constructs a new instance of the array from an [`ArrayKey`] type of
+    /// exactly the same size.
+    ///
+    /// Instantiating this with a key type whose width isn't `N` MUST fail to
+    /// compile.
+    fn from_key<K: ArrayKey>(k: &K) -> Self;
 }
 
 /// Impl for `[u8; N]` arrays that provides the guarantees we expect.
@@ -86,6 +93,13 @@ impl<const N: usize> ArrayKeyArr<N> for [u8; N] {
         // typechecking the call.
         assert_arraykey_bytes::<N, K>();
         K::copy_from(&self)
+    }
+
+    fn from_key<K: ArrayKey>(k: &K) -> Self {
+        assert_arraykey_bytes::<N, K>();
+        let mut buf = [0; N];
+        k.copy_into(&mut buf[..]);
+        buf
     }
 }
 
@@ -121,4 +135,58 @@ pub(crate) fn assert_buf_len_eq<K: ArrayKey>(arr: &[u8]) {
         "arraykey: passed invalid array (exp {}, got {len})",
         K::BYTES
     );
+}
+
+/// Extension trait for [`ArrayKey`] with convenience fns.
+pub trait ArrayKeyExt: ArrayKey {
+    /// Encodes the key into a `Vec<u8>`.
+    fn to_vec(&self) -> Vec<u8>;
+}
+
+impl<T: ArrayKey> ArrayKeyExt for T {
+    fn to_vec(&self) -> Vec<u8> {
+        let mut vec = vec![0; Self::BYTES];
+        self.copy_into(&mut vec[..]);
+        vec
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_key_arr() {
+        // Arrays are their own key type, so this is just a passthrough.
+        assert_eq!(<[u8; 4]>::from_key(&[1u8, 2, 3, 4]), [1, 2, 3, 4]);
+        assert_eq!(<[u8; 0]>::from_key(&[]), [0u8; 0]);
+
+        // Ints encode big-endian, matching `copy_into`.
+        assert_eq!(
+            <[u8; 4]>::from_key(&0x01020304u32),
+            [0x01, 0x02, 0x03, 0x04]
+        );
+        assert_eq!(<[u8; 1]>::from_key(&0xffu8), [0xff]);
+    }
+
+    #[test]
+    fn test_from_key_is_inverse_of_into_key() {
+        let arr = [0x11u8, 0x22, 0x33, 0x44];
+        let k = arr.into_key::<u32>();
+        assert_eq!(<[u8; 4]>::from_key(&k), arr);
+    }
+
+    #[test]
+    fn test_to_vec_matches_copy_into() {
+        let k = 0x01020304u32;
+        let mut buf = [0u8; 4];
+        k.copy_into(&mut buf);
+        assert_eq!(k.to_vec(), buf.to_vec());
+
+        let arr = [0xaa, 0xbb, 0xcc];
+        assert_eq!(arr.to_vec(), vec![0xaa, 0xbb, 0xcc]);
+
+        let empty: [u8; 0] = [];
+        assert_eq!(empty.to_vec(), Vec::<u8>::new());
+    }
 }
