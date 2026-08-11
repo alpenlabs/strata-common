@@ -32,10 +32,7 @@ impl PredicateKey {
         let len = condition.len();
         let condition = condition
             .try_into()
-            .map_err(|_| PredicateError::ConditionTooLong {
-                len,
-                max: MAX_CONDITION_LEN as usize,
-            })?;
+            .map_err(|_| PredicateError::ConditionTooLong { len })?;
         Ok(Self {
             id: id.as_u8(),
             condition,
@@ -112,11 +109,9 @@ impl<'b> TryFrom<&'b [u8]> for PredicateKeyBuf<'b> {
 
         let id = PredicateTypeId::try_from(bytes[0])?;
         let condition = &bytes[1..];
-        let max = MAX_CONDITION_LEN as usize;
-        if condition.len() > max {
+        if condition.len() > MAX_CONDITION_LEN as usize {
             return Err(PredicateError::ConditionTooLong {
                 len: condition.len(),
-                max,
             });
         }
 
@@ -258,8 +253,8 @@ mod tests {
         let result = PredicateKey::try_new(PredicateTypeId::AlwaysAccept, oversized);
         assert!(matches!(
             result,
-            Err(PredicateError::ConditionTooLong { len, max })
-            if len == MAX_CONDITION_LEN as usize + 1 && max == MAX_CONDITION_LEN as usize
+            Err(PredicateError::ConditionTooLong { len })
+            if len == MAX_CONDITION_LEN as usize + 1
         ));
     }
 
@@ -271,8 +266,8 @@ mod tests {
         let result = PredicateKeyBuf::try_from(bytes.as_slice());
         assert!(matches!(
             result,
-            Err(PredicateError::ConditionTooLong { len, max })
-            if len == MAX_CONDITION_LEN as usize + 1 && max == MAX_CONDITION_LEN as usize
+            Err(PredicateError::ConditionTooLong { len })
+            if len == MAX_CONDITION_LEN as usize + 1
         ));
     }
 

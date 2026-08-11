@@ -7,6 +7,7 @@
 
 use thiserror::Error;
 
+use crate::MAX_CONDITION_LEN;
 use crate::type_ids::PredicateTypeId;
 
 /// Errors that can occur when working with predicates, claims, and witnesses.
@@ -22,12 +23,10 @@ pub enum PredicateError {
     MissingPredicateType,
 
     /// Predicate condition bytes exceed the maximum allowed length.
-    #[error("condition length {len} exceeds maximum of {max} bytes")]
+    #[error("condition length {len} exceeds maximum of {MAX_CONDITION_LEN} bytes")]
     ConditionTooLong {
         /// The length of the provided condition bytes.
         len: usize,
-        /// The maximum allowed condition length.
-        max: usize,
     },
 
     /// Unknown predicate type name in string parsing.
