@@ -18,6 +18,6 @@ impl<'a> Arbitrary<'a> for PredicateKey {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let id = PredicateTypeId::arbitrary(u)?;
         let condition = Vec::<u8>::arbitrary(u)?;
-        Ok(PredicateKey::new(id, condition))
+        PredicateKey::try_new(id, condition).map_err(|_| arbitrary::Error::IncorrectFormat)
     }
 }

@@ -85,7 +85,7 @@ impl<'de> Deserialize<'de> for PredicateKey {
                     .map_err(|e| serde::de::Error::custom(format!("Invalid hex encoding: {e}")))?
             };
 
-            Ok(PredicateKey::new(id, condition))
+            PredicateKey::try_new(id, condition).map_err(serde::de::Error::custom)
         } else {
             struct PredicateKeyVisitor;
 
@@ -111,7 +111,7 @@ impl<'de> Deserialize<'de> for PredicateKey {
                         serde::de::Error::custom(format!("Invalid predicate type ID: {e}"))
                     })?;
 
-                    Ok(PredicateKey::new(id, condition))
+                    PredicateKey::try_new(id, condition).map_err(serde::de::Error::custom)
                 }
             }
 
@@ -139,10 +139,11 @@ mod tests {
         assert_eq!(predkey1, deserialized1);
 
         // Test with non-empty condition
-        let predkey2 = PredicateKey::new(
+        let predkey2 = PredicateKey::try_new(
             PredicateTypeId::Bip340Schnorr,
             vec![0x01, 0x02, 0x03, 0x04, 0x05],
-        );
+        )
+        .unwrap();
         let json2 = serde_json::to_string(&predkey2).unwrap();
         assert_eq!(json2, r#""Bip340Schnorr:0102030405""#);
 
@@ -151,7 +152,9 @@ mod tests {
         assert_eq!(predkey2, deserialized2);
 
         // Test with another predicate type
-        let predkey3 = PredicateKey::new(PredicateTypeId::Sp1Groth16, vec![0xde, 0xad, 0xbe, 0xef]);
+        let predkey3 =
+            PredicateKey::try_new(PredicateTypeId::Sp1Groth16, vec![0xde, 0xad, 0xbe, 0xef])
+                .unwrap();
         let json3 = serde_json::to_string(&predkey3).unwrap();
         assert_eq!(json3, r#""Sp1Groth16:deadbeef""#);
 
@@ -168,16 +171,19 @@ mod tests {
         assert_eq!(predkey1, decoded1);
 
         // Test with non-empty condition
-        let predkey2 = PredicateKey::new(
+        let predkey2 = PredicateKey::try_new(
             PredicateTypeId::Bip340Schnorr,
             vec![0x01, 0x02, 0x03, 0x04, 0x05],
-        );
+        )
+        .unwrap();
         let encoded2 = bincode::serialize(&predkey2).unwrap();
         let decoded2: PredicateKey = bincode::deserialize(&encoded2).unwrap();
         assert_eq!(predkey2, decoded2);
 
         // Test with another predicate type
-        let predkey3 = PredicateKey::new(PredicateTypeId::Sp1Groth16, vec![0xde, 0xad, 0xbe, 0xef]);
+        let predkey3 =
+            PredicateKey::try_new(PredicateTypeId::Sp1Groth16, vec![0xde, 0xad, 0xbe, 0xef])
+                .unwrap();
         let encoded3 = bincode::serialize(&predkey3).unwrap();
         let decoded3: PredicateKey = bincode::deserialize(&encoded3).unwrap();
         assert_eq!(predkey3, decoded3);

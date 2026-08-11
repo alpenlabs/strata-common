@@ -48,7 +48,7 @@ mod tests {
                 id in predicate_type_id_strategy(),
                 condition in bounded_condition_strategy(256)
             ) {
-                let predkey = PredicateKey::new(id, condition.clone());
+                let predkey = PredicateKey::try_new(id, condition.clone()).unwrap();
                 let serialized = borsh::to_vec(&predkey).unwrap();
 
                 // The borsh format serializes to_bytes() output as Vec<u8>
