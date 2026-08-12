@@ -3,9 +3,9 @@ use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
 use bitcoin::opcodes::{OP_0, OP_FALSE};
 use bitcoin::script::{Instruction, Instructions};
 
+use super::errors::EnvelopeParseError;
 use crate::SIGNED_LEAF_PUBKEY_LEN;
 use crate::builder::MAX_ENVELOPE_PAYLOAD_SIZE;
-use crate::errors::EnvelopeParseError;
 
 /// One parsed signed envelope leaf.
 ///

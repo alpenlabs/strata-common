@@ -9,3 +9,6 @@ workspace = true
 [dependencies]
 bitcoin.workspace = true
 thiserror.workspace = true
+
+[features]
+test-utils = []

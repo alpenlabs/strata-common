@@ -32,7 +32,7 @@
 //!
 //! The **lenient** parsers scan for envelopes and ignore trailing opcodes —
 //! fine for scripts whose only job is to carry data.
-//! The **strict** [`parser::parse_signed_envelope_leaf`] requires exactly
+//! The **strict** [`parse_signed_envelope_leaf`] requires exactly
 //! `<32-byte pubkey> OP_CHECKSIG` + one envelope and nothing else; use it where
 //! the shape authenticates, since only then can no later opcode discard or
 //! invert the `OP_CHECKSIG` result.
@@ -41,7 +41,7 @@
 //!
 //! Creating a single envelope:
 //! ```
-//! use strata_l1_envelope_fmt::builder::build_envelope_script;
+//! use strata_l1_envelope_fmt::build_envelope_script;
 //!
 //! let payload = vec![1, 2, 3, 4, 5];
 //! let script = build_envelope_script(&payload).unwrap();
@@ -49,7 +49,7 @@
 //!
 //! Using the builder for envelope container scripts with size validation:
 //! ```
-//! use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+//! use strata_l1_envelope_fmt::EnvelopeScriptBuilder;
 //!
 //! let pubkey = vec![0x02; 33];
 //! let payload1 = vec![1; 150];
@@ -71,11 +71,15 @@
 /// a signature (anyone-can-spend).
 pub const SIGNED_LEAF_PUBKEY_LEN: usize = 32;
 
-/// Bitcoin script envelope builder utilities.
-pub mod builder;
+mod builder;
+mod parser;
 
-/// Error types for envelope operations.
-pub mod errors;
-
-/// Bitcoin script envelope parser utilities.
-pub mod parser;
+pub use builder::{
+    EnvelopeBuildError, EnvelopeScriptBuilder, MAX_ENVELOPE_PAYLOAD_SIZE,
+    MIN_ENVELOPE_PAYLOAD_SIZE, build_envelope_script, build_signed_envelope_leaf,
+    split_payload_into_envelope_chunks,
+};
+pub use parser::{
+    EnvelopeParseError, SignedEnvelopeLeaf, parse_envelope_container, parse_envelope_payload,
+    parse_multi_envelope_payloads, parse_signed_envelope_leaf,
+};

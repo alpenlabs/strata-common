@@ -5,8 +5,8 @@ use bitcoin::opcodes::OP_FALSE;
 use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
 use bitcoin::script::PushBytesBuf;
 
+use super::errors::EnvelopeBuildError;
 use crate::SIGNED_LEAF_PUBKEY_LEN;
-use crate::errors::EnvelopeBuildError;
 
 /// Minimum recommended total envelope payload size in bytes.
 /// Below this size, it's more efficient to use the SPS-50 aux field.
@@ -41,7 +41,7 @@ pub const MAX_ENVELOPE_PAYLOAD_SIZE: usize = 395_000;
 /// # Example
 ///
 /// ```
-/// use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+/// use strata_l1_envelope_fmt::EnvelopeScriptBuilder;
 ///
 /// let pubkey = vec![0x02; 33];
 /// let payload1 = vec![1; 150];
