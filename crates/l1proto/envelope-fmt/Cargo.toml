@@ -7,6 +7,12 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+# Use txfmt without default features
+strata-l1-txfmt = { path = "../txfmt", default-features = false }
+strata-identifiers = { path = "../../identifiers", default-features = false }
+
+tracing.workspace = true
+
 bitcoin.workspace = true
 thiserror.workspace = true
 

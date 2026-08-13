@@ -65,6 +65,10 @@
 //!     .unwrap();
 //! ```
 
+/// Transaction fixtures, behind the `test-utils` feature.
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
+
 /// Required length of the x-only public key in a signed envelope leaf.
 ///
 /// Any other non-zero length is a BIP342 unknown key type that `OP_CHECKSIG` accepts without
@@ -80,6 +84,7 @@ pub use builder::{
     split_payload_into_envelope_chunks,
 };
 pub use parser::{
-    EnvelopeParseError, SignedEnvelopeLeaf, parse_envelope_container, parse_envelope_payload,
-    parse_multi_envelope_payloads, parse_signed_envelope_leaf,
+    CommitRevealParseError, EnvelopeParseError, PayloadParser, PayloadParserConfig,
+    PayloadParserOutput, RecoveredPayload, SignedEnvelopeLeaf, parse_envelope_container,
+    parse_envelope_payload, parse_multi_envelope_payloads, parse_signed_envelope_leaf,
 };

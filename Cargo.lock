@@ -4235,7 +4235,10 @@ name = "strata-l1-envelope-fmt"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "strata-identifiers",
+ "strata-l1-txfmt",
  "thiserror 2.0.19",
+ "tracing",
 ]
 
 [[package]]
