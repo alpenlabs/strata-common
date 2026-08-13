@@ -1,26 +1,19 @@
-//! SSZ view trait macros for identifier and wrapper types.
+//! SSZ implementations for hand-written types used in ssz-gen schemas.
 //!
-//! These macros generate the boilerplate trait implementations (`DecodeView`,
-//! `SszTypeInfo`, `TreeHash`, `ToOwnedSsz`) that the SSZ view layer requires.
-//! Three macros are provided, each targeting a different structural pattern:
+//! ssz-gen emits `Encode`/`Decode`/`TreeHash` and a byte-backed `{Type}Ref` view
+//! only for types a schema declares. Types written in Rust get theirs from here.
 //!
-//! | Macro | Use when… |
-//! |---|---|
-//! | [`impl_ssz_fixed_container!`] | Multi-field struct with `#[ssz(struct_behaviour = "container")]` |
-//! | [`impl_ssz_transparent_wrapper!`] | Newtype whose inner type already implements `DecodeView` |
-//! | [`impl_ssz_transparent_byte_array_wrapper!`] | Newtype wrapping a raw `[u8; N]` (which lacks `DecodeView`) |
+//! ## Giving a type its SSZ impls
 //!
-//! ## Choosing the right macro
+//! - [`impl_ssz_fixed_container!`] — multi-field struct with `#[ssz(struct_behaviour =
+//!   "container")]`, all fields fixed-size.
+//! - [`impl_ssz_transparent_wrapper!`] — newtype whose inner type already implements `DecodeView`.
+//! - [`impl_ssz_transparent_byte_array_wrapper!`] — newtype wrapping a raw `[u8; N]`.
+//! - [`impl_ssz_via_delegate!`] — wrapper whose encoding is another SSZ type's, declared with
+//!   [`SszDelegate`].
 //!
-//! ```text
-//!  Is the type a multi-field container?
-//!    ├─ Yes → impl_ssz_fixed_container!
-//!    └─ No (newtype / transparent wrapper)
-//!         ├─ Inner type has DecodeView? (Buf32, RBuf32, u64, …)
-//!         │    └─ Yes → impl_ssz_transparent_wrapper!
-//!         └─ Inner type is [u8; N]?
-//!              └─ Yes → impl_ssz_transparent_byte_array_wrapper!
-//! ```
+//! Exactly one applies to a given type: they all emit `SszTypeInfo`/`TreeHash`,
+//! so combining two is a coherence error.
 //!
 //! The split between the two transparent-wrapper macros exists because `[u8; N]`
 //! does **not** implement `DecodeView` in the `ssz` crate — only
@@ -28,6 +21,12 @@
 //! the orphan rule prevents adding that impl locally, so
 //! `impl_ssz_transparent_byte_array_wrapper!` provides a manual `DecodeView`
 //! via `TryInto` plus `From` conversions with `FixedBytes<N>`.
+//!
+//! ## Naming a view for `external_kind: container`
+//!
+//! Such a field resolves to a `{Type}Ref<'a>` path. A delegate wrapper
+//! referenced that way aliases [`SszDelegateRef`]; the view comes from the
+//! delegate's own `SszHasView` link.
 
 /// Generates SSZ view trait implementations for a fixed-size container type.
 ///
@@ -35,7 +34,8 @@
 /// whose fields are all fixed-size. Generates:
 /// - `TreeHash` implementation
 /// - `SszTypeInfo` implementation (computes fixed size from field types)
-/// - A `{Type}Ref` view type with `DecodeView`, `SszTypeInfo`, `TreeHash`, and `ToOwnedSsz`
+/// - A `{Type}Ref` type with `DecodeView`, `SszTypeInfo`, `TreeHash`, and `ToOwnedSsz`, which
+///   decodes rather than borrowing
 ///
 /// The `{Type}Ref` name is auto-generated via [`paste`].
 ///
@@ -100,7 +100,12 @@ macro_rules! impl_ssz_fixed_container {
             }
 
             // Ref view type
-            /// SSZ zero-copy view reference for the parent type.
+            /// Adapts the parent type to the SSZ view interface.
+            ///
+            /// Decodes during `DecodeView::from_ssz_bytes` and holds the value;
+            /// it does not borrow the input. `'a` is present only because
+            /// ssz-gen resolves an `external_kind: container` field to a
+            /// `{Type}Ref<'a>` path.
             #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
             pub struct [<$type Ref>]<'a> {
                 inner: $type,
@@ -269,17 +274,128 @@ pub trait SszDelegate: Sized {
     fn from_delegate(delegate: Self::Delegate) -> Result<Self, ::ssz::DecodeError>;
 }
 
+/// The delegate's canonical view, as ssz-gen declares it.
+type DelegateView<'a, T> = <<T as SszDelegate>::Delegate as ::ssz_types::view::SszHasView>::Ref<'a>;
+
+/// Borrowed SSZ view over a delegate wrapper.
+///
+/// Holds the delegate's view and converts only on `ToOwnedSsz::try_to_owned`.
+// Not `Copy`: it would overlap `ssz_types`' `impl<T: Copy> ToOwnedSsz<T> for T`.
+pub struct SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+{
+    delegate: DelegateView<'a, T>,
+}
+
+impl<'a, T> SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+{
+    /// Returns the borrowed delegate view.
+    pub fn delegate_ref(&self) -> &DelegateView<'a, T> {
+        &self.delegate
+    }
+}
+
+impl<'a, T> ::core::clone::Clone for SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+    DelegateView<'a, T>: ::core::clone::Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            delegate: ::core::clone::Clone::clone(&self.delegate),
+        }
+    }
+}
+
+impl<'a, T> ::core::fmt::Debug for SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+    DelegateView<'a, T>: ::core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("SszDelegateRef")
+            .field("delegate", &self.delegate)
+            .finish()
+    }
+}
+
+impl<'a, T> ::ssz::view::DecodeView<'a> for SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+{
+    fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ::ssz::DecodeError> {
+        Ok(Self {
+            delegate: <DelegateView<'a, T> as ::ssz::view::DecodeView<'a>>::from_ssz_bytes(bytes)?,
+        })
+    }
+}
+
+impl<'a, T> ::ssz::view::SszTypeInfo for SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+{
+    fn is_ssz_fixed_len() -> bool {
+        <DelegateView<'a, T> as ::ssz::view::SszTypeInfo>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <DelegateView<'a, T> as ::ssz::view::SszTypeInfo>::ssz_fixed_len()
+    }
+}
+
+impl<'a, T> ::tree_hash::TreeHash for SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+{
+    fn tree_hash_type() -> ::tree_hash::TreeHashType {
+        <DelegateView<'a, T> as ::tree_hash::TreeHash>::tree_hash_type()
+    }
+
+    fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
+        <DelegateView<'a, T> as ::tree_hash::TreeHash>::tree_hash_packed_encoding(&self.delegate)
+    }
+
+    fn tree_hash_packing_factor() -> usize {
+        <DelegateView<'a, T> as ::tree_hash::TreeHash>::tree_hash_packing_factor()
+    }
+
+    fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
+        <DelegateView<'a, T> as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.delegate)
+    }
+}
+
+impl<'a, T> ::ssz_types::view::ToOwnedSsz<T> for SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+{
+    fn to_owned(&self) -> T {
+        <Self as ::ssz_types::view::ToOwnedSsz<T>>::try_to_owned(self).expect("valid view")
+    }
+
+    fn try_to_owned(&self) -> Result<T, ::ssz::DecodeError> {
+        let delegate =
+            <DelegateView<'a, T> as ::ssz_types::view::ToOwnedSsz<T::Delegate>>::try_to_owned(
+                &self.delegate,
+            )?;
+        <T as SszDelegate>::from_delegate(delegate)
+    }
+}
+
 /// Generates [`ssz::Encode`], [`ssz::Decode`], and [`tree_hash::TreeHash`]
 /// implementations for a type that implements [`SszDelegate`], delegating the
 /// entire byte layout and merkleization to its
 /// [`Delegate`](SszDelegate::Delegate) type.
-///
-/// This is the "correct by construction" replacement for hand-written
-/// `Encode`/`Decode` impls: the wrapper supplies only the value-level conversion
-/// to/from a well-defined SSZ type via [`SszDelegate`], and this macro wires up
-/// the trait methods so the wrapper inherits the delegate's (spec-compliant)
-/// layout and tree-hash root verbatim. Because the tree hash is delegated too,
-/// the wrapper can be used as a field inside other SSZ containers.
 ///
 /// # Requirements
 ///

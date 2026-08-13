@@ -9,7 +9,7 @@ use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use ssz::DecodeError;
 use ssz_primitives::FixedBytes;
-use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
+use strata_identifiers::{SszDelegate, SszDelegateRef, impl_ssz_via_delegate};
 
 use super::ThresholdSignatureError;
 use crate::keys::compressed::CompressedPublicKey;
@@ -119,6 +119,9 @@ impl SszDelegate for ThresholdConfig {
 }
 
 impl_ssz_via_delegate!(ThresholdConfig);
+
+/// SSZ view naming [`ThresholdConfig`] for an `external_kind: container` field.
+pub type ThresholdConfigRef<'a> = SszDelegateRef<'a, ThresholdConfig>;
 
 impl ThresholdConfig {
     /// Create a new threshold configuration.
@@ -382,6 +385,9 @@ impl SszDelegate for ThresholdConfigUpdate {
 }
 
 impl_ssz_via_delegate!(ThresholdConfigUpdate);
+
+/// SSZ view naming [`ThresholdConfigUpdate`] for an `external_kind: container` field.
+pub type ThresholdConfigUpdateRef<'a> = SszDelegateRef<'a, ThresholdConfigUpdate>;
 
 #[cfg(test)]
 mod tests {

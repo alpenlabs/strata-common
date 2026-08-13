@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ssz::DecodeError;
 use ssz_primitives::FixedBytes;
-use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
+use strata_identifiers::{SszDelegate, SszDelegateRef, impl_ssz_via_delegate};
 
 use super::ThresholdSignatureError;
 use crate::ssz_generated::ssz::threshold::{IndexedSignatureSsz, SignatureSetSsz};
@@ -108,6 +108,9 @@ impl SszDelegate for IndexedSignature {
 
 impl_ssz_via_delegate!(IndexedSignature);
 
+/// SSZ view naming [`IndexedSignature`] for an `external_kind: container` field.
+pub type IndexedSignatureRef<'a> = SszDelegateRef<'a, IndexedSignature>;
+
 /// A set of indexed ECDSA signatures for threshold verification.
 ///
 /// Signatures are guaranteed duplicate-free.
@@ -146,6 +149,9 @@ impl SszDelegate for SignatureSet {
 }
 
 impl_ssz_via_delegate!(SignatureSet);
+
+/// SSZ view naming [`SignatureSet`] for an `external_kind: container` field.
+pub type SignatureSetRef<'a> = SszDelegateRef<'a, SignatureSet>;
 
 impl SignatureSet {
     /// Create a new signature set from a vector of indexed signatures.
