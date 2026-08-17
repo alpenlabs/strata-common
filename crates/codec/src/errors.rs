@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 /// Errors from strata-codec.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum CodecError {
     /// For use when we read a container length field that implies a container
     /// of a larger size than allowed in the context.
