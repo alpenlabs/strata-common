@@ -4,7 +4,13 @@ use std::future::Future;
 /// Executor for synchronous workers.
 pub trait SyncExecutor {
     /// To get shutdown signal notification.
-    type ShutdownGuard: SyncGuard + Send + 'static;
+    ///
+    /// This is also an [`AsyncGuard`] so a sync worker can wait on the shutdown
+    /// signal alongside its input instead of parking on the input alone.  See
+    /// [`SyncServiceInput::recv_next_until_shutdown`].
+    ///
+    /// [`SyncServiceInput::recv_next_until_shutdown`]: crate::SyncServiceInput::recv_next_until_shutdown
+    type ShutdownGuard: SyncGuard + AsyncGuard + Send + Sync + 'static;
 
     /// Spawn a sync worker task.
     fn spawn_sync(

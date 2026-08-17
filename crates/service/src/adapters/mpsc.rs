@@ -1,8 +1,9 @@
 use std::future::Future;
 
+use futures::FutureExt;
 use tokio::sync::mpsc;
 
-use crate::{AsyncServiceInput, ServiceInput, ServiceMsg, SyncServiceInput};
+use crate::{AsyncGuard, AsyncServiceInput, ServiceInput, ServiceMsg, SyncServiceInput};
 
 /// Adapter for using a mpsc receiver as a input.
 ///
@@ -52,6 +53,46 @@ impl<T: ServiceMsg> SyncServiceInput for TokioMpscInput<T> {
         let item = self.rx.blocking_recv();
         self.closed |= item.is_none();
         Ok(item)
+    }
+
+    fn recv_next_until_shutdown(
+        &mut self,
+        shutdown: &(impl AsyncGuard + Sync),
+    ) -> anyhow::Result<Option<Self::Msg>> {
+        if self.closed {
+            return Ok(None);
+        }
+
+        // A command channel is held open by its senders for the life of the
+        // process, so the plain `blocking_recv` above parks until the next
+        // message no matter what else is going on.  Wait on the shutdown signal
+        // alongside it instead.
+        //
+        // `futures::executor::block_on` rather than a tokio runtime: both halves
+        // here are driven purely by wakers (an mpsc channel and, for
+        // `strata-tasks`, an `AtomicBool` plus a `Notify`), so neither needs the
+        // timer or the IO driver.  A sync worker gets its own plain thread with
+        // no runtime entered, so there may not be one to borrow.
+        let recv = async {
+            futures::select_biased! {
+                // Biased so a shutdown already in flight wins over a queued
+                // message.  The loop below discards that message anyway once it
+                // sees the guard, so this only makes the exit prompter.
+                _ = shutdown.wait_for_shutdown().fuse() => None,
+                item = self.rx.recv().fuse() => Some(item),
+            }
+        };
+
+        match futures::executor::block_on(recv) {
+            // Channel produced something, or closed on its own.
+            Some(item) => {
+                self.closed |= item.is_none();
+                Ok(item)
+            }
+            // Shutdown won the race. The channel itself is untouched, so this
+            // does not mark the input closed.
+            None => Ok(None),
+        }
     }
 }
 
