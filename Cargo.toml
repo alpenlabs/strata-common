@@ -7,6 +7,7 @@ members = [
   "crates/codec-utils",
   "crates/crypto",
   "crates/db-macros",
+  "crates/db-schema-common",
   "crates/identifiers",
   "crates/l1proto/envelope-fmt",
   "crates/l1proto/txfmt",
@@ -22,7 +23,7 @@ members = [
   "crates/serde-utils",
   "crates/service",
   "crates/ssz-tests",
-  "crates/tasks",
+  "crates/tasks", "crates/db-schema-common",
 ]
 
 resolver = "3"
@@ -35,6 +36,7 @@ strata-codec-tests = { path = "crates/codec-tests" }
 strata-codec-utils = { path = "crates/codec-utils" }
 strata-crypto = { path = "crates/crypto" }
 strata-db-macros = { path = "crates/db-macros" }
+strata-db-schema-common = { path = "crates/db-schema-common" }
 strata-identifiers = { path = "crates/identifiers" }
 strata-l1-txfmt = { path = "crates/l1proto/txfmt" }
 strata-logging = { path = "crates/logging" }

@@ -4206,6 +4206,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-db-schema-common"
+version = "0.1.0"
+dependencies = [
+ "ciborium",
+ "serde",
+ "strata-codec",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "strata-identifiers"
 version = "0.1.0"
 dependencies = [
