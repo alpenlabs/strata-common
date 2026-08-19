@@ -15,23 +15,33 @@
 //!
 //! # Envelope Container
 //!
-//! An envelope container wraps one or more envelopes with a pubkey and CHECKSIGVERIFY:
+//! An envelope container wraps one or more envelopes with a pubkey and OP_CHECKSIG:
 //! ```text
 //! <pubkey>
-//! CHECKSIGVERIFY
+//! OP_CHECKSIG
 //! <envelope_0>
 //! ...
 //! <envelope_n>
 //! ```
 //!
-//! The envelope container is typically placed in a transaction input's script_sig,
-//! allowing arbitrary data to be included in Bitcoin transactions.
+//! The envelope container is carried in a transaction input's script context —
+//! a tapscript leaf or a script_sig — allowing arbitrary data to be included in
+//! Bitcoin transactions.
+//!
+//! # Lenient and strict parsing
+//!
+//! The **lenient** parsers scan for envelopes and ignore trailing opcodes —
+//! fine for scripts whose only job is to carry data.
+//! The **strict** [`parse_signed_envelope_leaf`] requires exactly
+//! `<32-byte pubkey> OP_CHECKSIG` + one envelope and nothing else; use it where
+//! the shape authenticates, since only then can no later opcode discard or
+//! invert the `OP_CHECKSIG` result.
 //!
 //! # Examples
 //!
 //! Creating a single envelope:
 //! ```
-//! use strata_l1_envelope_fmt::builder::build_envelope_script;
+//! use strata_l1_envelope_fmt::build_envelope_script;
 //!
 //! let payload = vec![1, 2, 3, 4, 5];
 //! let script = build_envelope_script(&payload).unwrap();
@@ -39,7 +49,7 @@
 //!
 //! Using the builder for envelope container scripts with size validation:
 //! ```
-//! use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+//! use strata_l1_envelope_fmt::EnvelopeScriptBuilder;
 //!
 //! let pubkey = vec![0x02; 33];
 //! let payload1 = vec![1; 150];
@@ -55,11 +65,26 @@
 //!     .unwrap();
 //! ```
 
-/// Bitcoin script envelope builder utilities.
-pub mod builder;
+/// Transaction fixtures, behind the `test-utils` feature.
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
 
-/// Error types for envelope operations.
-pub mod errors;
+/// Required length of the x-only public key in a signed envelope leaf.
+///
+/// Any other non-zero length is a BIP342 unknown key type that `OP_CHECKSIG` accepts without
+/// a signature (anyone-can-spend).
+pub const SIGNED_LEAF_PUBKEY_LEN: usize = 32;
 
-/// Bitcoin script envelope parser utilities.
-pub mod parser;
+mod builder;
+mod parser;
+
+pub use builder::{
+    EnvelopeBuildError, EnvelopeScriptBuilder, MAX_ENVELOPE_PAYLOAD_SIZE,
+    MIN_ENVELOPE_PAYLOAD_SIZE, build_envelope_script, build_signed_envelope_leaf,
+    split_payload_into_envelope_chunks,
+};
+pub use parser::{
+    CommitRevealParseError, EnvelopeParseError, PayloadParser, PayloadParserConfig,
+    PayloadParserOutput, RecoveredPayload, SignedEnvelopeLeaf, parse_envelope_container,
+    parse_envelope_payload, parse_multi_envelope_payloads, parse_signed_envelope_leaf,
+};
