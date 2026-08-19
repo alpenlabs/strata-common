@@ -1,5 +1,7 @@
 //! Core schema types.
 
+use std::any::{Any, TypeId};
+
 /// Opaque version ID.
 pub type VersionId = u32;
 
@@ -14,7 +16,7 @@ pub type VersionId = u32;
 ///     const KEY: &str = "foo";
 /// }
 /// ```
-pub trait Schema {
+pub trait Schema: 'static {
     /// Universal key type.
     const KEY: &str;
 
@@ -40,7 +42,7 @@ pub trait Schema {
 ///     const VERSION: VersionId = 1;
 /// }
 /// ```
-pub trait SchemaVersion<S: Schema> {
+pub trait SchemaVersion<S: Schema>: Any {
     /// The version of the schema this type embodies.
     const VERSION: VersionId;
 }
@@ -67,4 +69,28 @@ pub trait SchemaEnum<S: Schema> {
     /// If this value contains a "highest version" of a schema, returns the
     /// value.
     fn as_highest(&self) -> Option<&Self::Highest>;
+}
+
+/// Unique key for a specific version of a specific schema.
+///
+/// This can be used to compare schema versions across contexts in a compact and
+/// printable way.
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub struct VersionKey(&'static str, VersionId);
+
+impl VersionKey {
+    /// Creates a [`VersionKey`] of a version of a schema.
+    pub fn of<S: Schema, V: SchemaVersion<S>>() -> Self {
+        Self(S::KEY, V::VERSION)
+    }
+
+    /// Gets the schema key.
+    pub fn key(&self) -> &'static str {
+        self.0
+    }
+
+    /// Gets the version ID.
+    pub fn version(&self) -> VersionId {
+        self.1
+    }
 }
