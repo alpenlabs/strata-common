@@ -179,6 +179,26 @@ fn test_payload_has_no_added_framing() {
 }
 
 #[test]
+fn test_owned_container_serde_roundtrip() {
+    let val = SszV1 { a: 42, b: 7 };
+    let cont = OwnedValueContainer::encode_value::<SszSchema, _>(&val).expect("test: encode");
+
+    let mut buf = Vec::new();
+    ciborium::into_writer(&cont, &mut buf).expect("test: serialize container");
+
+    let de: OwnedValueContainer =
+        ciborium::from_reader(buf.as_slice()).expect("test: deserialize container");
+    assert_eq!(de, cont, "test: container serde roundtrip");
+
+    // The payload has to survive as an opaque blob, so it should come back out
+    // of the container decodable as the value we put in.
+    let decoded = de
+        .try_decode_as_ver::<SszSchema, SszV1>()
+        .expect("test: decode");
+    assert_eq!(decoded, val, "test: value through container serde");
+}
+
+#[test]
 fn test_container_ref_decodes() {
     let val = SszV1 { a: 3, b: 4 };
     let buf = val.as_ssz_bytes();

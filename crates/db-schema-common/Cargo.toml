@@ -7,10 +7,12 @@ edition = "2024"
 strata-codec.workspace = true
 
 serde.workspace = true
+serde_bytes.workspace = true
 ssz = { workspace = true, optional = true }
 thiserror.workspace = true
 
 [dev-dependencies]
+ciborium.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true
 strata-codec = { workspace = true, features = ["derive"] }

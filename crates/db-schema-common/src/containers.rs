@@ -1,6 +1,7 @@
 //! Containers for versioned, opaquely-encoded values.
 
 use serde::{Deserialize, Serialize};
+use serde_bytes::ByteBuf;
 
 use crate::errors::DecodeValueError;
 use crate::types::*;
@@ -24,13 +25,13 @@ pub trait ValueContainer {
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct OwnedValueContainer {
     ver: VersionId,
-    pl: Vec<u8>,
+    pl: ByteBuf,
 }
 
 impl OwnedValueContainer {
     /// Creates a new instance.
     pub fn new(ver: VersionId, pl: Vec<u8>) -> Self {
-        Self { ver, pl }
+        Self { ver, pl: pl.into() }
     }
 
     /// Encodes a schema version value into a new container, tagged with that
@@ -46,7 +47,7 @@ impl OwnedValueContainer {
 
     /// Consumes the container, returning the raw payload.
     pub fn into_payload(self) -> Vec<u8> {
-        self.pl
+        self.pl.into_vec()
     }
 }
 
@@ -65,6 +66,8 @@ impl ValueContainer for OwnedValueContainer {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize)]
 pub struct ValueContainerRef<'b> {
     ver: VersionId,
+
+    #[serde(with = "serde_bytes")]
     pl: &'b [u8],
 }
 
