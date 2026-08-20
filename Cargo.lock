@@ -4209,8 +4209,9 @@ dependencies = [
 name = "strata-db-schema-common"
 version = "0.1.0"
 dependencies = [
- "ciborium",
  "serde",
+ "ssz",
+ "ssz_derive",
  "strata-codec",
  "thiserror 2.0.19",
 ]

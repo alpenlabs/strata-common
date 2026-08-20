@@ -23,7 +23,7 @@ members = [
   "crates/serde-utils",
   "crates/service",
   "crates/ssz-tests",
-  "crates/tasks", "crates/db-schema-common",
+  "crates/tasks",
 ]
 
 resolver = "3"
