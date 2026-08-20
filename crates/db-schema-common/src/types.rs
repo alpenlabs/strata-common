@@ -32,7 +32,7 @@ pub type VersionId = u32;
 /// A schema that really does need to change format between versions uses
 /// [`SchemaError`](crate::SchemaError), which converts from both.
 pub trait Schema: 'static {
-    /// Universal key type.
+    /// Key string used to identify instances of values under this schema.
     const KEY: &str;
 
     /// Error used in encoding/decoding.
