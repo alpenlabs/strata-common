@@ -56,7 +56,7 @@ pub enum DecodeValueError<E> {
 #[derive(Debug, Error)]
 pub enum MigrationError {
     /// No migration was registered to get from one version to another.
-    #[error("schema '{schema}': no migration from {from} to {to}")]
+    #[error("no migration from {from} to {to} (schema '{schema}')")]
     NoPath {
         /// The schema key.
         schema: &'static str,
@@ -68,9 +68,30 @@ pub enum MigrationError {
         to: VersionId,
     },
 
-    /// Two migrations registered around the same version boundary disagreed
-    /// about the type at that version.
-    #[error("schema '{schema}': migration chain type mismatch at version {at}")]
+    /// The value to migrate is already at a version above the one we were
+    /// asked to migrate it to.
+    ///
+    /// Migrations only go up, so this usually means the data was written by
+    /// newer code than is reading it.
+    #[error("value at version {have} is newer than target {want} (schema '{schema}')")]
+    NewerThanTarget {
+        /// The schema key.
+        schema: &'static str,
+
+        /// The version the value is at.
+        have: VersionId,
+
+        /// The version we were asked to migrate to.
+        want: VersionId,
+    },
+
+    /// A value handed along a migration chain was not the type registered for
+    /// that version.
+    ///
+    /// [`Migrator::register`](crate::Migrator::register) checks that every
+    /// migration agrees about the type at each version, so this should not
+    /// happen in practice.
+    #[error("migration chain type mismatch at version {at} (schema '{schema}')")]
     ChainTypeMismatch {
         /// The schema key.
         schema: &'static str,

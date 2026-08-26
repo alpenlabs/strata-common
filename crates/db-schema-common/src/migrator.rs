@@ -1,6 +1,6 @@
 //! Migration support library.
 
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
@@ -26,8 +26,11 @@ trait Migration: 'static {
     fn encode_dst(&self, val: &dyn Any) -> Result<Vec<u8>, MigrationError>;
 }
 
-/// Opaque wrapper around a decoded schema type, including the last migration
-/// that we applied to it, so that we could re-encode it if we wanted to.
+/// A value that has been migrated at least one step, still in value space.
+///
+/// Holds the last migration that was applied to it, since that is the only
+/// thing around that knows how to encode a value of whatever version we ended
+/// up at when the caller didn't name it statically.
 struct MigratedValue<'m> {
     /// The version we ended up at.
     version: VersionId,
@@ -39,18 +42,24 @@ struct MigratedValue<'m> {
     last: &'m dyn Migration,
 }
 
-#[allow(unused)] // will get made public later
 impl<'m> MigratedValue<'m> {
-    fn downcast_ref<T: Any>(&self) -> Option<&T> {
-        self.value.downcast_ref()
+    /// Takes the value out as the concrete type of the version we ended at.
+    fn into_value<V: Any>(self, schema: &'static str) -> Result<V, MigrationError> {
+        let version = self.version;
+        self.value
+            .downcast::<V>()
+            .map(|v| *v)
+            .map_err(|_| MigrationError::ChainTypeMismatch {
+                schema,
+                at: version,
+            })
     }
 
-    fn downcast<T: Any>(self) -> Option<Box<T>> {
-        self.value.downcast().ok()
-    }
-
-    fn encode(&self) -> Result<Vec<u8>, MigrationError> {
-        self.last.encode_dst(&self.value)
+    /// Re-encodes the value into a container tagged with the version we ended
+    /// at.
+    fn into_container(self) -> Result<OwnedValueContainer, MigrationError> {
+        let buf = self.last.encode_dst(self.value.as_ref())?;
+        Ok(OwnedValueContainer::new(self.version, buf))
     }
 }
 
@@ -62,37 +71,67 @@ impl<'m> MigratedValue<'m> {
 /// will never come close to this.
 pub const MAX_VERSION_ID: VersionId = 1024;
 
-/// Per-schema migration table, indexed by source version ID.
+/// Per-schema migration table, indexed by version ID.
 ///
-/// Slots that sit before the first version or in a gap in the chain are `None`,
+/// Slots that sit before the first version or in a gap in the chain are empty,
 /// which reads the same as "no migration out of here" and just ends a walk.
 #[derive(Default)]
 struct SchemaMigrationTable {
-    /// Migration out of each version, if we have one.
-    migrations: Vec<Option<Box<dyn Migration>>>,
+    /// State of each version we know something about.
+    slots: Vec<VersionSlot>,
+}
+
+/// What we know about a single version of a schema.
+#[derive(Default)]
+struct VersionSlot {
+    /// The Rust type that embodies this version, once some migration into or
+    /// out of it has told us.
+    ty: Option<TypeId>,
+
+    /// Migration out of this version, if we have one.
+    out: Option<Box<dyn Migration>>,
 }
 
 impl SchemaMigrationTable {
     /// Looks up the migration out of a version.
     fn get(&self, version: VersionId) -> Option<&dyn Migration> {
-        self.migrations.get(version as usize)?.as_deref()
+        self.slots.get(version as usize)?.out.as_deref()
     }
 
-    /// Inserts the migration out of a version, growing the table as needed.
+    /// Gets the slot for a version, growing the table as needed.
+    fn slot_mut(&mut self, version: VersionId) -> &mut VersionSlot {
+        let idx = version as usize;
+        if idx >= self.slots.len() {
+            self.slots.resize_with(idx + 1, VersionSlot::default);
+        }
+
+        &mut self.slots[idx]
+    }
+
+    /// Records the type at a version.
+    ///
+    /// Returns `false` if a different type was already recorded there.
+    fn set_type(&mut self, version: VersionId, ty: TypeId) -> bool {
+        let slot = self.slot_mut(version);
+        match slot.ty {
+            Some(existing) => existing == ty,
+            None => {
+                slot.ty = Some(ty);
+                true
+            }
+        }
+    }
+
+    /// Inserts the migration out of a version.
     ///
     /// Returns `false` without inserting if that slot was already filled.
     fn insert(&mut self, version: VersionId, m: Box<dyn Migration>) -> bool {
-        let idx = version as usize;
-        if idx >= self.migrations.len() {
-            self.migrations.resize_with(idx + 1, || None);
-        }
-
-        let slot = &mut self.migrations[idx];
-        if slot.is_some() {
+        let slot = self.slot_mut(version);
+        if slot.out.is_some() {
             return false;
         }
 
-        *slot = Some(m);
+        slot.out = Some(m);
         true
     }
 }
@@ -102,6 +141,17 @@ impl SchemaMigrationTable {
 /// Migrations are registered between adjacent versions only, so the table is
 /// keyed by source version and every chain is just a walk of consecutive
 /// version IDs.
+///
+/// There are two ways to run a migration, differing in where they stop:
+///
+/// * [`migrate_to`](Self::migrate_to) goes to a version named statically and hands back the decoded
+///   value of that type.
+/// * [`migrate_to_latest`](Self::migrate_to_latest) goes as far as the registered migrations reach
+///   and hands back a re-encoded container, since there's no static type to name.
+///
+/// Anything else composes out of those and the container fns, e.g. a
+/// re-encoded container at a specific version is
+/// `OwnedValueContainer::encode_value(&m.migrate_to::<S, V>(&cont)?)`.
 #[expect(missing_debug_implementations, reason = "it's not")]
 pub struct Migrator {
     tbl: HashMap<&'static str, SchemaMigrationTable>,
@@ -120,8 +170,9 @@ impl Migrator {
     /// # Panics
     ///
     /// If `B` is not exactly one version after `A`, if either version is above
-    /// [`MAX_VERSION_ID`], or if a migration out of `A` has already been
-    /// registered.
+    /// [`MAX_VERSION_ID`], if a migration out of `A` has already been
+    /// registered, or if `A` or `B` disagrees with a previously registered
+    /// migration about which type embodies that version.
     pub fn register<S: Schema, A: SchemaVersion<S>, B: SchemaVersion<S>>(&mut self, f: fn(A) -> B) {
         assert!(
             A::VERSION.checked_add(1) == Some(B::VERSION),
@@ -138,8 +189,23 @@ impl Migrator {
             B::VERSION
         );
 
-        let migration = FnMigration::<S, A, B>::new(f);
         let sch_tbl = self.tbl.entry(S::KEY).or_default();
+
+        // Checking the types here means a chain can't break with a
+        // `ChainTypeMismatch` partway through a walk later; a disagreement
+        // shows up at startup instead.
+        for (ver, ty) in [
+            (A::VERSION, TypeId::of::<A>()),
+            (B::VERSION, TypeId::of::<B>()),
+        ] {
+            assert!(
+                sch_tbl.set_type(ver, ty),
+                "schema/migrator: schema '{}' version {ver} already has a different type",
+                S::KEY
+            );
+        }
+
+        let migration = FnMigration::<S, A, B>::new(f);
         let inserted = sch_tbl.insert(A::VERSION, Box::new(migration));
         assert!(
             inserted,
@@ -148,136 +214,134 @@ impl Migrator {
         );
     }
 
-    /// Looks up the migration out of a version, if there is one.
-    fn get_migrator_from(&self, sch_key: &str, from_id: VersionId) -> Option<&dyn Migration> {
-        self.tbl.get(sch_key)?.get(from_id)
-    }
-
-    /// Performs a single migration, taking the value from `A` to `B`.
-    pub fn migrate_once<S: Schema, A: SchemaVersion<S>, B: SchemaVersion<S>>(
-        &self,
-        buf: &[u8],
-    ) -> Result<Vec<u8>, MigrationError> {
-        let m = self
-            .get_migrator_from(S::KEY, A::VERSION)
-            .ok_or(MigrationError::NoPath {
-                schema: S::KEY,
-                from: A::VERSION,
-                to: B::VERSION,
-            })?;
-
-        let val = m.decode_src(buf)?;
-        let val = m.apply(val)?;
-        m.encode_dst(val.as_ref())
-    }
-
-    /// Applies every migration reachable from the container's version, leaving
-    /// the result as a value rather than re-encoding it.
+    /// Gets the version that [`migrate_to_latest`](Self::migrate_to_latest)
+    /// would land on for a container at version `from`.
     ///
-    /// Returns `None` if no migrations applied at all, in which case the
-    /// container is already at the highest version we know about and its
-    /// payload should be used as-is.
-    fn migrate_up_from_cont<S: Schema>(
-        &self,
-        cont: &impl ValueContainer,
-    ) -> Result<Option<MigratedValue<'_>>, MigrationError> {
+    /// This is `from` itself if there is no migration out of it.
+    pub fn latest_from<S: Schema>(&self, from: VersionId) -> VersionId {
         let Some(sch_tbl) = self.tbl.get(S::KEY) else {
-            return Ok(None);
+            return from;
         };
 
-        // Walk the chain of adjacent migrations from the container's version.
-        // TODO(trey): make this not alloc a vec here, that's silly
-        let mut chain: Vec<&dyn Migration> = Vec::new();
-        let mut version = cont.version();
-        while let Some(m) = sch_tbl.get(version) {
-            chain.push(m);
+        let mut version = from;
+        while sch_tbl.get(version).is_some() {
             // `register` caps versions at `MAX_VERSION_ID`, so the lookup above
             // can never succeed where this would overflow.
             version += 1;
         }
 
-        let Some(last) = chain.last().copied() else {
-            return Ok(None);
+        version
+    }
+
+    /// Migrates the container's value to exactly version `V` and decodes it.
+    ///
+    /// A container already at `V` is just decoded, and the migrated value is
+    /// never re-encoded along the way, so this is the fn to reach for when
+    /// reading a stored value into memory.
+    ///
+    /// # Errors
+    ///
+    /// * [`MigrationError::NewerThanTarget`] if the container is at a version above `V`, which
+    ///   usually means the data was written by newer code.
+    /// * [`MigrationError::NoPath`] if the registered migrations run out before reaching `V`.
+    pub fn migrate_to<S: Schema, V: SchemaVersion<S>>(
+        &self,
+        cont: &impl ValueContainer,
+    ) -> Result<V, MigrationError> {
+        if cont.version() > V::VERSION {
+            return Err(MigrationError::NewerThanTarget {
+                schema: S::KEY,
+                have: cont.version(),
+                want: V::VERSION,
+            });
+        }
+
+        match self.walk::<S>(cont, Some(V::VERSION))? {
+            None => V::decode_payload(cont.payload()).map_err(MigrationError::payload),
+            Some(mv) => mv.into_value(S::KEY),
+        }
+    }
+
+    /// Applies every registered migration out of the container's version and
+    /// re-encodes the result into a container tagged with the version it
+    /// reached.
+    ///
+    /// A container with no migration out of its version, including one whose
+    /// schema has no migrations registered at all, is returned unchanged.  See
+    /// [`latest_from`](Self::latest_from) to find out where this will end up
+    /// without running it.
+    pub fn migrate_to_latest<S: Schema>(
+        &self,
+        cont: &impl ValueContainer,
+    ) -> Result<OwnedValueContainer, MigrationError> {
+        match self.walk::<S>(cont, None)? {
+            None => Ok(OwnedValueContainer::from_container(cont)),
+            Some(mv) => mv.into_container(),
+        }
+    }
+
+    /// Walks the chain of adjacent migrations from the container's version,
+    /// staying in value space.
+    ///
+    /// With `Some(to)`, stops on reaching `to` and errors if the chain runs dry
+    /// first.  With `None`, runs until there is no migration out of the
+    /// current version.  Either way, returns `None` if no migration was
+    /// applied at all, in which case the container's payload is already at the
+    /// final version.
+    fn walk<S: Schema>(
+        &self,
+        cont: &impl ValueContainer,
+        to: Option<VersionId>,
+    ) -> Result<Option<MigratedValue<'_>>, MigrationError> {
+        let from = cont.version();
+        let no_path = |at: VersionId, to: VersionId| MigrationError::NoPath {
+            schema: S::KEY,
+            from: at,
+            to,
         };
 
+        // Already there, so don't take a step just because one is available.
+        if to == Some(from) {
+            return Ok(None);
+        }
+
+        let sch_tbl = self.tbl.get(S::KEY);
+        let Some(mut m) = sch_tbl.and_then(|t| t.get(from)) else {
+            return match to {
+                Some(to) => Err(no_path(from, to)),
+                None => Ok(None),
+            };
+        };
+        let sch_tbl = sch_tbl.expect("schema/migrator: just found a migration in it");
+
         // Decode once at the head, then stay in value space.
-        let mut value = chain[0].decode_src(cont.payload())?;
-        for m in &chain {
+        let mut value = m.decode_src(cont.payload())?;
+        let mut version = from;
+
+        loop {
             value = m.apply(value)?;
+            // `register` caps versions at `MAX_VERSION_ID`, so the lookup below
+            // can never succeed where this would overflow.
+            version += 1;
+
+            if to == Some(version) {
+                break;
+            }
+
+            match sch_tbl.get(version) {
+                Some(next) => m = next,
+                None => match to {
+                    Some(to) => return Err(no_path(version, to)),
+                    None => break,
+                },
+            }
         }
 
         Ok(Some(MigratedValue {
             version,
             value,
-            last,
+            last: m,
         }))
-    }
-
-    /// Migrates the value contained in the container until we run out of
-    /// migrations to apply, returning a new [`OwnedValueContainer`].
-    ///
-    /// A container that is already at the highest version, or whose schema has
-    /// no migrations registered at all, is returned unchanged.
-    pub fn migrate_all_the_way<S: Schema>(
-        &self,
-        cont: &impl ValueContainer,
-    ) -> Result<OwnedValueContainer, MigrationError> {
-        match self.migrate_up_from_cont::<S>(cont)? {
-            None => Ok(OwnedValueContainer::from_container(cont)),
-            Some(mv) => {
-                let buf = mv.last.encode_dst(mv.value.as_ref())?;
-                Ok(OwnedValueContainer::new(mv.version, buf))
-            }
-        }
-    }
-
-    /// Migrates the value contained in the container as far as it goes and
-    /// decodes it as `V`, which must be the version the chain ends at.
-    ///
-    /// This never re-encodes the migrated value, so it is the fn to reach for
-    /// when reading a stored value into memory.
-    // FIXME(trey): I don't know if this is actually doing the thing we want it
-    // to do, do we only want to migrate it "as far as" V?
-    pub fn migrate_and_decode<S: Schema, V: SchemaVersion<S>>(
-        &self,
-        cont: &impl ValueContainer,
-    ) -> Result<V, MigrationError> {
-        match self.migrate_up_from_cont::<S>(cont)? {
-            // Nothing to migrate, so decode the container's payload directly.
-            None => {
-                if cont.version() != V::VERSION {
-                    return Err(MigrationError::NoPath {
-                        schema: S::KEY,
-                        from: cont.version(),
-                        to: V::VERSION,
-                    });
-                }
-
-                V::decode_payload(cont.payload()).map_err(MigrationError::payload)
-            }
-
-            Some(mv) => {
-                let version = mv.version;
-
-                // If it didn't change then we couldn't figure out the path and
-                // something is probably misconfigured.
-                // TODO(trey): should this just panic?
-                if version != V::VERSION {
-                    return Err(MigrationError::NoPath {
-                        schema: S::KEY,
-                        from: mv.version,
-                        to: V::VERSION,
-                    });
-                }
-
-                mv.downcast::<V>()
-                    .map(|v| *v)
-                    .ok_or_else(|| MigrationError::ChainTypeMismatch {
-                        schema: S::KEY,
-                        at: version,
-                    })
-            }
-        }
     }
 }
 

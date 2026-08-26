@@ -264,14 +264,14 @@ fn test_trailing_bytes_are_an_error() {
 }
 
 #[test]
-fn test_migrate_all_the_way_chain() {
+fn test_migrate_to_latest_chain() {
     let m = codec_migrator();
 
     let v1 = CodecV1 { a: 3 };
     let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
 
     let migrated = m
-        .migrate_all_the_way::<CodecSchema>(&cont)
+        .migrate_to_latest::<CodecSchema>(&cont)
         .expect("test: migrate");
     assert_eq!(migrated.version(), 3, "test: should reach the last version");
 
@@ -282,33 +282,138 @@ fn test_migrate_all_the_way_chain() {
 }
 
 #[test]
-fn test_migrate_from_middle_of_chain() {
+fn test_migrate_to_end_of_chain() {
+    let m = codec_migrator();
+
+    let v1 = CodecV1 { a: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
+
+    let val = m
+        .migrate_to::<CodecSchema, CodecV3>(&cont)
+        .expect("test: migrate");
+    assert_eq!(val, CodecV3 { a: 3, b: 100, c: 7 }, "test: migrated value");
+}
+
+#[test]
+fn test_migrate_to_middle_of_chain() {
+    // The target is where we stop, not the end of the table.
+    let m = codec_migrator();
+
+    let v1 = CodecV1 { a: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
+
+    let val = m
+        .migrate_to::<CodecSchema, CodecV2>(&cont)
+        .expect("test: migrate");
+    assert_eq!(val, CodecV2 { a: 3, b: 100 }, "test: migrated value");
+}
+
+#[test]
+fn test_migrate_to_from_middle_of_chain() {
     let m = codec_migrator();
 
     let v2 = CodecV2 { a: 8, b: 9 };
     let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v2).expect("test: encode");
 
     let val = m
-        .migrate_and_decode::<CodecSchema, CodecV3>(&cont)
+        .migrate_to::<CodecSchema, CodecV3>(&cont)
         .expect("test: migrate");
     assert_eq!(val, CodecV3 { a: 8, b: 9, c: 7 }, "test: migrated value");
 }
 
 #[test]
-fn test_migrate_already_highest_is_unchanged() {
+fn test_migrate_to_same_version_just_decodes() {
+    let m = codec_migrator();
+
+    let v2 = CodecV2 { a: 8, b: 9 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v2).expect("test: encode");
+
+    let val = m
+        .migrate_to::<CodecSchema, CodecV2>(&cont)
+        .expect("test: migrate");
+    assert_eq!(val, v2, "test: value should pass through");
+}
+
+#[test]
+fn test_migrate_to_without_migrations() {
+    let m = Migrator::new();
+
+    let val = SszV1 { a: 42, b: 7 };
+    let cont = OwnedValueContainer::encode_value::<SszSchema, _>(&val).expect("test: encode");
+
+    let decoded = m
+        .migrate_to::<SszSchema, SszV1>(&cont)
+        .expect("test: decode");
+    assert_eq!(decoded, val, "test: value should pass through");
+}
+
+#[test]
+fn test_migrate_to_chain_runs_dry() {
+    // Only v1 -> v2 is registered, so v3 is out of reach.
+    let mut m = Migrator::new();
+    m.register::<CodecSchema, _, _>(codec_v1_to_v2);
+
+    let v1 = CodecV1 { a: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
+
+    let res = m.migrate_to::<CodecSchema, CodecV3>(&cont);
+    match res {
+        Err(MigrationError::NoPath { from, to, .. }) => {
+            assert_eq!(from, 2, "test: should have stalled at v2");
+            assert_eq!(to, 3, "test: target version");
+        }
+        _ => panic!("test: should have reported no path"),
+    }
+}
+
+#[test]
+fn test_migrate_to_no_migrations_at_all_is_no_path() {
+    let m = Migrator::new();
+
+    let v1 = CodecV1 { a: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
+
+    let res = m.migrate_to::<CodecSchema, CodecV2>(&cont);
+    assert!(
+        matches!(res, Err(MigrationError::NoPath { from: 1, to: 2, .. })),
+        "test: should have reported no path"
+    );
+}
+
+#[test]
+fn test_migrate_to_newer_than_target_is_an_error() {
+    // Migrations only go up, so a v3 value can't become a v2 one even with a
+    // full chain registered.
+    let m = codec_migrator();
+
+    let v3 = CodecV3 { a: 1, b: 2, c: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v3).expect("test: encode");
+
+    let res = m.migrate_to::<CodecSchema, CodecV2>(&cont);
+    match res {
+        Err(MigrationError::NewerThanTarget { have, want, .. }) => {
+            assert_eq!(have, 3, "test: container version");
+            assert_eq!(want, 2, "test: target version");
+        }
+        _ => panic!("test: should have reported newer than target"),
+    }
+}
+
+#[test]
+fn test_migrate_to_latest_already_highest_is_unchanged() {
     let m = codec_migrator();
 
     let v3 = CodecV3 { a: 1, b: 2, c: 3 };
     let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v3).expect("test: encode");
 
     let migrated = m
-        .migrate_all_the_way::<CodecSchema>(&cont)
+        .migrate_to_latest::<CodecSchema>(&cont)
         .expect("test: migrate");
     assert_eq!(migrated, cont, "test: highest version should be unchanged");
 }
 
 #[test]
-fn test_migrate_unknown_schema_is_unchanged() {
+fn test_migrate_to_latest_unknown_schema_is_unchanged() {
     // A schema with no migrations registered at all must not be an error.
     let m = codec_migrator();
 
@@ -316,64 +421,36 @@ fn test_migrate_unknown_schema_is_unchanged() {
     let cont = OwnedValueContainer::encode_value::<SszSchema, _>(&val).expect("test: encode");
 
     let migrated = m
-        .migrate_all_the_way::<SszSchema>(&cont)
+        .migrate_to_latest::<SszSchema>(&cont)
         .expect("test: migrate");
     assert_eq!(migrated, cont, "test: unknown schema should be unchanged");
 }
 
 #[test]
-fn test_migrate_and_decode_without_migrations() {
-    let m = Migrator::new();
-
-    let val = SszV1 { a: 42, b: 7 };
-    let cont = OwnedValueContainer::encode_value::<SszSchema, _>(&val).expect("test: encode");
-
-    let decoded = m
-        .migrate_and_decode::<SszSchema, SszV1>(&cont)
-        .expect("test: decode");
-    assert_eq!(decoded, val, "test: value should pass through");
-}
-
-#[test]
-fn test_migrate_and_decode_wrong_target_version() {
-    let m = codec_migrator();
-
-    let v1 = CodecV1 { a: 3 };
-    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
-
-    // The chain ends at v3, so asking for v2 has no path.
-    let res = m.migrate_and_decode::<CodecSchema, CodecV2>(&cont);
-    assert!(
-        matches!(res, Err(MigrationError::NoPath { .. })),
-        "test: should have reported no path"
-    );
-}
-
-#[test]
-fn test_migrate_once() {
+fn test_migrate_once_via_container_ref() {
+    // A single step over raw bytes is just `migrate_to` on a borrowed
+    // container tagged with the source version.
     let m = codec_migrator();
 
     let v1 = CodecV1 { a: 3 };
     let buf = strata_codec::encode_to_vec(&v1).expect("test: encode");
+    let cont = ValueContainerRef::new(CodecV1::VERSION, &buf);
 
-    let out = m
-        .migrate_once::<CodecSchema, CodecV1, CodecV2>(&buf)
+    let v2 = m
+        .migrate_to::<CodecSchema, CodecV2>(&cont)
         .expect("test: migrate");
-
-    let v2 = CodecV2::decode_payload(&out).expect("test: decode");
     assert_eq!(v2, CodecV2 { a: 3, b: 100 }, "test: migrated value");
 }
 
 #[test]
-fn test_migrate_once_missing_is_an_error() {
-    let m = Migrator::new();
-    let buf = strata_codec::encode_to_vec(&CodecV1 { a: 3 }).expect("test: encode");
+fn test_latest_from() {
+    let m = codec_migrator();
 
-    let res = m.migrate_once::<CodecSchema, CodecV1, CodecV2>(&buf);
-    assert!(
-        matches!(res, Err(MigrationError::NoPath { .. })),
-        "test: should have reported no path"
-    );
+    assert_eq!(m.latest_from::<CodecSchema>(1), 3, "test: from the head");
+    assert_eq!(m.latest_from::<CodecSchema>(2), 3, "test: from the middle");
+    assert_eq!(m.latest_from::<CodecSchema>(3), 3, "test: from the end");
+    assert_eq!(m.latest_from::<CodecSchema>(7), 7, "test: beyond the end");
+    assert_eq!(m.latest_from::<SszSchema>(1), 1, "test: unknown schema");
 }
 
 #[test]
@@ -441,9 +518,27 @@ fn test_migrate_ignores_gap_in_chain() {
     let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
 
     let migrated = m
-        .migrate_all_the_way::<CodecSchema>(&cont)
+        .migrate_to_latest::<CodecSchema>(&cont)
         .expect("test: migrate");
     assert_eq!(migrated, cont, "test: gap should leave the value alone");
+}
+
+#[test]
+#[should_panic(expected = "already has a different type")]
+fn test_register_type_disagreement_panics() {
+    // Two migrations meeting at v2 have to agree on what type v2 is.
+    #[derive(Debug, Clone, PartialEq, Eq, Codec)]
+    struct OtherV2(u32);
+
+    decl_schema_version!(OtherV2, schema = CodecSchema, version = 2, format = codec);
+
+    fn other_v2_to_v3(v: OtherV2) -> CodecV3 {
+        CodecV3 { a: v.0, b: 0, c: 0 }
+    }
+
+    let mut m = Migrator::new();
+    m.register::<CodecSchema, _, _>(codec_v1_to_v2);
+    m.register::<CodecSchema, _, _>(other_v2_to_v3);
 }
 
 #[test]
