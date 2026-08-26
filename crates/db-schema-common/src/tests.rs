@@ -395,6 +395,58 @@ fn test_register_duplicate_panics() {
 }
 
 #[test]
+#[should_panic(expected = "above the max version")]
+fn test_register_above_max_version_panics() {
+    // The table is indexed by version ID, so a wild version has to be rejected
+    // rather than allowed to size the vec.
+    struct HugeSchema;
+
+    impl Schema for HugeSchema {
+        const KEY: &str = "test-huge";
+        type Error = CodecError;
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Codec)]
+    struct HugeA(u32);
+
+    decl_schema_version!(
+        HugeA,
+        schema = HugeSchema,
+        version = MAX_VERSION_ID,
+        format = codec
+    );
+
+    #[derive(Debug, Clone, PartialEq, Eq, Codec)]
+    struct HugeB(u32);
+
+    decl_schema_version!(
+        HugeB,
+        schema = HugeSchema,
+        version = MAX_VERSION_ID + 1,
+        format = codec
+    );
+
+    let mut m = Migrator::new();
+    m.register::<HugeSchema, _, _>(|v: HugeA| HugeB(v.0));
+}
+
+#[test]
+fn test_migrate_ignores_gap_in_chain() {
+    // A hole in the version-indexed table has to read as "chain ends here",
+    // not as a slot to skip over.
+    let mut m = Migrator::new();
+    m.register::<CodecSchema, _, _>(codec_v2_to_v3);
+
+    let v1 = CodecV1 { a: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
+
+    let migrated = m
+        .migrate_all_the_way::<CodecSchema>(&cont)
+        .expect("test: migrate");
+    assert_eq!(migrated, cont, "test: gap should leave the value alone");
+}
+
+#[test]
 fn test_version_key() {
     let k = VersionKey::of::<CodecSchema, CodecV2>();
     assert_eq!(k.key(), "test-codec", "test: schema key");

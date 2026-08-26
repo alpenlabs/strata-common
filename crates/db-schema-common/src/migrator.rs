@@ -28,7 +28,6 @@ trait Migration: 'static {
 
 /// Opaque wrapper around a decoded schema type, including the last migration
 /// that we applied to it, so that we could re-encode it if we wanted to.
-// FIXME(trey): maybe this should expose it as a SchemaEnum type?
 struct MigratedValue<'m> {
     /// The version we ended up at.
     version: VersionId,
@@ -49,6 +48,53 @@ impl<'m> MigratedValue<'m> {
     fn downcast<T: Any>(self) -> Option<Box<T>> {
         self.value.downcast().ok()
     }
+
+    fn encode(&self) -> Result<Vec<u8>, MigrationError> {
+        self.last.encode_dst(&self.value)
+    }
+}
+
+/// Highest version ID we accept a migration around.
+///
+/// Each schema's migrations live in a flat vec indexed by source version, so
+/// this is what keeps a typo'd version ID from asking for a multi-gigabyte
+/// allocation.  Schemas have a handful of versions in practice, so a real one
+/// will never come close to this.
+pub const MAX_VERSION_ID: VersionId = 1024;
+
+/// Per-schema migration table, indexed by source version ID.
+///
+/// Slots that sit before the first version or in a gap in the chain are `None`,
+/// which reads the same as "no migration out of here" and just ends a walk.
+#[derive(Default)]
+struct SchemaMigrationTable {
+    /// Migration out of each version, if we have one.
+    migrations: Vec<Option<Box<dyn Migration>>>,
+}
+
+impl SchemaMigrationTable {
+    /// Looks up the migration out of a version.
+    fn get(&self, version: VersionId) -> Option<&dyn Migration> {
+        self.migrations.get(version as usize)?.as_deref()
+    }
+
+    /// Inserts the migration out of a version, growing the table as needed.
+    ///
+    /// Returns `false` without inserting if that slot was already filled.
+    fn insert(&mut self, version: VersionId, m: Box<dyn Migration>) -> bool {
+        let idx = version as usize;
+        if idx >= self.migrations.len() {
+            self.migrations.resize_with(idx + 1, || None);
+        }
+
+        let slot = &mut self.migrations[idx];
+        if slot.is_some() {
+            return false;
+        }
+
+        *slot = Some(m);
+        true
+    }
 }
 
 /// Handles migration mapping.
@@ -58,8 +104,7 @@ impl<'m> MigratedValue<'m> {
 /// version IDs.
 #[expect(missing_debug_implementations, reason = "it's not")]
 pub struct Migrator {
-    // TODO(trey): convert hashmap to vec later and use version IDs as indexes
-    tbl: HashMap<&'static str, HashMap<VersionId, Box<dyn Migration>>>,
+    tbl: HashMap<&'static str, SchemaMigrationTable>,
 }
 
 impl Migrator {
@@ -74,8 +119,9 @@ impl Migrator {
     ///
     /// # Panics
     ///
-    /// If `B` is not exactly one version after `A`, or if a migration out of
-    /// `A` has already been registered.
+    /// If `B` is not exactly one version after `A`, if either version is above
+    /// [`MAX_VERSION_ID`], or if a migration out of `A` has already been
+    /// registered.
     pub fn register<S: Schema, A: SchemaVersion<S>, B: SchemaVersion<S>>(&mut self, f: fn(A) -> B) {
         assert!(
             A::VERSION.checked_add(1) == Some(B::VERSION),
@@ -84,11 +130,19 @@ impl Migrator {
             B::VERSION
         );
 
+        // This also bounds how far a chain walk can run, since it can only
+        // proceed through versions we have an entry for.
+        assert!(
+            B::VERSION <= MAX_VERSION_ID,
+            "schema/migrator: version {} is above the max version {MAX_VERSION_ID}",
+            B::VERSION
+        );
+
         let migration = FnMigration::<S, A, B>::new(f);
         let sch_tbl = self.tbl.entry(S::KEY).or_default();
-        let prev = sch_tbl.insert(A::VERSION, Box::new(migration));
+        let inserted = sch_tbl.insert(A::VERSION, Box::new(migration));
         assert!(
-            prev.is_none(),
+            inserted,
             "schema/migrator: duplicate migration out of version {}",
             A::VERSION
         );
@@ -96,7 +150,7 @@ impl Migrator {
 
     /// Looks up the migration out of a version, if there is one.
     fn get_migrator_from(&self, sch_key: &str, from_id: VersionId) -> Option<&dyn Migration> {
-        Some(self.tbl.get(sch_key)?.get(&from_id)?.as_ref())
+        self.tbl.get(sch_key)?.get(from_id)
     }
 
     /// Performs a single migration, taking the value from `A` to `B`.
@@ -123,7 +177,7 @@ impl Migrator {
     /// Returns `None` if no migrations applied at all, in which case the
     /// container is already at the highest version we know about and its
     /// payload should be used as-is.
-    fn migrate_boxed<S: Schema>(
+    fn migrate_up_from_cont<S: Schema>(
         &self,
         cont: &impl ValueContainer,
     ) -> Result<Option<MigratedValue<'_>>, MigrationError> {
@@ -135,10 +189,10 @@ impl Migrator {
         // TODO(trey): make this not alloc a vec here, that's silly
         let mut chain: Vec<&dyn Migration> = Vec::new();
         let mut version = cont.version();
-        while let Some(m) = sch_tbl.get(&version) {
-            chain.push(m.as_ref());
-            // `register` rejects a migration whose source is `VersionId::MAX`,
-            // so the lookup above can never succeed where this would overflow.
+        while let Some(m) = sch_tbl.get(version) {
+            chain.push(m);
+            // `register` caps versions at `MAX_VERSION_ID`, so the lookup above
+            // can never succeed where this would overflow.
             version += 1;
         }
 
@@ -168,7 +222,7 @@ impl Migrator {
         &self,
         cont: &impl ValueContainer,
     ) -> Result<OwnedValueContainer, MigrationError> {
-        match self.migrate_boxed::<S>(cont)? {
+        match self.migrate_up_from_cont::<S>(cont)? {
             None => Ok(OwnedValueContainer::from_container(cont)),
             Some(mv) => {
                 let buf = mv.last.encode_dst(mv.value.as_ref())?;
@@ -188,7 +242,7 @@ impl Migrator {
         &self,
         cont: &impl ValueContainer,
     ) -> Result<V, MigrationError> {
-        match self.migrate_boxed::<S>(cont)? {
+        match self.migrate_up_from_cont::<S>(cont)? {
             // Nothing to migrate, so decode the container's payload directly.
             None => {
                 if cont.version() != V::VERSION {
