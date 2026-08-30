@@ -1,0 +1,549 @@
+//! Tests for the schema encoding and migration machinery.
+
+use ssz::Encode as SszEncodeTrait;
+use ssz_derive::{Decode as SszDecode, Encode as SszEncode};
+use strata_codec::{Codec, CodecError};
+
+use crate::*;
+
+// A schema pinned to SSZ by using SSZ's own error type.
+
+struct SszSchema;
+
+impl Schema for SszSchema {
+    const KEY: &str = "test-ssz";
+    type Error = ssz::DecodeError;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, SszEncode, SszDecode)]
+struct SszV1 {
+    a: u64,
+    b: u32,
+}
+
+decl_schema_version!(SszV1, schema = SszSchema, version = 1, format = ssz);
+
+// A schema pinned to strata-codec by using the codec's own error type.
+
+struct CodecSchema;
+
+impl Schema for CodecSchema {
+    const KEY: &str = "test-codec";
+    type Error = CodecError;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
+struct CodecV1 {
+    a: u32,
+}
+
+decl_schema_version!(CodecV1, schema = CodecSchema, version = 1, format = codec);
+
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
+struct CodecV2 {
+    a: u32,
+    b: u64,
+}
+
+decl_schema_version!(CodecV2, schema = CodecSchema, version = 2, format = codec);
+
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
+struct CodecV3 {
+    a: u32,
+    b: u64,
+    c: u16,
+}
+
+decl_schema_version!(CodecV3, schema = CodecSchema, version = 3, format = codec);
+
+fn codec_v1_to_v2(v: CodecV1) -> CodecV2 {
+    CodecV2 { a: v.a, b: 100 }
+}
+
+fn codec_v2_to_v3(v: CodecV2) -> CodecV3 {
+    CodecV3 {
+        a: v.a,
+        b: v.b,
+        c: 7,
+    }
+}
+
+fn codec_migrator() -> Migrator {
+    let mut m = Migrator::new();
+    m.register::<CodecSchema, _, _>(codec_v1_to_v2);
+    m.register::<CodecSchema, _, _>(codec_v2_to_v3);
+    m
+}
+
+/// A schema that changes encoding format mid-life, so it needs the wrapper
+/// error.
+///
+/// This only makes sense with the `ssz` feature on, since that is what gives
+/// [`SchemaError`] its SSZ variant.  Without it, mixing formats in one schema
+/// is supposed to fail to compile.
+#[cfg(feature = "ssz")]
+mod mixed_format {
+    use super::*;
+
+    struct MixedSchema;
+
+    impl Schema for MixedSchema {
+        const KEY: &str = "test-mixed";
+        type Error = SchemaError;
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Codec)]
+    struct MixedV1 {
+        a: u32,
+    }
+
+    decl_schema_version!(MixedV1, schema = MixedSchema, version = 1, format = codec);
+
+    #[derive(Debug, Clone, PartialEq, Eq, SszEncode, SszDecode)]
+    struct MixedV2 {
+        a: u32,
+        b: u64,
+    }
+
+    decl_schema_version!(MixedV2, schema = MixedSchema, version = 2, format = ssz);
+
+    #[test]
+    fn test_mixed_format_schema_roundtrip() {
+        let v1 = MixedV1 { a: 5 };
+        let c1 = OwnedValueContainer::encode_value::<MixedSchema, _>(&v1).expect("test: encode v1");
+        assert_eq!(
+            c1.try_decode_as_ver::<MixedSchema, MixedV1>()
+                .expect("test: decode v1"),
+            v1,
+            "test: mixed v1 roundtrip"
+        );
+
+        let v2 = MixedV2 { a: 5, b: 9 };
+        let c2 = OwnedValueContainer::encode_value::<MixedSchema, _>(&v2).expect("test: encode v2");
+        assert_eq!(
+            c2.try_decode_as_ver::<MixedSchema, MixedV2>()
+                .expect("test: decode v2"),
+            v2,
+            "test: mixed v2 roundtrip"
+        );
+    }
+}
+
+#[test]
+fn test_ssz_container_roundtrip() {
+    let val = SszV1 { a: 42, b: 7 };
+    let cont = OwnedValueContainer::encode_value::<SszSchema, _>(&val).expect("test: encode");
+
+    assert_eq!(cont.version(), 1, "test: container version");
+
+    let decoded = cont
+        .try_decode_as_ver::<SszSchema, SszV1>()
+        .expect("test: decode");
+    assert_eq!(decoded, val, "test: ssz roundtrip");
+}
+
+#[test]
+fn test_codec_container_roundtrip() {
+    let val = CodecV1 { a: 1337 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&val).expect("test: encode");
+
+    assert_eq!(cont.version(), 1, "test: container version");
+
+    let decoded = cont
+        .try_decode_as_ver::<CodecSchema, CodecV1>()
+        .expect("test: decode");
+    assert_eq!(decoded, val, "test: codec roundtrip");
+}
+
+#[test]
+fn test_payload_has_no_added_framing() {
+    // The container already delimits the payload, so the bytes must be exactly
+    // what the underlying format produces, with no length prefix.
+    let sv = SszV1 { a: 42, b: 7 };
+    let sc = OwnedValueContainer::encode_value::<SszSchema, _>(&sv).expect("test: encode ssz");
+    assert_eq!(
+        sc.payload(),
+        sv.as_ssz_bytes().as_slice(),
+        "test: ssz payload should be bare ssz bytes"
+    );
+
+    let cv = CodecV1 { a: 1337 };
+    let cc = OwnedValueContainer::encode_value::<CodecSchema, _>(&cv).expect("test: encode codec");
+    assert_eq!(
+        cc.payload(),
+        strata_codec::encode_to_vec(&cv)
+            .expect("test: encode ref")
+            .as_slice(),
+        "test: codec payload should be bare codec bytes"
+    );
+}
+
+#[test]
+fn test_owned_container_serde_roundtrip() {
+    let val = SszV1 { a: 42, b: 7 };
+    let cont = OwnedValueContainer::encode_value::<SszSchema, _>(&val).expect("test: encode");
+
+    let mut buf = Vec::new();
+    ciborium::into_writer(&cont, &mut buf).expect("test: serialize container");
+
+    let de: OwnedValueContainer =
+        ciborium::from_reader(buf.as_slice()).expect("test: deserialize container");
+    assert_eq!(de, cont, "test: container serde roundtrip");
+
+    // The payload has to survive as an opaque blob, so it should come back out
+    // of the container decodable as the value we put in.
+    let decoded = de
+        .try_decode_as_ver::<SszSchema, SszV1>()
+        .expect("test: decode");
+    assert_eq!(decoded, val, "test: value through container serde");
+}
+
+#[test]
+fn test_container_ref_decodes() {
+    let val = SszV1 { a: 3, b: 4 };
+    let buf = val.as_ssz_bytes();
+    let cont = ValueContainerRef::new(1, &buf);
+
+    let decoded = cont
+        .try_decode_as_ver::<SszSchema, SszV1>()
+        .expect("test: decode");
+    assert_eq!(decoded, val, "test: borrowed container roundtrip");
+}
+
+#[test]
+fn test_version_mismatch_is_an_error() {
+    let val = CodecV1 { a: 1 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&val).expect("test: encode");
+
+    let res = cont.try_decode_as_ver::<CodecSchema, CodecV2>();
+    match res {
+        Err(DecodeValueError::VersionMismatch { expected, got }) => {
+            assert_eq!(expected, 2, "test: expected version");
+            assert_eq!(got, 1, "test: container version");
+        }
+        _ => panic!("test: should have reported a version mismatch"),
+    }
+}
+
+#[test]
+fn test_truncated_payload_is_an_error() {
+    let val = SszV1 { a: 42, b: 7 };
+    let mut buf = val.as_ssz_bytes();
+    buf.truncate(buf.len() - 1);
+    let cont = OwnedValueContainer::new(1, buf);
+
+    assert!(
+        cont.try_decode_as_ver::<SszSchema, SszV1>().is_err(),
+        "test: truncated ssz payload should fail to decode"
+    );
+}
+
+#[test]
+fn test_trailing_bytes_are_an_error() {
+    // Both formats are whole-buffer, so leftover input is a decode failure
+    // rather than something silently ignored.
+    let sv = SszV1 { a: 42, b: 7 };
+    let mut sbuf = sv.as_ssz_bytes();
+    sbuf.push(0);
+    assert!(
+        OwnedValueContainer::new(1, sbuf)
+            .try_decode_as_ver::<SszSchema, SszV1>()
+            .is_err(),
+        "test: trailing ssz bytes should fail to decode"
+    );
+
+    let cv = CodecV1 { a: 1337 };
+    let mut cbuf = strata_codec::encode_to_vec(&cv).expect("test: encode");
+    cbuf.push(0);
+    assert!(
+        OwnedValueContainer::new(1, cbuf)
+            .try_decode_as_ver::<CodecSchema, CodecV1>()
+            .is_err(),
+        "test: trailing codec bytes should fail to decode"
+    );
+}
+
+#[test]
+fn test_migrate_to_latest_chain() {
+    let m = codec_migrator();
+
+    let v1 = CodecV1 { a: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
+
+    let migrated = m
+        .migrate_to_latest::<CodecSchema>(&cont)
+        .expect("test: migrate");
+    assert_eq!(migrated.version(), 3, "test: should reach the last version");
+
+    let val = migrated
+        .try_decode_as_ver::<CodecSchema, CodecV3>()
+        .expect("test: decode");
+    assert_eq!(val, CodecV3 { a: 3, b: 100, c: 7 }, "test: migrated value");
+}
+
+#[test]
+fn test_migrate_to_end_of_chain() {
+    let m = codec_migrator();
+
+    let v1 = CodecV1 { a: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
+
+    let val = m
+        .migrate_to::<CodecSchema, CodecV3>(&cont)
+        .expect("test: migrate");
+    assert_eq!(val, CodecV3 { a: 3, b: 100, c: 7 }, "test: migrated value");
+}
+
+#[test]
+fn test_migrate_to_middle_of_chain() {
+    // The target is where we stop, not the end of the table.
+    let m = codec_migrator();
+
+    let v1 = CodecV1 { a: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
+
+    let val = m
+        .migrate_to::<CodecSchema, CodecV2>(&cont)
+        .expect("test: migrate");
+    assert_eq!(val, CodecV2 { a: 3, b: 100 }, "test: migrated value");
+}
+
+#[test]
+fn test_migrate_to_from_middle_of_chain() {
+    let m = codec_migrator();
+
+    let v2 = CodecV2 { a: 8, b: 9 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v2).expect("test: encode");
+
+    let val = m
+        .migrate_to::<CodecSchema, CodecV3>(&cont)
+        .expect("test: migrate");
+    assert_eq!(val, CodecV3 { a: 8, b: 9, c: 7 }, "test: migrated value");
+}
+
+#[test]
+fn test_migrate_to_same_version_just_decodes() {
+    let m = codec_migrator();
+
+    let v2 = CodecV2 { a: 8, b: 9 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v2).expect("test: encode");
+
+    let val = m
+        .migrate_to::<CodecSchema, CodecV2>(&cont)
+        .expect("test: migrate");
+    assert_eq!(val, v2, "test: value should pass through");
+}
+
+#[test]
+fn test_migrate_to_without_migrations() {
+    let m = Migrator::new();
+
+    let val = SszV1 { a: 42, b: 7 };
+    let cont = OwnedValueContainer::encode_value::<SszSchema, _>(&val).expect("test: encode");
+
+    let decoded = m
+        .migrate_to::<SszSchema, SszV1>(&cont)
+        .expect("test: decode");
+    assert_eq!(decoded, val, "test: value should pass through");
+}
+
+#[test]
+fn test_migrate_to_chain_runs_dry() {
+    // Only v1 -> v2 is registered, so v3 is out of reach.
+    let mut m = Migrator::new();
+    m.register::<CodecSchema, _, _>(codec_v1_to_v2);
+
+    let v1 = CodecV1 { a: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
+
+    let res = m.migrate_to::<CodecSchema, CodecV3>(&cont);
+    match res {
+        Err(MigrationError::NoPath { from, to, .. }) => {
+            assert_eq!(from, 2, "test: should have stalled at v2");
+            assert_eq!(to, 3, "test: target version");
+        }
+        _ => panic!("test: should have reported no path"),
+    }
+}
+
+#[test]
+fn test_migrate_to_no_migrations_at_all_is_no_path() {
+    let m = Migrator::new();
+
+    let v1 = CodecV1 { a: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
+
+    let res = m.migrate_to::<CodecSchema, CodecV2>(&cont);
+    assert!(
+        matches!(res, Err(MigrationError::NoPath { from: 1, to: 2, .. })),
+        "test: should have reported no path"
+    );
+}
+
+#[test]
+fn test_migrate_to_newer_than_target_is_an_error() {
+    // Migrations only go up, so a v3 value can't become a v2 one even with a
+    // full chain registered.
+    let m = codec_migrator();
+
+    let v3 = CodecV3 { a: 1, b: 2, c: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v3).expect("test: encode");
+
+    let res = m.migrate_to::<CodecSchema, CodecV2>(&cont);
+    match res {
+        Err(MigrationError::NewerThanTarget { have, want, .. }) => {
+            assert_eq!(have, 3, "test: container version");
+            assert_eq!(want, 2, "test: target version");
+        }
+        _ => panic!("test: should have reported newer than target"),
+    }
+}
+
+#[test]
+fn test_migrate_to_latest_already_highest_is_unchanged() {
+    let m = codec_migrator();
+
+    let v3 = CodecV3 { a: 1, b: 2, c: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v3).expect("test: encode");
+
+    let migrated = m
+        .migrate_to_latest::<CodecSchema>(&cont)
+        .expect("test: migrate");
+    assert_eq!(migrated, cont, "test: highest version should be unchanged");
+}
+
+#[test]
+fn test_migrate_to_latest_unknown_schema_is_unchanged() {
+    // A schema with no migrations registered at all must not be an error.
+    let m = codec_migrator();
+
+    let val = SszV1 { a: 42, b: 7 };
+    let cont = OwnedValueContainer::encode_value::<SszSchema, _>(&val).expect("test: encode");
+
+    let migrated = m
+        .migrate_to_latest::<SszSchema>(&cont)
+        .expect("test: migrate");
+    assert_eq!(migrated, cont, "test: unknown schema should be unchanged");
+}
+
+#[test]
+fn test_migrate_once_via_container_ref() {
+    // A single step over raw bytes is just `migrate_to` on a borrowed
+    // container tagged with the source version.
+    let m = codec_migrator();
+
+    let v1 = CodecV1 { a: 3 };
+    let buf = strata_codec::encode_to_vec(&v1).expect("test: encode");
+    let cont = ValueContainerRef::new(CodecV1::VERSION, &buf);
+
+    let v2 = m
+        .migrate_to::<CodecSchema, CodecV2>(&cont)
+        .expect("test: migrate");
+    assert_eq!(v2, CodecV2 { a: 3, b: 100 }, "test: migrated value");
+}
+
+#[test]
+fn test_latest_from() {
+    let m = codec_migrator();
+
+    assert_eq!(m.latest_from::<CodecSchema>(1), 3, "test: from the head");
+    assert_eq!(m.latest_from::<CodecSchema>(2), 3, "test: from the middle");
+    assert_eq!(m.latest_from::<CodecSchema>(3), 3, "test: from the end");
+    assert_eq!(m.latest_from::<CodecSchema>(7), 7, "test: beyond the end");
+    assert_eq!(m.latest_from::<SszSchema>(1), 1, "test: unknown schema");
+}
+
+#[test]
+#[should_panic(expected = "adjacent versions")]
+fn test_register_nonadjacent_panics() {
+    fn v1_to_v3(v: CodecV1) -> CodecV3 {
+        CodecV3 { a: v.a, b: 0, c: 0 }
+    }
+
+    let mut m = Migrator::new();
+    m.register::<CodecSchema, _, _>(v1_to_v3);
+}
+
+#[test]
+#[should_panic(expected = "duplicate migration")]
+fn test_register_duplicate_panics() {
+    let mut m = codec_migrator();
+    m.register::<CodecSchema, _, _>(codec_v1_to_v2);
+}
+
+#[test]
+#[should_panic(expected = "above the max version")]
+fn test_register_above_max_version_panics() {
+    // The table is indexed by version ID, so a wild version has to be rejected
+    // rather than allowed to size the vec.
+    struct HugeSchema;
+
+    impl Schema for HugeSchema {
+        const KEY: &str = "test-huge";
+        type Error = CodecError;
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Codec)]
+    struct HugeA(u32);
+
+    decl_schema_version!(
+        HugeA,
+        schema = HugeSchema,
+        version = MAX_VERSION_ID,
+        format = codec
+    );
+
+    #[derive(Debug, Clone, PartialEq, Eq, Codec)]
+    struct HugeB(u32);
+
+    decl_schema_version!(
+        HugeB,
+        schema = HugeSchema,
+        version = MAX_VERSION_ID + 1,
+        format = codec
+    );
+
+    let mut m = Migrator::new();
+    m.register::<HugeSchema, _, _>(|v: HugeA| HugeB(v.0));
+}
+
+#[test]
+fn test_migrate_ignores_gap_in_chain() {
+    // A hole in the version-indexed table has to read as "chain ends here",
+    // not as a slot to skip over.
+    let mut m = Migrator::new();
+    m.register::<CodecSchema, _, _>(codec_v2_to_v3);
+
+    let v1 = CodecV1 { a: 3 };
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&v1).expect("test: encode");
+
+    let migrated = m
+        .migrate_to_latest::<CodecSchema>(&cont)
+        .expect("test: migrate");
+    assert_eq!(migrated, cont, "test: gap should leave the value alone");
+}
+
+#[test]
+#[should_panic(expected = "already has a different type")]
+fn test_register_type_disagreement_panics() {
+    // Two migrations meeting at v2 have to agree on what type v2 is.
+    #[derive(Debug, Clone, PartialEq, Eq, Codec)]
+    struct OtherV2(u32);
+
+    decl_schema_version!(OtherV2, schema = CodecSchema, version = 2, format = codec);
+
+    fn other_v2_to_v3(v: OtherV2) -> CodecV3 {
+        CodecV3 { a: v.0, b: 0, c: 0 }
+    }
+
+    let mut m = Migrator::new();
+    m.register::<CodecSchema, _, _>(codec_v1_to_v2);
+    m.register::<CodecSchema, _, _>(other_v2_to_v3);
+}
+
+#[test]
+fn test_version_key() {
+    let k = VersionKey::of::<CodecSchema, CodecV2>();
+    assert_eq!(k.key(), "test-codec", "test: schema key");
+    assert_eq!(k.version(), 2, "test: version id");
+}
