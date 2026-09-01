@@ -1636,7 +1636,7 @@ dependencies = [
  "rustls-pki-types",
  "rustls-platform-verifier",
  "soketto",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tokio-rustls",
  "tokio-util",
@@ -1664,7 +1664,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tokio-stream",
  "tower",
@@ -1688,7 +1688,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tower",
  "url",
@@ -1713,7 +1713,7 @@ dependencies = [
  "serde",
  "serde_json",
  "soketto",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -1730,7 +1730,7 @@ dependencies = [
  "http",
  "serde",
  "serde_json",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -1896,7 +1896,7 @@ dependencies = [
  "metrics",
  "metrics-util",
  "quanta",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tracing",
 ]
@@ -2066,7 +2066,7 @@ dependencies = [
  "futures-sink",
  "js-sys",
  "pin-project-lite",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tracing",
 ]
 
@@ -2096,7 +2096,7 @@ dependencies = [
  "opentelemetry_sdk",
  "prost",
  "reqwest",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tonic",
  "tracing",
@@ -2127,7 +2127,7 @@ dependencies = [
  "opentelemetry",
  "percent-encoding",
  "rand 0.9.5",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tokio-stream",
 ]
@@ -3375,7 +3375,7 @@ name = "sizzle-parser"
 version = "0.17.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.17.0#9e33fe8a5cafea88058c0e28dd7ef8b6716352bf"
 dependencies = [
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4004,7 +4004,7 @@ dependencies = [
  "sp1-recursion-machine",
  "strum",
  "substrate-bn-succinct-rs",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4033,7 +4033,7 @@ dependencies = [
  "serde",
  "smallvec",
  "ssz_primitives",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4086,7 +4086,7 @@ dependencies = [
  "serde_derive",
  "ssz",
  "ssz_primitives",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tree_hash",
 ]
 
@@ -4122,7 +4122,7 @@ dependencies = [
  "strata-codec",
  "strata-identifiers",
  "strata-ssz-tests",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tree_hash",
  "tree_hash_derive",
 ]
@@ -4132,7 +4132,7 @@ name = "strata-codec"
 version = "0.1.0"
 dependencies = [
  "strata-codec-derive",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4187,7 +4187,7 @@ dependencies = [
  "ssz_types",
  "strata-identifiers",
  "strata-ssz-tests",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tree_hash",
  "tree_hash_derive",
  "zeroize",
@@ -4237,7 +4237,7 @@ dependencies = [
  "bitcoin",
  "strata-identifiers",
  "strata-l1-txfmt",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tracing",
 ]
 
@@ -4251,7 +4251,7 @@ dependencies = [
  "borsh",
  "serde",
  "serde_json",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4285,7 +4285,7 @@ dependencies = [
  "ssz_primitives",
  "ssz_types",
  "strata-codec",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tree_hash",
  "tree_hash_derive",
 ]
@@ -4296,7 +4296,7 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "strata-merkle",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4310,7 +4310,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -4320,7 +4320,7 @@ dependencies = [
 name = "strata-msg-fmt"
 version = "0.1.0"
 dependencies = [
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4336,7 +4336,7 @@ dependencies = [
  "strata-codec",
  "strata-identifiers",
  "strata-msg-fmt",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tree_hash",
  "tree_hash_derive",
 ]
@@ -4361,7 +4361,7 @@ dependencies = [
  "ssz_derive",
  "ssz_primitives",
  "ssz_types",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tree_hash",
  "tree_hash_derive",
  "zkaleido",
@@ -4416,7 +4416,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-tasks",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tracing",
 ]
@@ -4436,7 +4436,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
  "futures-util",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tracing",
 ]
@@ -4618,11 +4618,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.19"
+version = "2.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09a43598840e33d5b0331f38c5e30d13bb11c11210a4b58f0d9b18a5a5eefcd9"
+checksum = "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f"
 dependencies = [
- "thiserror-impl 2.0.19",
+ "thiserror-impl 2.0.20",
 ]
 
 [[package]]
@@ -4638,9 +4638,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.19"
+version = "2.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43cbfe0cf76104d42a574802844187e84a305e531ed54455f11fbde0f10541cd"
+checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4932,7 +4932,7 @@ checksum = "050686193eb999b4bb3bc2acfa891a13da00f79734704c4b8b4ef1a10b368a3c"
 dependencies = [
  "crossbeam-channel",
  "symlink",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "time",
  "tracing-subscriber",
 ]
@@ -5049,7 +5049,7 @@ dependencies = [
  "smallvec",
  "ssz",
  "ssz_primitives",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -5682,7 +5682,7 @@ dependencies = [
  "bincode",
  "borsh",
  "serde",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -5696,7 +5696,7 @@ dependencies = [
  "serde",
  "sha2",
  "substrate-bn",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "zkaleido",
 ]
 
