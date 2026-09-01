@@ -24,7 +24,7 @@ tree_hash_derive = { workspace = true, optional = true }
 ssz_codegen = { workspace = true, optional = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8"
 proptest.workspace = true
 
 [features]
