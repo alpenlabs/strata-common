@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 /// Errors originating in the service framework.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum ServiceError {
     /// We cancelled the wait for input, somehow.
     #[error("wait for input cancelled")]
