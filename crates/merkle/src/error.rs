@@ -1,7 +1,7 @@
 //! Error types for the Merkle Mountain Range (MMR) crate.
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Error)]
 /// Errors that can occur when operating on the MMR.
 pub enum MerkleError {
     /// The MMR has no elements.
