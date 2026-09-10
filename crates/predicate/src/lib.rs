@@ -80,7 +80,6 @@
 //!
 //! ### Serialization
 //! - `serde`: Enables Serialize/Deserialize implementations
-//! - `borsh`: Enables Borsh serialization support
 //!
 //! ### Verification
 //! - `schnorr`: Enables Schnorr BIP-340 signature verification
@@ -112,9 +111,6 @@ mod verifiers;
 
 #[cfg(feature = "serde")]
 mod serde;
-
-#[cfg(feature = "borsh")]
-mod borsh;
 
 #[cfg(feature = "arbitrary")]
 mod arbitrary;

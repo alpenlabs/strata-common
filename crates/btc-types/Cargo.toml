@@ -13,7 +13,6 @@ strata-identifiers.workspace = true
 arbitrary.workspace = true
 bitcoin = { workspace = true, features = ["serde", "rand-std"] }
 bitcoin-bosd = { workspace = true, features = ["address"] }
-borsh.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
@@ -31,6 +30,5 @@ ssz_codegen.workspace = true
 rand_core = { workspace = true, features = ["getrandom"] }
 strata-ssz-tests.workspace = true
 
-borsh.workspace = true
 proptest.workspace = true
 serde_json.workspace = true

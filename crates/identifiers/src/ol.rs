@@ -2,8 +2,6 @@ use std::fmt;
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
-#[cfg(feature = "borsh")]
-use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ssz")]
@@ -24,7 +22,6 @@ pub type Epoch = u32;
 #[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
-#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 pub struct OLBlockId(Buf32);
 
@@ -100,10 +97,6 @@ impl fmt::Display for OLBlockCommitment {
     }
 }
 
-// Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
-#[cfg(all(feature = "borsh", feature = "ssz"))]
-crate::impl_borsh_via_ssz_fixed!(OLBlockCommitment);
-
 /// Alias for backward compatibility
 pub type L2BlockCommitment = OLBlockCommitment;
 
@@ -112,7 +105,6 @@ pub type L2BlockCommitment = OLBlockCommitment;
 #[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
-#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 pub struct OLTxId(Buf32);
 

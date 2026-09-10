@@ -4109,7 +4109,6 @@ dependencies = [
  "arbitrary",
  "bitcoin",
  "bitcoin-bosd",
- "borsh",
  "proptest",
  "rand_core 0.6.4",
  "serde",
@@ -4158,7 +4157,6 @@ dependencies = [
 name = "strata-codec-utils"
 version = "0.1.0"
 dependencies = [
- "borsh",
  "ssz",
  "ssz_derive",
  "strata-codec",
@@ -4170,7 +4168,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
  "bitcoin",
- "borsh",
  "hex",
  "musig2",
  "proptest",
@@ -4211,7 +4208,6 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "bincode",
- "borsh",
  "const-hex",
  "hex",
  "int-enum",
@@ -4248,7 +4244,6 @@ dependencies = [
  "arbitrary",
  "bincode",
  "bitcoin",
- "borsh",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -4273,7 +4268,6 @@ dependencies = [
 name = "strata-merkle"
 version = "0.2.0"
 dependencies = [
- "borsh",
  "criterion",
  "digest",
  "proptest",
@@ -4347,7 +4341,6 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "bincode",
- "borsh",
  "hex",
  "k256",
  "proptest",

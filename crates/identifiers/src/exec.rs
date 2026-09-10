@@ -1,7 +1,5 @@
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
-#[cfg(feature = "borsh")]
-use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +11,6 @@ pub type Hash = Buf32;
 
 /// Structure for `ExecUpdate.input.extra_payload` for EVM EL
 #[derive(Debug)]
-#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct EVMExtraPayload {
     block_hash: [u8; 32],
 }
@@ -31,7 +28,6 @@ impl EVMExtraPayload {
 }
 
 /// Serializes a block hash into a byte vector for use as an EVM extra payload.
-#[cfg(feature = "borsh")]
 pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
     block_hash.0.to_vec()
 }
@@ -42,7 +38,6 @@ pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
 /// to `ExecBlockCommitment` to be more generic and not tied to EVM.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "borsh", derive(BorshDeserialize, BorshSerialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct ExecBlockCommitment {
     slot: u64,

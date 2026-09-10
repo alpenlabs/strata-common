@@ -5,10 +5,6 @@ use crate::traits::*;
 /// Compact representation of the MMR that can hold upto 2**64 elements.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(
-    feature = "borsh",
-    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
-)]
 pub struct CompactMmr64<H: MerkleHash> {
     pub(crate) entries: u64,
     pub(crate) cap_log2: u8,

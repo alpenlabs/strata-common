@@ -15,8 +15,6 @@
 
 use std::fmt;
 
-#[cfg(feature = "borsh")]
-use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ssz")]
@@ -34,7 +32,6 @@ use crate::{Epoch, Slot};
 #[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 #[cfg_attr(feature = "ssz", ssz(struct_behaviour = "container"))]
 pub struct EpochCommitment {

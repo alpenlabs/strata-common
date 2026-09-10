@@ -15,7 +15,6 @@ strata-codec = { workspace = true, optional = true, features = ["derive"] }
 tree_hash = { workspace = true, optional = true }
 
 arbitrary = { workspace = true, optional = true }
-borsh = { workspace = true, optional = true }
 const-hex.workspace = true
 hex.workspace = true
 int-enum.workspace = true
@@ -33,7 +32,7 @@ proptest.workspace = true
 serde_json.workspace = true
 
 [features]
-default = ["arbitrary", "borsh", "codec", "serde", "ssz", "zeroize"]
+default = ["arbitrary", "codec", "serde", "ssz", "zeroize"]
 ssz = [
   "dep:ssz",
   "dep:ssz_derive",
@@ -44,7 +43,6 @@ ssz = [
 ]
 zeroize = ["dep:zeroize"]
 arbitrary = ["dep:arbitrary"]
-borsh = ["dep:borsh"]
 codec = ["dep:strata-codec"]
 jsonschema = ["dep:schemars"]
 serde = ["dep:serde"]
