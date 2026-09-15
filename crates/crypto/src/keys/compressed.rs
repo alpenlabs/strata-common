@@ -1,8 +1,12 @@
-//! Compressed ECDSA public key type.
+//! Compressed ECDSA public key type with optional Borsh serialization.
 
+#[cfg(feature = "borsh")]
+use std::io;
 use std::ops::Deref;
 
 use arbitrary::Arbitrary;
+#[cfg(feature = "borsh")]
+use borsh::{BorshDeserialize, BorshSerialize};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 use ssz::DecodeError;
@@ -10,9 +14,9 @@ use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
 
 /// A compressed secp256k1 public key (33 bytes).
 ///
-/// This is a thin wrapper around `secp256k1::PublicKey`. Unlike
-/// `EvenPublicKey`, this type does not enforce even parity - it accepts any
-/// valid compressed public key.
+/// This is a thin wrapper around `secp256k1::PublicKey` that adds optional Borsh
+/// serialization support. Unlike `EvenPublicKey`, this type does not
+/// enforce even parity - it accepts any valid compressed public key.
 ///
 /// **Why no parity enforcement?** This key is used for ECDSA signature
 /// verification (not Schnorr/BIP340). ECDSA signatures work with both
@@ -106,6 +110,25 @@ impl<'a> Arbitrary<'a> for CompressedPublicKey {
     }
 }
 
+#[cfg(feature = "borsh")]
+impl BorshSerialize for CompressedPublicKey {
+    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        let bytes = self.0.serialize();
+        writer.write_all(&bytes)
+    }
+}
+
+#[cfg(feature = "borsh")]
+impl BorshDeserialize for CompressedPublicKey {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let mut buf = [0u8; 33];
+        reader.read_exact(&mut buf)?;
+        let pk = PublicKey::from_slice(&buf)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        Ok(Self(pk))
+    }
+}
+
 impl Serialize for CompressedPublicKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -149,6 +172,23 @@ mod tests {
         let bytes = compressed.serialize();
         let restored = CompressedPublicKey::from_slice(&bytes).unwrap();
         assert_eq!(compressed, restored);
+    }
+
+    #[cfg(feature = "borsh")]
+    #[test]
+    fn test_compressed_pubkey_borsh_roundtrip() {
+        use secp256k1::{Secp256k1, SecretKey};
+        let secp = Secp256k1::new();
+        let sk = SecretKey::from_slice(&[0x02; 32]).unwrap();
+        let pk = PublicKey::from_secret_key(&secp, &sk);
+
+        let compressed = CompressedPublicKey::from(pk);
+
+        // Borsh roundtrip
+        let encoded = borsh::to_vec(&compressed).unwrap();
+        assert_eq!(encoded.len(), 33);
+        let decoded: CompressedPublicKey = borsh::from_slice(&encoded).unwrap();
+        assert_eq!(compressed, decoded);
     }
 
     #[test]

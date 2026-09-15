@@ -1,4 +1,6 @@
 //! Types relating to things we find or generate from Bitcoin blocks/txs/etc.
+//!
+//! Enable the non-default `borsh` feature for Borsh serialization support.
 
 // `ssz_primitives` (FixedBytes) and `ssz_types` (VariableList) are referenced by
 // the generated SSZ delegate types in `ssz_generated`.

@@ -14,12 +14,15 @@
 //!
 //! - **`serde`** — JSON and human-readable (de)serialization via hex encoding.
 //! - **`ssz`** — SSZ encoding/decoding (available on 32- and 64-byte buffers).
+//! - **`borsh`** — Borsh (de)serialization.
 //! - **`codec`** — `strata-codec` support.
 //! - **`arbitrary`** — `Arbitrary` for fuzz testing.
 //! - **`zeroize`** — Secure memory zeroing.
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
+#[cfg(feature = "borsh")]
+use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ssz")]
@@ -33,6 +36,7 @@ use crate::macros::buf as buf_macros;
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 #[cfg_attr(feature = "zeroize", derive(zeroize::Zeroize))]
 pub struct Buf20(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] pub [u8; 20]);
@@ -44,6 +48,7 @@ buf_macros::impl_buf_fmt!(Buf20, 20);
 #[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 #[cfg_attr(feature = "zeroize", derive(zeroize::Zeroize))]
 #[repr(transparent)]
@@ -67,6 +72,7 @@ crate::impl_ssz_transparent_byte_array_wrapper!(Buf32, 32);
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 #[repr(transparent)]
 pub struct RBuf32(pub [u8; 32]);
@@ -83,6 +89,7 @@ crate::impl_ssz_transparent_byte_array_wrapper!(RBuf32, 32);
 #[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 #[cfg_attr(feature = "zeroize", derive(zeroize::Zeroize))]
 pub struct Buf64(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] pub [u8; 64]);

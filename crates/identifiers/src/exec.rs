@@ -1,5 +1,7 @@
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
+#[cfg(feature = "borsh")]
+use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +13,7 @@ pub type Hash = Buf32;
 
 /// Structure for `ExecUpdate.input.extra_payload` for EVM EL
 #[derive(Debug)]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct EVMExtraPayload {
     block_hash: [u8; 32],
 }
@@ -38,6 +41,7 @@ pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
 /// to `ExecBlockCommitment` to be more generic and not tied to EVM.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "borsh", derive(BorshDeserialize, BorshSerialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct ExecBlockCommitment {
     slot: u64,
@@ -75,3 +79,14 @@ impl ExecBlockCommitment {
 
 /// Alias for backward compatibility
 pub type EvmEeBlockCommitment = ExecBlockCommitment;
+
+#[cfg(test)]
+mod tests {
+    use crate::{Buf32, create_evm_extra_payload};
+
+    #[test]
+    fn evm_extra_payload_preserves_hash_bytes() {
+        let bytes = std::array::from_fn(|i| i as u8);
+        assert_eq!(create_evm_extra_payload(Buf32::from(bytes)), bytes);
+    }
+}

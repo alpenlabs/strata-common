@@ -9,6 +9,27 @@ docs.
 
 More will be here in the future.
 
+## Optional Borsh support
+
+Borsh support is disabled by default. Consumers that need it can enable the
+`borsh` feature on `strata-btc-types`, `strata-codec-utils`, `strata-crypto`,
+`strata-identifiers`, `strata-l1-txfmt`, `strata-merkle`, or `strata-predicate`:
+
+```toml
+strata-btc-types = { version = "0.1", features = ["borsh"] }
+```
+
+Opting in restores the existing Borsh implementations and encodings. The
+`strata-btc-types` and `strata-crypto` features also enable Borsh support for their
+identifier fields. The `strata-codec-utils` feature exposes `CodecBorsh`, and
+`strata-crypto` exposes `compute_borsh_hash` when enabled. SSZ-backed Borsh
+implementations in `strata-identifiers` also require its `ssz` feature, which is
+enabled by default.
+
+External dependencies can still pull in Borsh transitively. In particular,
+`zkaleido` enables it through its own defaults; this does not enable Borsh
+implementations on the types in this workspace.
+
 ## Contributing
 
 Contributions are generally welcome.

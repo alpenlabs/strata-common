@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 arbitrary = { workspace = true, optional = true }
 bitcoin.workspace = true
+borsh = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
 
@@ -19,4 +20,5 @@ workspace = true
 [features]
 default = ["arbitrary", "serde"]
 arbitrary = ["dep:arbitrary"]
+borsh = ["dep:borsh"]
 serde = ["dep:serde"]

@@ -2,6 +2,8 @@ use std::fmt;
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
+#[cfg(feature = "borsh")]
+use borsh::{BorshDeserialize, BorshSerialize};
 use int_enum::IntEnum;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -27,6 +29,7 @@ type RawAccountId = [u8; ACCT_ID_LEN];
 #[cfg_attr(feature = "ssz", derive(Decode, Encode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
 pub struct AccountId(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] RawAccountId);
 
@@ -89,6 +92,7 @@ type RawAccountSerial = u32;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "ssz", derive(Decode, Encode))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
 pub struct AccountSerial(RawAccountSerial);
 
@@ -163,6 +167,7 @@ type RawSubjectId = [u8; SUBJ_ID_LEN];
 #[cfg_attr(feature = "ssz", derive(Decode, Encode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
 pub struct SubjectId(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] RawSubjectId);
 

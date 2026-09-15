@@ -1,3 +1,5 @@
+#[cfg(feature = "borsh")]
+use borsh::BorshSerialize;
 use sha2::{Digest, Sha256};
 use strata_identifiers::Buf32;
 
@@ -16,6 +18,16 @@ pub fn sha256_iter<'a>(bufs: impl IntoIterator<Item = &'a [u8]>) -> Buf32 {
         hasher.update(buf);
     }
     Buf32::from(<[u8; 32]>::from(hasher.finalize()))
+}
+
+/// Computes a SHA-256 hash of the Borsh-serialized representation of a value.
+#[cfg(feature = "borsh")]
+pub fn compute_borsh_hash<T: BorshSerialize>(v: &T) -> Buf32 {
+    let mut hasher = Sha256::new();
+    v.serialize(&mut hasher).expect("Serialization failed");
+    let result = hasher.finalize();
+    let arr: [u8; 32] = result.into();
+    Buf32::from(arr)
 }
 
 /// Implements a double SHA256 (`Sha256d`) hashing function using [RustCrypto's SHA-2 crate](https://github.com/RustCrypto/hashes/tree/master/sha2).

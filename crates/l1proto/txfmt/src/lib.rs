@@ -8,6 +8,8 @@ use serde_json as _;
 
 #[cfg(feature = "arbitrary")]
 mod arbitrary;
+#[cfg(feature = "borsh")]
+mod borsh;
 mod error;
 mod magic;
 #[cfg(feature = "serde")]

@@ -3,6 +3,8 @@ use std::fmt;
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
+#[cfg(feature = "borsh")]
+use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ssz")]
@@ -24,6 +26,7 @@ pub type L1Height = u32;
 #[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 pub struct L1BlockId(RBuf32);
 
@@ -54,6 +57,7 @@ crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32);
 #[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 pub struct WtxidsRoot(Buf32);
 
@@ -68,6 +72,7 @@ crate::impl_ssz_transparent_wrapper!(WtxidsRoot, Buf32);
 #[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 #[cfg_attr(feature = "ssz", ssz(struct_behaviour = "container"))]
 pub struct L1BlockCommitment {

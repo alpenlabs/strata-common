@@ -3,9 +3,13 @@
 //! This module provides key types that guarantee even parity for the x-only public key,
 //! which is required for BIP340 Schnorr signatures and taproot.
 
+#[cfg(feature = "borsh")]
+use std::io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write};
 use std::ops::Deref;
 
 use arbitrary::{Arbitrary, Unstructured};
+#[cfg(feature = "borsh")]
+use borsh::{BorshDeserialize, BorshSerialize};
 use hex;
 use secp256k1::{Parity, PublicKey, SECP256K1, SecretKey, XOnlyPublicKey};
 use serde::de::Error as DeError;
@@ -131,6 +135,24 @@ impl TryFrom<Buf32> for EvenPublicKey {
     }
 }
 
+#[cfg(feature = "borsh")]
+impl BorshSerialize for EvenPublicKey {
+    fn serialize<W: Write>(&self, writer: &mut W) -> IoResult<()> {
+        let x_only = self.0.x_only_public_key().0;
+        BorshSerialize::serialize(&Buf32::from(x_only.serialize()), writer)
+    }
+}
+
+#[cfg(feature = "borsh")]
+impl BorshDeserialize for EvenPublicKey {
+    fn deserialize_reader<R: Read>(reader: &mut R) -> IoResult<Self> {
+        let buf = Buf32::deserialize_reader(reader)?;
+        let x_only = XOnlyPublicKey::from_slice(buf.as_ref())
+            .map_err(|e| IoError::new(ErrorKind::InvalidData, e))?;
+        Ok(PublicKey::from_x_only_public_key(x_only, Parity::Even).into())
+    }
+}
+
 impl Serialize for EvenPublicKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -189,6 +211,8 @@ pub fn even_kp((sk, pk): (SecretKey, PublicKey)) -> (EvenSecretKey, EvenPublicKe
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "borsh")]
+    use borsh::{from_slice, to_vec};
     use secp256k1::{Parity, PublicKey, SECP256K1, SecretKey};
     use strata_identifiers::Buf32;
 
@@ -234,6 +258,18 @@ mod tests {
         let from_odd = EvenPublicKey::from(odd_pk);
         assert_eq!(from_odd.x_only_public_key().1, Parity::Even);
         assert_eq!(PublicKey::from(from_odd), odd_pk.negate(SECP256K1));
+    }
+
+    #[cfg(feature = "borsh")]
+    #[test]
+    fn test_even_public_key_borsh_roundtrip() {
+        let (even_pk, _) = sample_public_keys();
+        let even_pk = EvenPublicKey::from(even_pk);
+
+        let encoded = to_vec(&even_pk).expect("borsh encode");
+        let decoded: EvenPublicKey = from_slice(&encoded).expect("borsh decode");
+
+        assert_eq!(even_pk, decoded);
     }
 
     #[test]

@@ -14,9 +14,12 @@ ssz_types.workspace = true
 thiserror.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
-zkaleido-sp1-groth16-verifier = { workspace = true, optional = true }
+zkaleido-sp1-groth16-verifier = { workspace = true, features = [
+  "serde",
+], optional = true }
 
 arbitrary = { workspace = true, optional = true, features = ["derive"] }
+borsh = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 k256 = { version = "0.13.4", features = ["schnorr"], optional = true }
 serde = { workspace = true, optional = true }
@@ -38,6 +41,7 @@ zkaleido.workspace = true
 default = ["all-verifiers"]
 all-verifiers = ["schnorr", "sp1-groth16"]
 arbitrary = ["dep:arbitrary"]
+borsh = ["dep:borsh", "zkaleido-sp1-groth16-verifier?/borsh"]
 schnorr = ["dep:k256", "dep:signature"]
 serde = ["dep:serde", "dep:hex"]
 sp1-groth16 = ["dep:zkaleido-sp1-groth16-verifier"]

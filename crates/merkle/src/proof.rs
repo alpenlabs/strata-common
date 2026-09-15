@@ -112,6 +112,10 @@ where
 /// to be updated as well.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
 pub struct MerkleProof<H>
 where
     H: MerkleHash,
@@ -209,6 +213,10 @@ impl<H: MerkleHash> ProofData for MerkleProof<H> {
 /// useful in contexts where we establish that value separately.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
 pub struct RawMerkleProof<H>
 where
     H: MerkleHash,

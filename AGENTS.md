@@ -126,7 +126,7 @@ for current values, and histograms for distributions such as latency or payload 
   changes. Check downstream compatibility and add regression vectors for intentional
   changes.
 - Use the format already assigned to the boundary. This workspace includes SSZ,
-  `strata-codec`, JSON, and CBOR adapters; their presence does not make the formats
+  `strata-codec`, Borsh, JSON, and CBOR adapters; their presence does not make the formats
   interchangeable.
 - Keep domain types separate from wire or storage types when their fields or invariants
   differ. Convert at the boundary.
