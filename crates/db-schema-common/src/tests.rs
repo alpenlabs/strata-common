@@ -1,5 +1,6 @@
 //! Tests for the schema encoding and migration machinery.
 
+use std::collections::{BTreeSet, HashMap};
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
@@ -697,4 +698,30 @@ fn test_version_key() {
     let k = VersionKey::of::<CodecSchema, CodecV2>();
     assert_eq!(k.key(), "test-codec", "test: schema key");
     assert_eq!(k.version(), 2, "test: version id");
+}
+
+#[test]
+fn test_version_keys_distinguish_schemas_with_the_same_label() {
+    let codec_v1 = VersionKey::of::<CodecSchema, CodecV1>();
+    let same_key_v1 = VersionKey::of::<SameKeySchema, SameKeyV1>();
+    let codec_v2 = VersionKey::of::<CodecSchema, CodecV2>();
+
+    assert_eq!(codec_v1.key(), same_key_v1.key());
+    assert_eq!(codec_v1.version(), same_key_v1.version());
+    assert_ne!(codec_v1, same_key_v1);
+    assert_ne!(codec_v1, codec_v2);
+    assert_eq!(codec_v1, VersionKey::of::<CodecSchema, CodecV1>());
+
+    let metadata = HashMap::from([
+        (codec_v1, "codec v1"),
+        (same_key_v1, "other schema v1"),
+        (codec_v2, "codec v2"),
+    ]);
+    assert_eq!(metadata.len(), 3);
+    assert_eq!(metadata.get(&codec_v1), Some(&"codec v1"));
+    assert_eq!(metadata.get(&same_key_v1), Some(&"other schema v1"));
+    assert_eq!(metadata.get(&codec_v2), Some(&"codec v2"));
+
+    let ordered = BTreeSet::from([codec_v1, same_key_v1, codec_v2]);
+    assert_eq!(ordered.len(), 3);
 }

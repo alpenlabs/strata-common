@@ -1,6 +1,6 @@
 //! Core schema types.
 
-use std::any::Any;
+use std::any::{Any, TypeId};
 
 /// Opaque version ID.
 pub type VersionId = u32;
@@ -32,7 +32,10 @@ pub type VersionId = u32;
 /// A schema that really does need to change format between versions uses
 /// [`SchemaError`](crate::SchemaError), which converts from both.
 pub trait Schema: 'static {
-    /// Key string used to identify instances of values under this schema.
+    /// Human-readable label for values under this schema.
+    ///
+    /// Runtime identity uses the schema's Rust type, so distinct schemas may
+    /// reuse this label without sharing migrations or version keys.
     const KEY: &str;
 
     /// Error used in encoding/decoding.
@@ -103,24 +106,36 @@ pub trait SchemaSeries<S: Schema> {
 
 /// Unique key for a specific version of a specific schema.
 ///
-/// This can be used to compare schema versions across contexts in a compact and
-/// printable way.
+/// Includes the schema's Rust type identity, so schemas with the same
+/// [`Schema::KEY`] and version remain distinct in maps and sets. The key string
+/// is retained for diagnostics.
+///
+/// This is an in-memory identifier. Its [`TypeId`]-based hashes and ordering
+/// are not stable across Rust releases and must not be used as a persisted ID.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct VersionKey(&'static str, VersionId);
+pub struct VersionKey {
+    key: &'static str,
+    version: VersionId,
+    schema: TypeId,
+}
 
 impl VersionKey {
     /// Creates a [`VersionKey`] of a version of a schema.
     pub fn of<S: Schema, V: SchemaVersion<S>>() -> Self {
-        Self(S::KEY, V::VERSION)
+        Self {
+            key: S::KEY,
+            version: V::VERSION,
+            schema: TypeId::of::<S>(),
+        }
     }
 
     /// Gets the schema key.
     pub fn key(&self) -> &'static str {
-        self.0
+        self.key
     }
 
     /// Gets the version ID.
     pub fn version(&self) -> VersionId {
-        self.1
+        self.version
     }
 }
