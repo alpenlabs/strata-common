@@ -19,6 +19,7 @@ mod buf;
 mod epoch;
 mod exec;
 mod l1;
+mod mmr;
 mod ol;
 
 #[cfg(feature = "jsonschema")]
@@ -49,6 +50,7 @@ pub use l1::L1BlockCommitmentRef;
 pub use l1::{L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
 #[cfg(feature = "ssz")]
 pub use macros::ssz::SszDelegate;
+pub use mmr::L1_HEIGHT_MMR_PREFILL_LEAF;
 #[cfg(feature = "ssz")]
 pub use ol::OLBlockCommitmentRef;
 pub use ol::{Epoch, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId, OLTxId, Slot};
