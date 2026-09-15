@@ -45,6 +45,11 @@ impl OwnedValueContainer {
         Self::new(cont.version(), cont.payload().to_vec())
     }
 
+    /// Borrows the version and payload without copying the payload.
+    pub fn as_container_ref(&self) -> ValueContainerRef<'_> {
+        ValueContainerRef::new(self.ver, &self.pl)
+    }
+
     /// Consumes the container, returning the raw payload.
     pub fn into_payload(self) -> Vec<u8> {
         self.pl.into_vec()
@@ -61,9 +66,28 @@ impl ValueContainer for OwnedValueContainer {
     }
 }
 
-/// Borrowed version of [`ValueContainer`] to reduce copies during the first
-/// deserialization passes before we deserialize it to a concrete value.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize)]
+/// Borrowed view of a version and its encoded payload.
+///
+/// Ciborium deserializes into owned data. Decode CBOR into an
+/// [`OwnedValueContainer`], then use [`OwnedValueContainer::as_container_ref`]
+/// to borrow its payload without another copy. This view serializes in the
+/// same format as the owned container, but does not implement [`Deserialize`].
+///
+/// ```
+/// use strata_db_schema_common::{OwnedValueContainer, ValueContainer};
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let original = OwnedValueContainer::new(1, vec![0, 128, 255]);
+/// let mut bytes = Vec::new();
+/// ciborium::into_writer(&original.as_container_ref(), &mut bytes)?;
+/// let decoded: OwnedValueContainer = ciborium::from_reader(bytes.as_slice())?;
+/// let view = decoded.as_container_ref();
+/// assert_eq!(view.version(), 1);
+/// assert_eq!(view.payload(), original.payload());
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ValueContainerRef<'b> {
     ver: VersionId,
 

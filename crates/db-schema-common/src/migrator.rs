@@ -14,7 +14,7 @@ use crate::types::*;
 /// The three steps are separated so that a chain of migrations can decode once
 /// at the head and encode once at the tail, applying each intermediate step in
 /// value space instead of round-tripping through bytes at every version.
-trait Migration: 'static {
+trait Migration: Send + Sync + 'static {
     /// Decodes a payload buffer as the migration's source version.
     fn decode_src(&self, buf: &[u8]) -> Result<Box<dyn Any>, MigrationError>;
 
@@ -141,6 +141,9 @@ impl SchemaMigrationTable {
 /// Migrations are registered between adjacent versions only, so the table is
 /// keyed by source version and every chain is just a walk of consecutive
 /// version IDs.
+/// Schemas are identified by their Rust type; reusing a [`Schema::KEY`] does
+/// not share migrations. The registry can be shared between threads after
+/// registration; each migration's intermediate values stay on the calling thread.
 ///
 /// There are two ways to run a migration, differing in where they stop:
 ///
@@ -154,7 +157,7 @@ impl SchemaMigrationTable {
 /// `OwnedValueContainer::encode_value(&m.migrate_to::<S, V>(&cont)?)`.
 #[expect(missing_debug_implementations, reason = "it's not")]
 pub struct Migrator {
-    tbl: HashMap<&'static str, SchemaMigrationTable>,
+    tbl: HashMap<TypeId, SchemaMigrationTable>,
 }
 
 impl Migrator {
@@ -189,7 +192,7 @@ impl Migrator {
             B::VERSION
         );
 
-        let sch_tbl = self.tbl.entry(S::KEY).or_default();
+        let sch_tbl = self.tbl.entry(TypeId::of::<S>()).or_default();
 
         // Checking the types here means a chain can't break with a
         // `ChainTypeMismatch` partway through a walk later; a disagreement
@@ -219,7 +222,7 @@ impl Migrator {
     ///
     /// This is `from` itself if there is no migration out of it.
     pub fn latest_from<S: Schema>(&self, from: VersionId) -> VersionId {
-        let Some(sch_tbl) = self.tbl.get(S::KEY) else {
+        let Some(sch_tbl) = self.tbl.get(&TypeId::of::<S>()) else {
             return from;
         };
 
@@ -305,7 +308,7 @@ impl Migrator {
             return Ok(None);
         }
 
-        let sch_tbl = self.tbl.get(S::KEY);
+        let sch_tbl = self.tbl.get(&TypeId::of::<S>());
         let Some(mut m) = sch_tbl.and_then(|t| t.get(from)) else {
             return match to {
                 Some(to) => Err(no_path(from, to)),
@@ -354,7 +357,9 @@ impl Default for Migrator {
 /// A migration that just wraps a plain (non-closure) fn.
 struct FnMigration<S, A, B> {
     f: fn(A) -> B,
-    _pd: PhantomData<S>,
+    // We identify the schema but do not own an instance of it. Its auto traits
+    // must not constrain a registry that only stores function pointers.
+    _pd: PhantomData<fn() -> S>,
 }
 
 impl<S: Schema, A: SchemaVersion<S>, B: SchemaVersion<S>> FnMigration<S, A, B> {

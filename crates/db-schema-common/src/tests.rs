@@ -1,5 +1,10 @@
 //! Tests for the schema encoding and migration machinery.
 
+use std::marker::PhantomData;
+use std::rc::Rc;
+use std::sync::{Arc, OnceLock};
+use std::thread;
+
 use ssz::Encode as SszEncodeTrait;
 use ssz_derive::{Decode as SszDecode, Encode as SszEncode};
 use strata_codec::{Codec, CodecError};
@@ -196,6 +201,49 @@ fn test_owned_container_serde_roundtrip() {
         .try_decode_as_ver::<SszSchema, SszV1>()
         .expect("test: decode");
     assert_eq!(decoded, val, "test: value through container serde");
+}
+
+#[test]
+fn test_cbor_container_byte_string_encoding() {
+    // Fix the envelope representation independently of the decoder: a map
+    // with "ver" and "pl", with the payload encoded as a CBOR byte string.
+    let expected = b"\xa2\x63ver\x01\x62pl\x43\x00\x80\xff";
+    let cont = OwnedValueContainer::new(1, vec![0, 128, 255]);
+    let mut owned_bytes = Vec::new();
+    ciborium::into_writer(&cont, &mut owned_bytes).expect("test: serialize owned container");
+    assert_eq!(owned_bytes, expected);
+
+    let mut borrowed_bytes = Vec::new();
+    ciborium::into_writer(&cont.as_container_ref(), &mut borrowed_bytes)
+        .expect("test: serialize borrowed container");
+    assert_eq!(borrowed_bytes, expected);
+
+    let decoded: OwnedValueContainer =
+        ciborium::from_reader(expected.as_slice()).expect("test: deserialize fixture");
+    assert_eq!(decoded, cont);
+}
+
+#[test]
+fn test_cbor_container_borrowed_view_roundtrip() {
+    // Include empty payloads and all byte values, plus version boundaries.
+    for version in [0, 1, VersionId::MAX] {
+        for payload in [vec![], (0..=255).collect()] {
+            let cont = ValueContainerRef::new(version, &payload);
+            let mut bytes = Vec::new();
+            ciborium::into_writer(&cont, &mut bytes).expect("test: serialize borrowed container");
+            let decoded: OwnedValueContainer =
+                ciborium::from_reader(bytes.as_slice()).expect("test: deserialize owned container");
+            let view = decoded.as_container_ref();
+            assert_eq!(view, cont);
+            assert_eq!(view.payload().as_ptr(), decoded.payload().as_ptr());
+        }
+    }
+}
+
+#[test]
+fn test_cbor_container_rejects_truncated_byte_string() {
+    let truncated = b"\xa2\x63ver\x01\x62pl\x43\x00\x80";
+    assert!(ciborium::from_reader::<OwnedValueContainer, _>(truncated.as_slice()).is_err());
 }
 
 #[test]
@@ -424,6 +472,109 @@ fn test_migrate_to_latest_unknown_schema_is_unchanged() {
         .migrate_to_latest::<SszSchema>(&cont)
         .expect("test: migrate");
     assert_eq!(migrated, cont, "test: unknown schema should be unchanged");
+}
+
+// Schema markers need not be Send or Sync: the registry never owns one.
+struct SameKeySchema(PhantomData<Rc<()>>);
+
+impl Schema for SameKeySchema {
+    const KEY: &str = CodecSchema::KEY;
+    type Error = CodecError;
+}
+
+#[derive(Debug, PartialEq, Eq, Codec)]
+struct SameKeyV1(u32);
+
+decl_schema_version!(
+    SameKeyV1,
+    schema = SameKeySchema,
+    version = 1,
+    format = codec
+);
+
+#[derive(Debug, PartialEq, Eq, Codec)]
+struct SameKeyV2(u32);
+
+decl_schema_version!(
+    SameKeyV2,
+    schema = SameKeySchema,
+    version = 2,
+    format = codec
+);
+
+#[test]
+fn test_same_key_unregistered_schema_has_no_migrations() {
+    let m = codec_migrator();
+    let cont = OwnedValueContainer::encode_value::<SameKeySchema, _>(&SameKeyV1(42))
+        .expect("test: encode");
+
+    assert_eq!(m.latest_from::<SameKeySchema>(1), 1);
+    assert_eq!(
+        m.migrate_to_latest::<SameKeySchema>(&cont)
+            .expect("test: unchanged container"),
+        cont
+    );
+    assert!(matches!(
+        m.migrate_to::<SameKeySchema, SameKeyV2>(&cont),
+        Err(MigrationError::NoPath { from: 1, to: 2, .. })
+    ));
+}
+
+#[test]
+fn test_same_key_schemas_have_independent_migrations() {
+    let mut m = codec_migrator();
+    m.register::<SameKeySchema, _, _>(|v: SameKeyV1| SameKeyV2(v.0 + 1));
+    assert_eq!(m.latest_from::<CodecSchema>(1), 3);
+    assert_eq!(m.latest_from::<SameKeySchema>(1), 2);
+
+    let cont = OwnedValueContainer::encode_value::<SameKeySchema, _>(&SameKeyV1(42))
+        .expect("test: encode");
+    let migrated = m
+        .migrate_to_latest::<SameKeySchema>(&cont)
+        .expect("test: migrate same-key schema");
+    assert_eq!(
+        migrated
+            .try_decode_as_ver::<SameKeySchema, SameKeyV2>()
+            .expect("test: decode same-key schema"),
+        SameKeyV2(43)
+    );
+
+    let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&CodecV1 { a: 42 })
+        .expect("test: encode");
+    assert_eq!(
+        m.migrate_to::<CodecSchema, CodecV3>(&cont)
+            .expect("test: migrate original schema"),
+        CodecV3 {
+            a: 42,
+            b: 100,
+            c: 7
+        }
+    );
+}
+
+#[test]
+fn test_migrator_shared_between_threads() {
+    let registry = Arc::new(OnceLock::new());
+    registry.get_or_init(codec_migrator);
+    let workers: Vec<_> = (0..4)
+        .map(|a| {
+            let registry = Arc::clone(&registry);
+            thread::spawn(move || {
+                let m = registry.get().expect("test: registry initialized");
+                let cont = OwnedValueContainer::encode_value::<CodecSchema, _>(&CodecV1 { a })
+                    .expect("test: encode");
+                assert_eq!(
+                    m.migrate_to::<CodecSchema, CodecV3>(&cont)
+                        .expect("test: migrate on worker"),
+                    CodecV3 { a, b: 100, c: 7 }
+                );
+            })
+        })
+        .collect();
+
+    for worker in workers {
+        worker.join().expect("test: migration worker succeeded");
+    }
 }
 
 #[test]
