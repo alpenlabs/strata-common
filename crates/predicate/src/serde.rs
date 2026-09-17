@@ -5,25 +5,8 @@
 //!
 //! ## Human-Readable Format (JSON, TOML, etc.)
 //!
-//! Predicate keys are serialized as strings with the format:
-//!
-//! ```text
-//! {PredicateTypeId}:{hex_condition}
-//! ```
-//!
-//! Where:
-//! - `{PredicateTypeId}` is the string representation of the predicate type enum variant (e.g.,
-//!   "AlwaysAccept", "Bip340Schnorr", "Sp1Groth16")
-//! - `{hex_condition}` is the condition bytes encoded as lowercase hexadecimal (empty string if
-//!   condition is empty)
-//!
-//! ## Examples
-//!
-//! ```text
-//! "AlwaysAccept"                     // Empty condition (no colon)
-//! "Bip340Schnorr:0102030405"         // 5-byte condition
-//! "Sp1Groth16:deadbeef"              // 4-byte condition
-//! ```
+//! Predicate keys are serialized as strings, using the `Display` and `FromStr` impls on
+//! [`PredicateKey`], for example `"AlwaysAccept"` or `"Sp1Groth16:deadbeef"`.
 //!
 //! ## Binary Format (bincode, etc.)
 //!
@@ -45,13 +28,7 @@ impl Serialize for PredicateKey {
         let id: PredicateTypeId = self.id.try_into().map_err(serde::ser::Error::custom)?;
         if serializer.is_human_readable() {
             // Human-readable format: use string representation
-            let formatted = if self.condition().is_empty() {
-                format!("{id}")
-            } else {
-                let hex_condition = hex::encode(self.condition());
-                format!("{id}:{hex_condition}")
-            };
-            serializer.serialize_str(&formatted)
+            serializer.collect_str(self)
         } else {
             // Binary format: serialize as tuple of (id_u8, condition_bytes)
             use serde::ser::SerializeTuple;
@@ -71,21 +48,7 @@ impl<'de> Deserialize<'de> for PredicateKey {
         if deserializer.is_human_readable() {
             // Human-readable format: expect string representation
             let s = String::deserialize(deserializer)?;
-            let parts: Vec<&str> = s.splitn(2, ':').collect();
-
-            let id = parts[0]
-                .parse::<PredicateTypeId>()
-                .map_err(serde::de::Error::custom)?;
-
-            let condition = if parts.len() == 1 {
-                // No colon, empty condition
-                Vec::new()
-            } else {
-                hex::decode(parts[1])
-                    .map_err(|e| serde::de::Error::custom(format!("Invalid hex encoding: {e}")))?
-            };
-
-            PredicateKey::try_new(id, condition).map_err(serde::de::Error::custom)
+            s.parse().map_err(serde::de::Error::custom)
         } else {
             struct PredicateKeyVisitor;
 
