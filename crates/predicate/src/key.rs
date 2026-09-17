@@ -312,12 +312,25 @@ mod tests {
 
     #[test]
     fn test_display_unregistered_type_id() {
-        // An `id` of 30 is unregistered, which only an SSZ decode of untrusted bytes can produce.
-        let mut predkey = PredicateKey::always_accept();
-        predkey.id = 30;
+        // Patch the type byte of a valid encoding to 30, which isn't a registered type. SSZ decode
+        // doesn't validate `id`, so this is what a key built from untrusted bytes looks like.
+        let valid =
+            PredicateKey::try_new(PredicateTypeId::Sp1Groth16, vec![0xde, 0xad, 0xbe, 0xef])
+                .unwrap();
+        let mut ssz_bytes = valid.as_ssz_bytes();
+        ssz_bytes[0] = 30;
 
-        assert_eq!(predkey.to_string(), "Unknown(30)");
+        let predkey = PredicateKey::from_ssz_bytes(&ssz_bytes).unwrap();
+        assert_eq!(predkey.id(), 30);
+        assert!(PredicateTypeId::try_from(predkey.id()).is_err());
+
+        // `Display` can't fail, so it renders the unregistered type rather than refusing.
+        assert_eq!(predkey.to_string(), "Unknown(30):deadbeef");
+
+        // The rendered string is deliberately not parseable back, and the fallible paths that
+        // predate `Display` still reject the key outright.
         assert!(predkey.to_string().parse::<PredicateKey>().is_err());
+        assert!(predkey.try_as_buf_ref().is_err());
     }
 
     #[test]
