@@ -6,6 +6,8 @@ use std::future::Future;
 
 use serde::Serialize;
 
+use crate::AsyncGuard;
+
 /// Response from handling an input.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Response {
@@ -145,4 +147,23 @@ pub trait SyncServiceInput: ServiceInput {
     ///
     /// This is like a specialized `TryIterator`.
     fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>>;
+
+    /// Receives the "next input", giving up and returning `Ok(None)` if
+    /// `shutdown` fires while we are waiting.
+    ///
+    /// A sync worker runs on its own thread and cannot be cancelled from
+    /// outside, so an input that parks indefinitely in [`recv_next`] would sit
+    /// through a shutdown until the next message happens to arrive.  Any input
+    /// that can block without bound should override this so the worker stops
+    /// when asked.
+    ///
+    /// The default ignores `shutdown` and defers to [`recv_next`], which is
+    /// correct for inputs that never block indefinitely (an in-memory queue, a
+    /// finite iterator).
+    fn recv_next_until_shutdown(
+        &mut self,
+        _shutdown: &(impl AsyncGuard + Sync),
+    ) -> anyhow::Result<Option<Self::Msg>> {
+        self.recv_next()
+    }
 }
