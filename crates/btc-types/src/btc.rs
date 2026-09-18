@@ -1,4 +1,5 @@
 use std::fmt::{self, Debug, Display};
+#[cfg(feature = "borsh")]
 use std::io::{self, Read, Write};
 use std::ops;
 
@@ -14,6 +15,7 @@ use bitcoin::{
     Txid, Witness,
 };
 use bitcoin_bosd::Descriptor;
+#[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz::DecodeError;
@@ -91,6 +93,7 @@ impl BitcoinOutPoint {
 }
 
 // Implement BorshSerialize for the BitcoinOutPoint wrapper.
+#[cfg(feature = "borsh")]
 impl BorshSerialize for BitcoinOutPoint {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), io::Error> {
         // Serialize the transaction ID as bytes
@@ -103,6 +106,7 @@ impl BorshSerialize for BitcoinOutPoint {
 }
 
 // Implement BorshDeserialize for the BitcoinOutPoint wrapper.
+#[cfg(feature = "borsh")]
 impl BorshDeserialize for BitcoinOutPoint {
     fn deserialize_reader<R: Read>(reader: &mut R) -> Result<Self, io::Error> {
         // Read 32 bytes for the transaction ID
@@ -226,12 +230,14 @@ impl ops::DerefMut for BitcoinAmount {
 
 // Borsh, SSZ, and `Codec` all encode the amount as a bare `u64` count of
 // satoshis, since `bitcoin::Amount` provides none of them itself.
+#[cfg(feature = "borsh")]
 impl BorshSerialize for BitcoinAmount {
     fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         BorshSerialize::serialize(&self.to_sat(), writer)
     }
 }
 
+#[cfg(feature = "borsh")]
 impl BorshDeserialize for BitcoinAmount {
     fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
         let sats = u64::deserialize_reader(reader)?;
@@ -272,7 +278,7 @@ impl SszDelegate for BitcoinAmount {
 
 impl_ssz_via_delegate!(BitcoinAmount);
 
-/// [Borsh](borsh)-friendly Bitcoin [`Txid`].
+/// Bitcoin [`Txid`] wrapper with optional Borsh serialization.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitcoinTxid(Txid);
 
@@ -325,6 +331,7 @@ impl BitcoinTxid {
     }
 }
 
+#[cfg(feature = "borsh")]
 impl BorshSerialize for BitcoinTxid {
     fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         // Serialize the txid using bitcoin's built-in serialization
@@ -337,6 +344,7 @@ impl BorshSerialize for BitcoinTxid {
     }
 }
 
+#[cfg(feature = "borsh")]
 impl BorshDeserialize for BitcoinTxid {
     fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
         // First, read the length tag
@@ -446,6 +454,7 @@ impl From<BitcoinTxOut> for TxOut {
 }
 
 // Implement BorshSerialize for BitcoinTxOut
+#[cfg(feature = "borsh")]
 impl BorshSerialize for BitcoinTxOut {
     fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         // Serialize the value (u64)
@@ -461,6 +470,7 @@ impl BorshSerialize for BitcoinTxOut {
 }
 
 // Implement BorshDeserialize for BitcoinTxOut
+#[cfg(feature = "borsh")]
 impl BorshDeserialize for BitcoinTxOut {
     fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
         // Deserialize the value (u64)
@@ -498,19 +508,8 @@ impl<'a> Arbitrary<'a> for BitcoinTxOut {
 }
 
 /// A wrapper around [`Buf32`] for XOnly Schnorr taproot pubkeys.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    BorshSerialize,
-    BorshDeserialize,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct BitcoinXOnlyPublicKey(Buf32);
 
 impl BitcoinXOnlyPublicKey {
@@ -589,18 +588,8 @@ impl_ssz_transparent_wrapper!(BitcoinXOnlyPublicKey, Buf32);
 
 /// Represents a raw, byte-encoded Bitcoin transaction with custom [`Arbitrary`] support.
 /// Provides conversions (via [`TryFrom`]) to and from [`Transaction`].
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    Encode,
-    Decode,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct RawBitcoinTx(Vec<u8>);
 
 impl RawBitcoinTx {
@@ -750,6 +739,7 @@ impl TryFrom<ScriptBuf> for BitcoinScriptBuf {
 }
 
 // Implement BorshSerialize for BitcoinScriptBuf
+#[cfg(feature = "borsh")]
 impl BorshSerialize for BitcoinScriptBuf {
     fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         let script_bytes = self.0.to_bytes();
@@ -760,6 +750,7 @@ impl BorshSerialize for BitcoinScriptBuf {
 }
 
 // Implement BorshDeserialize for BitcoinScriptBuf
+#[cfg(feature = "borsh")]
 impl BorshDeserialize for BitcoinScriptBuf {
     fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
         // Reject over-long scripts before allocating so the wrapper's
@@ -789,10 +780,14 @@ impl<'a> Arbitrary<'a> for BitcoinScriptBuf {
 mod tests {
 
     use bitcoin::hashes::Hash;
+    #[cfg(feature = "borsh")]
     use bitcoin::opcodes::{self};
+    #[cfg(feature = "borsh")]
     use bitcoin::script::Builder;
     use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
     use bitcoin_bosd::DescriptorType;
+    #[cfg(feature = "borsh")]
+    use borsh::{BorshDeserialize, BorshSerialize};
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
     use strata_identifiers::Buf32;
@@ -800,11 +795,12 @@ mod tests {
 
     use super::{
         BitcoinAmount, BitcoinOutPoint, BitcoinScriptBuf, BitcoinTxOut, BitcoinTxid,
-        BitcoinXOnlyPublicKey, BorshDeserialize, BorshSerialize, MAX_SCRIPT_SIZE, RawBitcoinTx,
+        BitcoinXOnlyPublicKey, MAX_SCRIPT_SIZE, RawBitcoinTx,
     };
     use crate::ParseError;
     use crate::test_helpers::ArbitraryGenerator;
 
+    #[cfg(feature = "borsh")]
     #[test]
     fn test_bitcointxout_serialize_deserialize() {
         // Create a dummy TxOut with a simple script
@@ -833,6 +829,7 @@ mod tests {
         assert_eq!(bitcoin_tx_out.0.script_pubkey, deserialized.0.script_pubkey);
     }
 
+    #[cfg(feature = "borsh")]
     #[test]
     fn test_bitcoin_txid_serialize_deserialize() {
         let mut generator = ArbitraryGenerator::new();
@@ -933,6 +930,7 @@ mod tests {
         assert_eq!(payload, xonly_pk.0.as_bytes());
     }
 
+    #[cfg(feature = "borsh")]
     #[test]
     fn test_bitcoin_scriptbuf_serialize_deserialize() {
         let mut generator = ArbitraryGenerator::new();
@@ -1028,6 +1026,7 @@ mod tests {
         assert!(serde_json::from_str::<BitcoinTxOut>(&json).is_err());
     }
 
+    #[cfg(feature = "borsh")]
     #[test]
     fn bitcoin_txout_borsh_rejects_oversized_script() {
         // Hand-craft a borsh header (value || script_len) claiming an over-long
@@ -1051,6 +1050,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "borsh")]
     #[test]
     fn bitcoin_scriptbuf_borsh_rejects_oversized_script() {
         // Hand-craft a borsh header (script_len) claiming an over-long script.
@@ -1100,6 +1100,7 @@ mod tests {
         let json = serde_json::to_string(&over).unwrap();
         assert!(serde_json::from_str::<BitcoinAmount>(&json).is_err());
 
+        #[cfg(feature = "borsh")]
         assert!(BitcoinAmount::deserialize(&mut &over.to_le_bytes()[..]).is_err());
 
         assert!(BitcoinAmount::from_ssz_bytes(&over.as_ssz_bytes()).is_err());

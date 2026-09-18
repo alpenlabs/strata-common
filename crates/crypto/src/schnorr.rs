@@ -1,8 +1,10 @@
 //! Schnorr signature signing and verification.
 
+#[cfg(feature = "borsh")]
 use std::io;
 use std::ops::Deref;
 
+#[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 use hex;
 use secp256k1::schnorr::Signature;
@@ -142,6 +144,7 @@ impl TryFrom<Buf32> for EvenPublicKey {
     }
 }
 
+#[cfg(feature = "borsh")]
 impl BorshSerialize for EvenPublicKey {
     fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         let x_only = self.0.x_only_public_key().0;
@@ -149,6 +152,7 @@ impl BorshSerialize for EvenPublicKey {
     }
 }
 
+#[cfg(feature = "borsh")]
 impl BorshDeserialize for EvenPublicKey {
     fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let buf = Buf32::deserialize_reader(reader)?;

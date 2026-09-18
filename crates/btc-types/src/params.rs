@@ -1,6 +1,8 @@
+#[cfg(feature = "borsh")]
 use std::io;
 
 use bitcoin::params::{MAINNET, Params};
+#[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz::DecodeError;
@@ -74,6 +76,7 @@ impl Default for BtcParams {
     }
 }
 
+#[cfg(feature = "borsh")]
 impl BorshSerialize for BtcParams {
     fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         // Serialize the network type as an index since Network doesn't implement BorshSerialize
@@ -93,6 +96,7 @@ impl BorshSerialize for BtcParams {
     }
 }
 
+#[cfg(feature = "borsh")]
 impl BorshDeserialize for BtcParams {
     fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let network_index = u8::deserialize_reader(reader)?;
@@ -193,10 +197,12 @@ mod tests {
         for network in networks {
             let params = BtcParams::from(Params::from(network));
 
-            // Test Borsh
-            let borsh_data = borsh::to_vec(&params).unwrap();
-            let borsh_result = borsh::from_slice::<BtcParams>(&borsh_data).unwrap();
-            assert_eq!(params, borsh_result);
+            #[cfg(feature = "borsh")]
+            {
+                let borsh_data = borsh::to_vec(&params).unwrap();
+                let borsh_result = borsh::from_slice::<BtcParams>(&borsh_data).unwrap();
+                assert_eq!(params, borsh_result);
+            }
 
             // Test Serde
             let json_data = serde_json::to_string(&params).unwrap();

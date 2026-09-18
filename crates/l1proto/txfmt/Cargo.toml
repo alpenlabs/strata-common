@@ -18,7 +18,7 @@ serde_json.workspace = true
 workspace = true
 
 [features]
-default = ["arbitrary", "borsh", "serde"]
+default = ["arbitrary", "serde"]
 arbitrary = ["dep:arbitrary"]
 borsh = ["dep:borsh"]
 serde = ["dep:serde"]

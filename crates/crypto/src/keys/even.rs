@@ -3,10 +3,12 @@
 //! This module provides key types that guarantee even parity for the x-only public key,
 //! which is required for BIP340 Schnorr signatures and taproot.
 
+#[cfg(feature = "borsh")]
 use std::io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write};
 use std::ops::Deref;
 
 use arbitrary::{Arbitrary, Unstructured};
+#[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 use hex;
 use secp256k1::{Parity, PublicKey, SECP256K1, SecretKey, XOnlyPublicKey};
@@ -133,6 +135,7 @@ impl TryFrom<Buf32> for EvenPublicKey {
     }
 }
 
+#[cfg(feature = "borsh")]
 impl BorshSerialize for EvenPublicKey {
     fn serialize<W: Write>(&self, writer: &mut W) -> IoResult<()> {
         let x_only = self.0.x_only_public_key().0;
@@ -140,6 +143,7 @@ impl BorshSerialize for EvenPublicKey {
     }
 }
 
+#[cfg(feature = "borsh")]
 impl BorshDeserialize for EvenPublicKey {
     fn deserialize_reader<R: Read>(reader: &mut R) -> IoResult<Self> {
         let buf = Buf32::deserialize_reader(reader)?;
@@ -207,6 +211,7 @@ pub fn even_kp((sk, pk): (SecretKey, PublicKey)) -> (EvenSecretKey, EvenPublicKe
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "borsh")]
     use borsh::{from_slice, to_vec};
     use secp256k1::{Parity, PublicKey, SECP256K1, SecretKey};
     use strata_identifiers::Buf32;
@@ -255,6 +260,7 @@ mod tests {
         assert_eq!(PublicKey::from(from_odd), odd_pk.negate(SECP256K1));
     }
 
+    #[cfg(feature = "borsh")]
     #[test]
     fn test_even_public_key_borsh_roundtrip() {
         let (even_pk, _) = sample_public_keys();

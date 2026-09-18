@@ -31,7 +31,6 @@ impl EVMExtraPayload {
 }
 
 /// Serializes a block hash into a byte vector for use as an EVM extra payload.
-#[cfg(feature = "borsh")]
 pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
     block_hash.0.to_vec()
 }
@@ -80,3 +79,14 @@ impl ExecBlockCommitment {
 
 /// Alias for backward compatibility
 pub type EvmEeBlockCommitment = ExecBlockCommitment;
+
+#[cfg(test)]
+mod tests {
+    use crate::{Buf32, create_evm_extra_payload};
+
+    #[test]
+    fn evm_extra_payload_preserves_hash_bytes() {
+        let bytes = std::array::from_fn(|i| i as u8);
+        assert_eq!(create_evm_extra_payload(Buf32::from(bytes)), bytes);
+    }
+}

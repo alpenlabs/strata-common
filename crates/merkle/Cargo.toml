@@ -28,7 +28,7 @@ criterion = "0.5"
 proptest.workspace = true
 
 [features]
-default = ["borsh", "codec", "serde"]
+default = ["codec", "serde"]
 borsh = ["dep:borsh"]
 codec = ["dep:strata-codec"]
 serde = ["dep:serde"]

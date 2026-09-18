@@ -33,7 +33,7 @@ proptest.workspace = true
 serde_json.workspace = true
 
 [features]
-default = ["arbitrary", "borsh", "codec", "serde", "ssz", "zeroize"]
+default = ["arbitrary", "codec", "serde", "ssz", "zeroize"]
 ssz = [
   "dep:ssz",
   "dep:ssz_derive",

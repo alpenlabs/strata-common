@@ -1,3 +1,4 @@
+#[cfg(feature = "borsh")]
 #[macro_use]
 pub(crate) mod borsh;
 #[macro_use]

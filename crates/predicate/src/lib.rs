@@ -80,7 +80,7 @@
 //!
 //! ### Serialization
 //! - `serde`: Enables Serialize/Deserialize implementations
-//! - `borsh`: Enables Borsh serialization support
+//! - `borsh`: Enables Borsh serialization support (disabled by default)
 //!
 //! ### Verification
 //! - `schnorr`: Enables Schnorr BIP-340 signature verification

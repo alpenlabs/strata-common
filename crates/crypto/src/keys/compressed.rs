@@ -1,9 +1,11 @@
-//! Compressed ECDSA public key type with Borsh serialization.
+//! Compressed ECDSA public key type with optional Borsh serialization.
 
+#[cfg(feature = "borsh")]
 use std::io;
 use std::ops::Deref;
 
 use arbitrary::Arbitrary;
+#[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
@@ -12,7 +14,7 @@ use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
 
 /// A compressed secp256k1 public key (33 bytes).
 ///
-/// This is a thin wrapper around `secp256k1::PublicKey` that adds Borsh
+/// This is a thin wrapper around `secp256k1::PublicKey` that adds optional Borsh
 /// serialization support. Unlike `EvenPublicKey`, this type does not
 /// enforce even parity - it accepts any valid compressed public key.
 ///
@@ -108,6 +110,7 @@ impl<'a> Arbitrary<'a> for CompressedPublicKey {
     }
 }
 
+#[cfg(feature = "borsh")]
 impl BorshSerialize for CompressedPublicKey {
     fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         let bytes = self.0.serialize();
@@ -115,6 +118,7 @@ impl BorshSerialize for CompressedPublicKey {
     }
 }
 
+#[cfg(feature = "borsh")]
 impl BorshDeserialize for CompressedPublicKey {
     fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let mut buf = [0u8; 33];
@@ -170,6 +174,7 @@ mod tests {
         assert_eq!(compressed, restored);
     }
 
+    #[cfg(feature = "borsh")]
     #[test]
     fn test_compressed_pubkey_borsh_roundtrip() {
         use secp256k1::{Secp256k1, SecretKey};

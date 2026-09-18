@@ -42,9 +42,9 @@ pub use buf::{Buf20, Buf32, Buf64, RBuf32};
 pub use epoch::EpochCommitment;
 #[cfg(feature = "ssz")]
 pub use epoch::EpochCommitmentRef;
-#[cfg(feature = "borsh")]
-pub use exec::create_evm_extra_payload;
-pub use exec::{EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment, Hash};
+pub use exec::{
+    EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment, Hash, create_evm_extra_payload,
+};
 #[cfg(feature = "ssz")]
 pub use l1::L1BlockCommitmentRef;
 pub use l1::{L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};

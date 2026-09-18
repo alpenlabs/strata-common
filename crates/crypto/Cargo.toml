@@ -11,7 +11,7 @@ strata-identifiers.workspace = true
 
 arbitrary.workspace = true
 bitcoin.workspace = true
-borsh.workspace = true
+borsh = { workspace = true, optional = true }
 hex.workspace = true
 musig2.workspace = true
 rand = { workspace = true, optional = true }
@@ -40,4 +40,5 @@ strata-ssz-tests.workspace = true
 
 [features]
 default = []
+borsh = ["dep:borsh", "strata-identifiers/borsh"]
 test-utils = ["dep:rand"]

@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 
+#[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 use ssz::DecodeError;
 use ssz_primitives::FixedBytes;
@@ -30,7 +31,8 @@ use crate::ssz_generated::ssz::threshold::{IndexedSignatureSsz, SignatureSetSsz}
 /// The signer includes their own index (position in `ThresholdConfig::keys`) when creating
 /// an `IndexedSignature`. Verification uses that index to fetch the expected public key and
 /// compare it against the recovered key from the signature.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct IndexedSignature {
     /// Index of the signer in the ThresholdConfig keys array (0-255).
     index: u8,
@@ -111,7 +113,8 @@ impl_ssz_via_delegate!(IndexedSignature);
 /// A set of indexed ECDSA signatures for threshold verification.
 ///
 /// Signatures are guaranteed duplicate-free.
-#[derive(Debug, Clone, PartialEq, Eq, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct SignatureSet {
     /// Sorted signatures by index, no duplicates.
     signatures: Vec<IndexedSignature>,
@@ -226,6 +229,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "borsh")]
     #[test]
     fn test_signature_set_borsh_roundtrip() {
         let sigs = vec![make_sig(0), make_sig(2), make_sig(5)];

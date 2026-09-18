@@ -1,4 +1,6 @@
 //! Cryptographic primitives.
+//!
+//! Enable the non-default `borsh` feature for Borsh serialization and hashing.
 
 // `ssz_primitives` (FixedBytes), `tree_hash`, and `tree_hash_derive` are
 // referenced by the generated SSZ delegate types in `ssz_generated`.
