@@ -131,9 +131,21 @@ impl FromStr for PredicateKey {
     type Err = PredicateError;
 
     /// Parses the format produced by [`fmt::Display`]: `{type}` or `{type}:{hex_condition}`.
+    ///
+    /// The input may be untrusted, so the encoded condition length is checked before decoding.
+    /// Decoding first would allocate in proportion to the whole input just to report
+    /// [`PredicateError::ConditionTooLong`].
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (id, condition) = match s.split_once(':') {
-            Some((id, condition)) => (id, hex::decode(condition)?),
+            Some((id, hex_condition)) => {
+                // Two hex characters per byte, rounded up so an odd-length input (which `hex`
+                // rejects anyway) isn't reported as shorter than it is.
+                let len = hex_condition.len().div_ceil(2);
+                if len > MAX_CONDITION_LEN as usize {
+                    return Err(PredicateError::ConditionTooLong { len });
+                }
+                (id, hex::decode(hex_condition)?)
+            }
             None => (s, Vec::new()),
         };
 
@@ -343,6 +355,23 @@ mod tests {
             "Sp1Groth16:nothex".parse::<PredicateKey>(),
             Err(PredicateError::InvalidHexCondition(_))
         ));
+    }
+
+    #[test]
+    fn test_from_str_rejects_oversized_condition_before_decoding() {
+        let oversized = "00".repeat(MAX_CONDITION_LEN as usize + 1);
+        let input = format!("AlwaysAccept:{oversized}");
+
+        assert!(matches!(
+            input.parse::<PredicateKey>(),
+            Err(PredicateError::ConditionTooLong { len })
+            if len == MAX_CONDITION_LEN as usize + 1
+        ));
+
+        // A condition exactly at the limit still parses.
+        let at_limit = "00".repeat(MAX_CONDITION_LEN as usize);
+        let predkey: PredicateKey = format!("AlwaysAccept:{at_limit}").parse().unwrap();
+        assert_eq!(predkey.condition().len(), MAX_CONDITION_LEN as usize);
     }
 
     #[test]
