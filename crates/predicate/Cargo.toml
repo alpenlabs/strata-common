@@ -7,6 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+hex.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true
 ssz_primitives.workspace = true
@@ -20,7 +21,6 @@ zkaleido-sp1-groth16-verifier = { workspace = true, features = [
 
 arbitrary = { workspace = true, optional = true, features = ["derive"] }
 borsh = { workspace = true, optional = true }
-hex = { workspace = true, optional = true }
 k256 = { version = "0.13.4", features = ["schnorr"], optional = true }
 serde = { workspace = true, optional = true }
 signature = { version = "2.2", optional = true }
@@ -30,7 +30,6 @@ ssz_codegen.workspace = true
 
 [dev-dependencies]
 bincode.workspace = true
-hex.workspace = true
 proptest.workspace = true
 rand.workspace = true
 serde_json.workspace = true
@@ -43,5 +42,5 @@ all-verifiers = ["schnorr", "sp1-groth16"]
 arbitrary = ["dep:arbitrary"]
 borsh = ["dep:borsh", "zkaleido-sp1-groth16-verifier?/borsh"]
 schnorr = ["dep:k256", "dep:signature"]
-serde = ["dep:serde", "dep:hex"]
+serde = ["dep:serde"]
 sp1-groth16 = ["dep:zkaleido-sp1-groth16-verifier"]

@@ -33,6 +33,10 @@ pub enum PredicateError {
     #[error("unknown predicate type name: {0}")]
     UnknownPredicateTypeName(String),
 
+    /// Condition bytes were not valid hex in a string-encoded predicate key.
+    #[error("invalid hex condition: {0}")]
+    InvalidHexCondition(#[from] hex::FromHexError),
+
     /// Predicate type not supported (feature not enabled).
     #[error("predicate type {id} is not supported: {reason}")]
     UnsupportedPredicateType {

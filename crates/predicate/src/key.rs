@@ -1,5 +1,8 @@
 //! Predicate key implementation and type registry.
 
+use core::fmt;
+use std::str::FromStr;
+
 use crate::errors::{PredicateError, PredicateResult};
 use crate::type_ids::PredicateTypeId;
 use crate::verifiers::VerifierType;
@@ -91,6 +94,62 @@ impl PredicateKey {
     /// * `Err(PredicateError)` if verification fails or an error occurs
     pub fn verify_claim_witness(&self, claim: &[u8], witness: &[u8]) -> PredicateResult<()> {
         self.try_as_buf_ref()?.verify_claim_witness(claim, witness)
+    }
+}
+
+/// Shared formatting helper for the two key types.
+fn fmt_key(f: &mut fmt::Formatter<'_>, id: &dyn fmt::Display, condition: &[u8]) -> fmt::Result {
+    write!(f, "{id}")?;
+    if !condition.is_empty() {
+        write!(f, ":{}", hex::encode(condition))?;
+    }
+    Ok(())
+}
+
+/// Formats a predicate key as `{type}` or, when the condition is non-empty,
+/// `{type}:{hex_condition}` — for example `AlwaysAccept` or `Sp1Groth16:deadbeef`.
+///
+/// The type is written as `Unknown({id})` when the raw identifier isn't registered. That only
+/// happens for keys decoded from untrusted bytes, and such a string doesn't parse back.
+impl fmt::Display for PredicateKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match PredicateTypeId::try_from(self.id) {
+            Ok(id) => fmt_key(f, &id, self.condition()),
+            Err(_) => fmt_key(f, &format_args!("Unknown({})", self.id), self.condition()),
+        }
+    }
+}
+
+/// Same format as [`PredicateKey`]'s, minus the `Unknown` case: the type is always registered.
+impl fmt::Display for PredicateKeyBuf<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_key(f, &self.id, self.condition)
+    }
+}
+
+impl FromStr for PredicateKey {
+    type Err = PredicateError;
+
+    /// Parses the format produced by [`fmt::Display`]: `{type}` or `{type}:{hex_condition}`.
+    ///
+    /// The input may be untrusted, so the encoded condition length is checked before decoding.
+    /// Decoding first would allocate in proportion to the whole input just to report
+    /// [`PredicateError::ConditionTooLong`].
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (id, condition) = match s.split_once(':') {
+            Some((id, hex_condition)) => {
+                // Two hex characters per byte, rounded up so an odd-length input (which `hex`
+                // rejects anyway) isn't reported as shorter than it is.
+                let len = hex_condition.len().div_ceil(2);
+                if len > MAX_CONDITION_LEN as usize {
+                    return Err(PredicateError::ConditionTooLong { len });
+                }
+                (id, hex::decode(hex_condition)?)
+            }
+            None => (s, Vec::new()),
+        };
+
+        Self::try_new(id.parse()?, condition)
     }
 }
 
@@ -239,6 +298,80 @@ mod tests {
             let owned_from_view = view.to_owned();
             prop_assert_eq!(&predkey, &owned_from_view);
         });
+    }
+
+    #[test]
+    fn proptest_display_fromstr_roundtrip() {
+        proptest!(|(predkey in predicate_key_strategy())| {
+            let parsed: PredicateKey = predkey.to_string().parse().unwrap();
+            prop_assert_eq!(&predkey, &parsed);
+
+            // The borrowed key prints identically to the owned one.
+            prop_assert_eq!(predkey.try_as_buf_ref().unwrap().to_string(), predkey.to_string());
+        });
+    }
+
+    #[test]
+    fn test_display_format() {
+        assert_eq!(PredicateKey::always_accept().to_string(), "AlwaysAccept");
+        assert_eq!(PredicateKey::never_accept().to_string(), "NeverAccept");
+
+        let predkey =
+            PredicateKey::try_new(PredicateTypeId::Sp1Groth16, vec![0xde, 0xad, 0xbe, 0xef])
+                .unwrap();
+        assert_eq!(predkey.to_string(), "Sp1Groth16:deadbeef");
+    }
+
+    #[test]
+    fn test_display_unregistered_type_id() {
+        // Patch the type byte of a valid encoding to 30, which isn't a registered type. SSZ decode
+        // doesn't validate `id`, so this is what a key built from untrusted bytes looks like.
+        let valid =
+            PredicateKey::try_new(PredicateTypeId::Sp1Groth16, vec![0xde, 0xad, 0xbe, 0xef])
+                .unwrap();
+        let mut ssz_bytes = valid.as_ssz_bytes();
+        ssz_bytes[0] = 30;
+
+        let predkey = PredicateKey::from_ssz_bytes(&ssz_bytes).unwrap();
+        assert_eq!(predkey.id(), 30);
+        assert!(PredicateTypeId::try_from(predkey.id()).is_err());
+
+        // `Display` can't fail, so it renders the unregistered type rather than refusing.
+        assert_eq!(predkey.to_string(), "Unknown(30):deadbeef");
+
+        // The rendered string is deliberately not parseable back, and the fallible paths that
+        // predate `Display` still reject the key outright.
+        assert!(predkey.to_string().parse::<PredicateKey>().is_err());
+        assert!(predkey.try_as_buf_ref().is_err());
+    }
+
+    #[test]
+    fn test_from_str_rejects_bad_input() {
+        assert!(matches!(
+            "NotAType".parse::<PredicateKey>(),
+            Err(PredicateError::UnknownPredicateTypeName(_))
+        ));
+        assert!(matches!(
+            "Sp1Groth16:nothex".parse::<PredicateKey>(),
+            Err(PredicateError::InvalidHexCondition(_))
+        ));
+    }
+
+    #[test]
+    fn test_from_str_rejects_oversized_condition_before_decoding() {
+        let oversized = "00".repeat(MAX_CONDITION_LEN as usize + 1);
+        let input = format!("AlwaysAccept:{oversized}");
+
+        assert!(matches!(
+            input.parse::<PredicateKey>(),
+            Err(PredicateError::ConditionTooLong { len })
+            if len == MAX_CONDITION_LEN as usize + 1
+        ));
+
+        // A condition exactly at the limit still parses.
+        let at_limit = "00".repeat(MAX_CONDITION_LEN as usize);
+        let predkey: PredicateKey = format!("AlwaysAccept:{at_limit}").parse().unwrap();
+        assert_eq!(predkey.condition().len(), MAX_CONDITION_LEN as usize);
     }
 
     #[test]
