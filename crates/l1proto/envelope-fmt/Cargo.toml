@@ -7,9 +7,9 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+strata-identifiers = { path = "../../identifiers", default-features = false }
 # Use txfmt without default features
 strata-l1-txfmt = { path = "../txfmt", default-features = false }
-strata-identifiers = { path = "../../identifiers", default-features = false }
 
 tracing.workspace = true
 
