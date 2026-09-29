@@ -110,8 +110,8 @@ tracing-appender = "0.2"
 tracing-opentelemetry = "0.32"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
-zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.3.0" }
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.3.0", default-features = false }
+zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.4.0" }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.4.0", default-features = false }
 
 [workspace.lints]
 rust.missing_debug_implementations = "warn"
