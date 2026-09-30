@@ -123,17 +123,19 @@ pub trait MmrNodeStore {
     }
 }
 
-/// The derived MMR API over any [`MmrNodeStore`], parameterized by the
-/// [`MerkleHasher`] used to combine nodes.
+/// The derived MMR API over any [`MmrNodeStore`].
 ///
-/// Blanket-implemented for every backend whose stored hash matches the hasher's
-/// hash type; callers use these methods and never touch
-/// [`MmrNodeStore::put_node`] directly. Because the trait is generic over the
-/// hasher, call sites disambiguate with a turbofish, e.g.
-/// `StoredMmr::<Sha256Hasher>::append_leaf(&store, value)`.
-pub trait StoredMmr<MH: MerkleHasher>: MmrNodeStore<Hash = MH::Hash>
+/// Blanket-implemented for every backend whose stored hash is
+/// [`MmrMetaPack`]; callers use these methods and never touch
+/// [`MmrNodeStore::put_node`] directly. Only the leaf-writing methods
+/// ([`put_leaf`](Self::put_leaf), [`append_leaf`](Self::append_leaf), and
+/// [`prefill`](Self::prefill)) recompute ancestors, so only they are generic
+/// over the [`MerkleHasher`] used to combine nodes — and only they need a
+/// turbofish, e.g. `store.put_leaf::<Sha256Hasher>(index, value)`. Every other
+/// method works on the stored [`Hash`](MmrNodeStore::Hash) alone.
+pub trait StoredMmr: MmrNodeStore
 where
-    MH::Hash: MmrMetaPack,
+    Self::Hash: MmrMetaPack,
 {
     /// Returns the number of leaves (== the next leaf index).
     ///
@@ -160,7 +162,7 @@ where
     }
 
     /// Reads the leaf hash at `leaf_index`, if present.
-    fn get_leaf(&self, leaf_index: u64) -> Result<Option<MH::Hash>, MmrError<Self::Error>> {
+    fn get_leaf(&self, leaf_index: u64) -> Result<Option<Self::Hash>, MmrError<Self::Error>> {
         self.get_node(NodePos::new(0, leaf_index))
             .map_err(MmrError::Backend)
     }
@@ -168,9 +170,13 @@ where
     /// Appends `value` as a new leaf at the end and returns its index.
     ///
     /// Convenience over [`put_leaf`](Self::put_leaf) at the current end.
-    fn append_leaf(&self, value: MH::Hash) -> Result<u64, MmrError<Self::Error>> {
-        let index = <Self as StoredMmr<MH>>::leaf_count(self)?;
-        <Self as StoredMmr<MH>>::put_leaf(self, index, value)?;
+    fn append_leaf<MH>(&self, value: Self::Hash) -> Result<u64, MmrError<Self::Error>>
+    where
+        Self: Sized,
+        MH: MerkleHasher<Hash = Self::Hash>,
+    {
+        let index = self.leaf_count()?;
+        self.put_leaf::<MH>(index, value)?;
         Ok(index)
     }
 
@@ -187,8 +193,12 @@ where
     /// below), and with [`MmrError::MaxCapacity`] if the store is already at the
     /// `u64::MAX` leaf ceiling. A [`MmrError::NodeMissing`] instead signals a
     /// corrupt store: a sibling required by an in-range write is absent.
-    fn put_leaf(&self, leaf_index: u64, value: MH::Hash) -> Result<(), MmrError<Self::Error>> {
-        let old_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
+    fn put_leaf<MH>(&self, leaf_index: u64, value: Self::Hash) -> Result<(), MmrError<Self::Error>>
+    where
+        Self: Sized,
+        MH: MerkleHasher<Hash = Self::Hash>,
+    {
+        let old_count = self.leaf_count()?;
         // Only an overwrite (`< old_count`) or an append (`== old_count`) is
         // valid. Writing further out would leave a hole that the sibling reads
         // in `write_plan` don't always catch: an isolated height-0 peak (e.g.
@@ -209,7 +219,7 @@ where
         // An append (`leaf_index == old_count`) is always at or above the
         // watermark (which never exceeds the leaf count), so this only ever
         // fires on an overwrite.
-        let pruned_before = <Self as StoredMmr<MH>>::pruned_before(self)?;
+        let pruned_before = self.pruned_before()?;
         if leaf_index < pruned_before {
             return Err(MmrError::Pruned {
                 index: leaf_index,
@@ -235,9 +245,9 @@ where
     fn generate_proof_at_idx(
         &self,
         leaf_index: u64,
-    ) -> Result<MerkleProof<MH::Hash>, MmrError<Self::Error>> {
-        let count = <Self as StoredMmr<MH>>::leaf_count(self)?;
-        <Self as StoredMmr<MH>>::generate_proof_at_size(self, leaf_index, count)
+    ) -> Result<MerkleProof<Self::Hash>, MmrError<Self::Error>> {
+        let count = self.leaf_count()?;
+        self.generate_proof_at_size(leaf_index, count)
     }
 
     /// Generates an inclusion proof for `leaf_index` against an MMR of exactly
@@ -268,7 +278,7 @@ where
         &self,
         leaf_index: u64,
         at_leaf_count: u64,
-    ) -> Result<MerkleProof<MH::Hash>, MmrError<Self::Error>> {
+    ) -> Result<MerkleProof<Self::Hash>, MmrError<Self::Error>> {
         if leaf_index >= at_leaf_count {
             return Err(MmrError::LeafOutOfRange {
                 index: leaf_index,
@@ -276,7 +286,7 @@ where
             });
         }
 
-        let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
+        let leaf_count = self.leaf_count()?;
         if at_leaf_count > leaf_count {
             return Err(MmrError::LeafOutOfRange {
                 index: at_leaf_count - 1,
@@ -287,7 +297,7 @@ where
         // A leaf below the watermark had its path discarded by `prune_before`;
         // report that intent rather than letting the missing-node read below
         // surface as `NodeMissing`, which a caller reads as corruption.
-        let pruned_before = <Self as StoredMmr<MH>>::pruned_before(self)?;
+        let pruned_before = self.pruned_before()?;
         if leaf_index < pruned_before {
             return Err(MmrError::Pruned {
                 index: leaf_index,
@@ -310,10 +320,18 @@ where
     ///
     /// Idempotent. Used to align leaf indices with an external numbering (e.g.
     /// genesis prefill so leaf index equals L1 block height).
-    fn prefill(&self, target_count: u64, sentinel: MH::Hash) -> Result<(), MmrError<Self::Error>> {
-        let mut count = <Self as StoredMmr<MH>>::leaf_count(self)?;
+    fn prefill<MH>(
+        &self,
+        target_count: u64,
+        sentinel: Self::Hash,
+    ) -> Result<(), MmrError<Self::Error>>
+    where
+        Self: Sized,
+        MH: MerkleHasher<Hash = Self::Hash>,
+    {
+        let mut count = self.leaf_count()?;
         while count < target_count {
-            <Self as StoredMmr<MH>>::append_leaf(self, sentinel)?;
+            self.append_leaf::<MH>(sentinel)?;
             count += 1;
         }
         Ok(())
@@ -347,7 +365,7 @@ where
     /// monotonic and the delete set recomputes identically, so re-running the
     /// same call converges to the same state.
     fn prune_before(&self, before: LeafPos) -> Result<(), MmrError<Self::Error>> {
-        let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
+        let leaf_count = self.leaf_count()?;
         let before_index = before.index();
         if before_index > leaf_count {
             return Err(MmrError::LeafOutOfRange {
@@ -357,10 +375,10 @@ where
         }
         let positions: Vec<NodePos> = iter_prune_before_positions(before_index).collect();
         // Raise the watermark (monotonically) in the same commit as the deletes.
-        let watermark = <Self as StoredMmr<MH>>::pruned_before(self)?;
-        let writes: &[(NodePos, MH::Hash)] = &[(
+        let watermark = self.pruned_before()?;
+        let writes: &[(NodePos, Self::Hash)] = &[(
             NodePos::meta(PRUNED_BEFORE_TAG),
-            MH::Hash::pack_u64(before_index),
+            Self::Hash::pack_u64(before_index),
         )];
         let writes = if before_index > watermark {
             writes
@@ -402,7 +420,7 @@ where
     /// recomputes identically and the count and watermark settle to the same
     /// values, so re-running the same call converges to the same state.
     fn prune_after(&self, after: LeafPos) -> Result<(), MmrError<Self::Error>> {
-        let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
+        let leaf_count = self.leaf_count()?;
         let keep = after.index();
         if keep > leaf_count {
             return Err(MmrError::LeafOutOfRange {
@@ -419,7 +437,7 @@ where
         // truncate onto; probe those peaks and reject the truncation if any is
         // gone, rather than commit an unappendable store. At or above the
         // watermark the peaks are always retained, so skip the probe.
-        let watermark = <Self as StoredMmr<MH>>::pruned_before(self)?;
+        let watermark = self.pruned_before()?;
         if keep < watermark {
             let peaks: Vec<NodePos> = peak_positions(keep).collect();
             let present = self.get_nodes(&peaks).map_err(MmrError::Backend)?;
@@ -437,9 +455,9 @@ where
         // interrupted prune that has not yet lowered it re-runs identically.
         let mut writes = Vec::with_capacity(2);
         if watermark > keep {
-            writes.push((NodePos::meta(PRUNED_BEFORE_TAG), MH::Hash::pack_u64(keep)));
+            writes.push((NodePos::meta(PRUNED_BEFORE_TAG), Self::Hash::pack_u64(keep)));
         }
-        writes.push((NodePos::meta(NEXT_INDEX_TAG), MH::Hash::pack_u64(keep)));
+        writes.push((NodePos::meta(NEXT_INDEX_TAG), Self::Hash::pack_u64(keep)));
         self.commit(&writes, &positions).map_err(MmrError::Backend)
     }
 
@@ -464,22 +482,21 @@ where
     /// errors depends on the cut's shape, not merely on a leaf hash being gone —
     /// a pop can still succeed (returning `None`) when the shorter prefix's peaks
     /// happen to survive.
-    fn pop_leaf(&self) -> Result<Option<MH::Hash>, MmrError<Self::Error>> {
-        let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
+    fn pop_leaf(&self) -> Result<Option<Self::Hash>, MmrError<Self::Error>> {
+        let leaf_count = self.leaf_count()?;
         let Some(last_index) = leaf_count.checked_sub(1) else {
             return Ok(None);
         };
-        let value = <Self as StoredMmr<MH>>::get_leaf(self, last_index)?;
-        <Self as StoredMmr<MH>>::prune_after(self, LeafPos::new(last_index))?;
+        let value = self.get_leaf(last_index)?;
+        self.prune_after(LeafPos::new(last_index))?;
         Ok(value)
     }
 }
 
-impl<MH, T> StoredMmr<MH> for T
+impl<T> StoredMmr for T
 where
-    MH: MerkleHasher,
-    MH::Hash: MmrMetaPack,
-    T: MmrNodeStore<Hash = MH::Hash> + ?Sized,
+    T: MmrNodeStore + ?Sized,
+    T::Hash: MmrMetaPack,
 {
 }
 
@@ -495,10 +512,10 @@ mod tests {
 
     type Hash32 = [u8; 32];
 
-    // The store is generic over the hasher; these helpers pin Sha256Hasher and
-    // the in-memory backend so the tests read like the original concrete API.
+    // Only the leaf-writing helpers pin Sha256Hasher (via a method turbofish);
+    // the rest call the hasher-free API directly on the in-memory backend.
     fn append(store: &MemMmr<Hash32>, value: Hash32) -> u64 {
-        StoredMmr::<Sha256Hasher>::append_leaf(store, value).unwrap()
+        store.append_leaf::<Sha256Hasher>(value).unwrap()
     }
 
     fn put(
@@ -506,31 +523,31 @@ mod tests {
         index: u64,
         value: Hash32,
     ) -> Result<(), MmrError<std::convert::Infallible>> {
-        StoredMmr::<Sha256Hasher>::put_leaf(store, index, value)
+        store.put_leaf::<Sha256Hasher>(index, value)
     }
 
     fn count(store: &MemMmr<Hash32>) -> u64 {
-        StoredMmr::<Sha256Hasher>::leaf_count(store).unwrap()
+        store.leaf_count().unwrap()
     }
 
     fn read_leaf(store: &MemMmr<Hash32>, index: u64) -> Option<Hash32> {
-        StoredMmr::<Sha256Hasher>::get_leaf(store, index).unwrap()
+        store.get_leaf(index).unwrap()
     }
 
     fn proof_at_size(store: &MemMmr<Hash32>, index: u64, size: u64) -> MerkleProof<Hash32> {
-        StoredMmr::<Sha256Hasher>::generate_proof_at_size(store, index, size).unwrap()
+        store.generate_proof_at_size(index, size).unwrap()
     }
 
     fn prune_before(store: &MemMmr<Hash32>, before: u64) {
-        StoredMmr::<Sha256Hasher>::prune_before(store, LeafPos::new(before)).unwrap();
+        store.prune_before(LeafPos::new(before)).unwrap();
     }
 
     fn prune_after(store: &MemMmr<Hash32>, after: u64) {
-        StoredMmr::<Sha256Hasher>::prune_after(store, LeafPos::new(after)).unwrap();
+        store.prune_after(LeafPos::new(after)).unwrap();
     }
 
     fn pop(store: &MemMmr<Hash32>) -> Option<Hash32> {
-        StoredMmr::<Sha256Hasher>::pop_leaf(store).unwrap()
+        store.pop_leaf().unwrap()
     }
 
     /// Deterministic distinct leaf for the concrete (non-property) tests.
@@ -564,6 +581,17 @@ mod tests {
         mmr
     }
 
+    /// The hasher-free read/proof/prune API must stay dyn-compatible
+    #[test]
+    fn read_api_is_dyn_compatible() {
+        let mmr = MemMmr::<Hash32>::default();
+        append(&mmr, leaf(0));
+        let store: &dyn StoredMmr<Hash = Hash32, Error = std::convert::Infallible> = &mmr;
+        assert_eq!(store.leaf_count().unwrap(), 1);
+        assert_eq!(store.get_leaf(0).unwrap(), Some(leaf(0)));
+        store.generate_proof_at_idx(0).unwrap();
+    }
+
     // ---- concrete edge cases ----
 
     #[test]
@@ -587,7 +615,7 @@ mod tests {
         let mmr = MemMmr::<Hash32>::default();
         append(&mmr, leaf(0));
         assert!(matches!(
-            StoredMmr::<Sha256Hasher>::generate_proof_at_size(&mmr, 1, 1),
+            mmr.generate_proof_at_size(1, 1),
             Err(MmrError::LeafOutOfRange {
                 index: 1,
                 leaf_count: 1
@@ -643,7 +671,7 @@ mod tests {
         .unwrap();
         assert_eq!(count(&mmr), u64::MAX);
         assert!(matches!(
-            StoredMmr::<Sha256Hasher>::append_leaf(&mmr, leaf(0)),
+            mmr.append_leaf::<Sha256Hasher>(leaf(0)),
             Err(MmrError::MaxCapacity)
         ));
         // A direct put at the unwritable max index is rejected the same way.
@@ -656,11 +684,11 @@ mod tests {
     #[test]
     fn prefill_is_idempotent_and_counts() {
         let mmr = MemMmr::<Hash32>::default();
-        StoredMmr::<Sha256Hasher>::prefill(&mmr, 5, leaf(0xff)).unwrap();
+        mmr.prefill::<Sha256Hasher>(5, leaf(0xff)).unwrap();
         assert_eq!(count(&mmr), 5);
-        StoredMmr::<Sha256Hasher>::prefill(&mmr, 5, leaf(0xff)).unwrap();
+        mmr.prefill::<Sha256Hasher>(5, leaf(0xff)).unwrap();
         assert_eq!(count(&mmr), 5);
-        StoredMmr::<Sha256Hasher>::prefill(&mmr, 8, leaf(0xff)).unwrap();
+        mmr.prefill::<Sha256Hasher>(8, leaf(0xff)).unwrap();
         assert_eq!(count(&mmr), 8);
     }
 
@@ -787,11 +815,11 @@ mod tests {
         }
         // Peaks of the first 2 leaves are [(1,0)]; this drops leaves 0 and 1.
         prune_before(&store, 2);
-        assert_eq!(StoredMmr::<Sha256Hasher>::pruned_before(&store).unwrap(), 2);
+        assert_eq!(store.pruned_before().unwrap(), 2);
 
         for idx in 0..2 {
             assert!(matches!(
-                StoredMmr::<Sha256Hasher>::generate_proof_at_size(&store, idx, 4),
+                store.generate_proof_at_size(idx, 4),
                 Err(MmrError::Pruned {
                     index,
                     pruned_before: 2,
@@ -817,7 +845,7 @@ mod tests {
             append(&store, *value);
         }
         prune_before(&store, 5);
-        assert_eq!(StoredMmr::<Sha256Hasher>::pruned_before(&store).unwrap(), 5);
+        assert_eq!(store.pruned_before().unwrap(), 5);
 
         // Leaf 4 is below the watermark but its peak survives to prove leaf 5.
         assert!(matches!(
@@ -844,7 +872,7 @@ mod tests {
         for i in 0..8 {
             append(&store, leaf(i));
         }
-        let watermark = || StoredMmr::<Sha256Hasher>::pruned_before(&store).unwrap();
+        let watermark = || store.pruned_before().unwrap();
 
         prune_before(&store, 3);
         assert_eq!(watermark(), 3);
@@ -877,7 +905,7 @@ mod tests {
         }
         prune_before(&store, 4);
         assert!(matches!(
-            StoredMmr::<Sha256Hasher>::prune_after(&store, LeafPos::new(3)),
+            store.prune_after(LeafPos::new(3)),
             Err(MmrError::Pruned {
                 index: 3,
                 pruned_before: 4
@@ -885,7 +913,7 @@ mod tests {
         ));
         // Rejected before any mutation: count and watermark are unchanged.
         assert_eq!(count(&store), 4);
-        assert_eq!(StoredMmr::<Sha256Hasher>::pruned_before(&store).unwrap(), 4);
+        assert_eq!(store.pruned_before().unwrap(), 4);
 
         // A cut whose prefix peaks survived the earlier `prune_before` is allowed.
         let store = MemMmr::<Hash32>::default();
@@ -914,7 +942,7 @@ mod tests {
         // Leaf 4 was a lone peak at size 5 (empty proof path), so it slips past
         // the missing-node check; the size guard must reject it.
         assert!(matches!(
-            StoredMmr::<Sha256Hasher>::generate_proof_at_size(&store, 4, 5),
+            store.generate_proof_at_size(4, 5),
             Err(MmrError::LeafOutOfRange {
                 index: 4,
                 leaf_count: 4
@@ -922,7 +950,7 @@ mod tests {
         ));
         // A still-retained leaf is rejected too when the requested size is gone.
         assert!(matches!(
-            StoredMmr::<Sha256Hasher>::generate_proof_at_size(&store, 2, 5),
+            store.generate_proof_at_size(2, 5),
             Err(MmrError::LeafOutOfRange {
                 index: 4,
                 leaf_count: 4
@@ -1004,14 +1032,14 @@ mod tests {
             append(&store, *value);
         }
         assert!(matches!(
-            StoredMmr::<Sha256Hasher>::prune_before(&store, LeafPos::new(4)),
+            store.prune_before(LeafPos::new(4)),
             Err(MmrError::LeafOutOfRange {
                 index: 4,
                 leaf_count: 3
             })
         ));
         assert!(matches!(
-            StoredMmr::<Sha256Hasher>::prune_after(&store, LeafPos::new(4)),
+            store.prune_after(LeafPos::new(4)),
             Err(MmrError::LeafOutOfRange {
                 index: 4,
                 leaf_count: 3
@@ -1074,7 +1102,7 @@ mod tests {
         prune_before(&store, 4);
         assert_eq!(read_leaf(&store, 3), None);
         assert!(matches!(
-            StoredMmr::<Sha256Hasher>::pop_leaf(&store),
+            store.pop_leaf(),
             Err(MmrError::Pruned {
                 index: 3,
                 pruned_before: 4
