@@ -1,4 +1,6 @@
-use crate::{AsyncServiceInput, ServiceInput, ServiceMsg, SyncServiceInput};
+use futures::FutureExt;
+
+use crate::{AsyncGuard, AsyncServiceInput, ServiceInput, ServiceMsg, SyncServiceInput};
 
 /// Adapter for using an async service input as a sync one.
 pub struct SyncAsyncInput<I> {
@@ -23,5 +25,19 @@ where
 impl<I: AsyncServiceInput> SyncServiceInput for SyncAsyncInput<I> {
     fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
         self.handle.block_on(self.inner.recv_next())
+    }
+
+    fn recv_next_until_shutdown(
+        &mut self,
+        shutdown: &(impl AsyncGuard + Sync),
+    ) -> anyhow::Result<Option<Self::Msg>> {
+        // The wrapped input may park indefinitely, so race it against shutdown
+        // rather than blocking on it alone.
+        self.handle.block_on(async {
+            futures::select_biased! {
+                _ = shutdown.wait_for_shutdown().fuse() => Ok(None),
+                item = self.inner.recv_next().fuse() => item,
+            }
+        })
     }
 }
