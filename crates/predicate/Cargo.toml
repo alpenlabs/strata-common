@@ -21,7 +21,7 @@ zkaleido-sp1-groth16-verifier = { workspace = true, features = [
 
 arbitrary = { workspace = true, optional = true, features = ["derive"] }
 borsh = { workspace = true, optional = true }
-k256 = { version = "0.13.4", features = ["schnorr"], optional = true }
+k256 = { version = "0.14.0", features = ["schnorr"], optional = true }
 serde = { workspace = true, optional = true }
 signature = { version = "2.2", optional = true }
 
