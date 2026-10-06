@@ -8,4 +8,6 @@ pub use envelope::{
     parse_multi_envelope_payloads, parse_signed_envelope_leaf,
 };
 pub use errors::{CommitRevealParseError, EnvelopeParseError};
-pub use payload::{PayloadParser, PayloadParserConfig, PayloadParserOutput, RecoveredPayload};
+pub use payload::{
+    L1TxRef, PayloadParser, PayloadParserConfig, PayloadParserOutput, RecoveredPayload,
+};

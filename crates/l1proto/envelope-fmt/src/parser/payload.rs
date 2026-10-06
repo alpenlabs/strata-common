@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use bitcoin::{Transaction, Txid};
-use strata_identifiers::L1Height;
+use strata_identifiers::{L1BlockCommitment, L1Height};
 use strata_l1_txfmt::MagicBytes;
 use tracing::warn;
 
@@ -19,19 +19,48 @@ use crate::parser::errors::CommitRevealParseError;
 /// 1024 blocks is approximately one week.
 const PENDING_PAYLOAD_RETENTION_BLOCKS: L1Height = 1024;
 
+/// A transaction together with the L1 block that confirmed it.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct L1TxRef {
+    txid: Txid,
+    block: L1BlockCommitment,
+}
+
+impl L1TxRef {
+    /// Constructs the reference.
+    pub const fn new(txid: Txid, block: L1BlockCommitment) -> Self {
+        Self { txid, block }
+    }
+
+    /// Transaction this reference identifies.
+    pub const fn txid(&self) -> Txid {
+        self.txid
+    }
+
+    /// Block that confirmed the transaction.
+    pub const fn block(&self) -> L1BlockCommitment {
+        self.block
+    }
+}
+
 /// A recovered marker-anchored payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecoveredPayload {
-    anchor_txid: Txid,
+    anchor_txref: L1TxRef,
     tail: Vec<u8>,
     producer_pubkey: [u8; SIGNED_LEAF_PUBKEY_LEN],
     chunks: Vec<Vec<u8>>,
 }
 
 impl RecoveredPayload {
+    /// Reference to the marker-bearing anchor transaction.
+    pub const fn anchor_txref(&self) -> L1TxRef {
+        self.anchor_txref
+    }
+
     /// [`Txid`] of the marker-bearing anchor transaction.
     pub const fn anchor_txid(&self) -> Txid {
-        self.anchor_txid
+        self.anchor_txref.txid()
     }
 
     /// Opaque marker bytes after the magic.
@@ -139,7 +168,7 @@ impl PayloadParserConfig {
 #[derive(Debug)]
 struct IncompletePayloadEntry {
     commit: ParsedCommit,
-    commit_block_height: L1Height,
+    commit_block: L1BlockCommitment,
     producer_pubkey: Option<[u8; SIGNED_LEAF_PUBKEY_LEN]>,
     reveals: BTreeMap<u32, SignedEnvelopeLeaf>,
 }
@@ -186,19 +215,20 @@ impl PayloadParser {
 
     /// Parses transactions and returns recovered payloads.
     ///
-    /// Transactions that lead to errors are ignored.
+    /// `l1_block` is the block that confirmed `txs`. Transactions that lead to
+    /// errors are ignored.
     pub fn parse<'a>(
         &mut self,
         txs: impl IntoIterator<Item = &'a Transaction>,
-        l1_block_height: L1Height,
+        l1_block: L1BlockCommitment,
     ) -> PayloadParserOutput {
         // Prune stale incomplete entries.
         // We prune before processing because incoming transactions may update stale entries.
-        self.prune_stale(l1_block_height);
+        self.prune_stale(l1_block.height());
 
         match self.config.carrier {
-            PayloadCarrier::SingleReveal => self.parse_single_reveals(txs),
-            PayloadCarrier::ChunkedReveals => self.parse_chunked_reveals(txs, l1_block_height),
+            PayloadCarrier::SingleReveal => self.parse_single_reveals(txs, l1_block),
+            PayloadCarrier::ChunkedReveals => self.parse_chunked_reveals(txs, l1_block),
         }
     }
 
@@ -209,6 +239,7 @@ impl PayloadParser {
     fn parse_single_reveals<'a>(
         &mut self,
         txs: impl IntoIterator<Item = &'a Transaction>,
+        l1_block: L1BlockCommitment,
     ) -> PayloadParserOutput {
         let mut payloads = Vec::new();
 
@@ -231,7 +262,7 @@ impl PayloadParser {
 
             let producer_pubkey = *envelope.pubkey();
             payloads.push(RecoveredPayload {
-                anchor_txid: txid,
+                anchor_txref: L1TxRef::new(txid, l1_block),
                 tail: tail.to_vec(),
                 producer_pubkey,
                 chunks: vec![envelope.into_payload()],
@@ -248,7 +279,7 @@ impl PayloadParser {
     fn parse_chunked_reveals<'a>(
         &mut self,
         txs: impl IntoIterator<Item = &'a Transaction>,
-        l1_block_height: L1Height,
+        l1_block: L1BlockCommitment,
     ) -> PayloadParserOutput {
         let txs = txs.into_iter().collect::<Vec<_>>();
         let mut malformed_commits = BTreeSet::new();
@@ -263,7 +294,7 @@ impl PayloadParser {
                     self.incomplete_payloads.entry(commit.txid()).or_insert(
                         IncompletePayloadEntry {
                             commit,
-                            commit_block_height: l1_block_height,
+                            commit_block: l1_block,
                             producer_pubkey: None,
                             reveals: BTreeMap::new(),
                         },
@@ -366,7 +397,7 @@ impl PayloadParser {
             .collect();
 
         Some(RecoveredPayload {
-            anchor_txid: entry.commit.txid(),
+            anchor_txref: L1TxRef::new(entry.commit.txid(), entry.commit_block),
             tail: entry.commit.marker_tail().to_vec(),
             producer_pubkey,
             chunks,
@@ -379,7 +410,7 @@ impl PayloadParser {
         let stale_txids = self
             .incomplete_payloads
             .iter()
-            .filter_map(|(txid, entry)| (entry.commit_block_height <= cutoff).then_some(*txid))
+            .filter_map(|(txid, entry)| (entry.commit_block.height() <= cutoff).then_some(*txid))
             .collect::<Vec<_>>();
 
         for txid in stale_txids {
@@ -391,12 +422,21 @@ impl PayloadParser {
 #[cfg(test)]
 mod tests {
     use bitcoin::{Amount, Transaction, TxOut};
+    use strata_identifiers::{L1BlockId, RBuf32};
     use strata_l1_txfmt::MagicBytes;
 
     use super::*;
     use crate::test_utils::*;
 
     const TEST_L1_HEIGHT: L1Height = 100;
+
+    /// Block commitment for `height`, with an id derived from it so recovered
+    /// references can be distinguished by block and not only by height.
+    fn make_block_commitment(height: L1Height) -> L1BlockCommitment {
+        let mut id = [0u8; 32];
+        id[..4].copy_from_slice(&height.to_be_bytes());
+        L1BlockCommitment::new(height, L1BlockId::from(RBuf32::from(id)))
+    }
 
     fn build_marker_output(magic: &MagicBytes, tail: &[u8]) -> TxOut {
         TxOut {
@@ -425,10 +465,10 @@ mod tests {
     fn parse_with_config<'a>(
         config: PayloadParserConfig,
         txs: impl IntoIterator<Item = &'a Transaction>,
-        l1_block_height: L1Height,
+        l1_block: L1BlockCommitment,
     ) -> PayloadParserOutput {
         let mut parser = PayloadParser::new(config);
-        parser.parse(txs, l1_block_height)
+        parser.parse(txs, l1_block)
     }
 
     #[test]
@@ -436,7 +476,7 @@ mod tests {
         let observed_pubkey = [1u8; SIGNED_LEAF_PUBKEY_LEN];
         let expected_pubkey = [2u8; SIGNED_LEAF_PUBKEY_LEN];
         let payload = RecoveredPayload {
-            anchor_txid: make_txid(1),
+            anchor_txref: L1TxRef::new(make_txid(1), make_block_commitment(TEST_L1_HEIGHT)),
             tail: Vec::new(),
             producer_pubkey: observed_pubkey,
             chunks: vec![b"payload".to_vec()],
@@ -460,12 +500,16 @@ mod tests {
         let output = parse_with_config(
             PayloadParserConfig::single_reveal(TEST_MAGIC),
             [&tx],
-            TEST_L1_HEIGHT,
+            make_block_commitment(TEST_L1_HEIGHT),
         );
 
         assert_eq!(output.payloads.len(), 1);
         let payload = &output.payloads[0];
         assert_eq!(payload.anchor_txid(), txid);
+        assert_eq!(
+            payload.anchor_txref().block(),
+            make_block_commitment(TEST_L1_HEIGHT)
+        );
         assert_eq!(payload.tail(), &[1, 2, 3, 4]);
         assert_eq!(payload.producer_pubkey(), make_xonly_pubkey_bytes(11));
         assert_eq!(payload.chunks(), &[b"payload".to_vec()]);
@@ -482,7 +526,7 @@ mod tests {
         let output = parse_with_config(
             PayloadParserConfig::single_reveal(TEST_MAGIC),
             [&tx],
-            TEST_L1_HEIGHT,
+            make_block_commitment(TEST_L1_HEIGHT),
         );
 
         assert!(output.payloads.is_empty());
@@ -494,7 +538,7 @@ mod tests {
         let output = parse_with_config(
             PayloadParserConfig::single_reveal(TEST_MAGIC),
             [&tx],
-            TEST_L1_HEIGHT,
+            make_block_commitment(TEST_L1_HEIGHT),
         );
         let payload = &output.payloads[0];
 
@@ -517,16 +561,23 @@ mod tests {
         let txs = build_commit_reveal_set(&TEST_MAGIC, &[7, 8], &chunks, 13);
         let mut parser = PayloadParser::new(PayloadParserConfig::chunked_reveals(TEST_MAGIC));
 
-        let first = parser.parse([&txs.commit], TEST_L1_HEIGHT);
+        let first = parser.parse([&txs.commit], make_block_commitment(TEST_L1_HEIGHT));
         assert!(first.payloads.is_empty());
 
-        let second = parser.parse(txs.reveals.iter(), TEST_L1_HEIGHT + 1);
+        let second = parser.parse(
+            txs.reveals.iter(),
+            make_block_commitment(TEST_L1_HEIGHT + 1),
+        );
 
         assert_eq!(second.payloads.len(), 1);
         assert_eq!(
             second.payloads[0].chunks(),
             &[b"first".to_vec(), b"second".to_vec()]
         );
+
+        let txref = second.payloads[0].anchor_txref();
+        assert_eq!(txref.txid(), txs.commit.compute_txid());
+        assert_eq!(txref.block(), make_block_commitment(TEST_L1_HEIGHT));
     }
 
     #[test]
@@ -537,7 +588,7 @@ mod tests {
         let output = parse_with_config(
             PayloadParserConfig::chunked_reveals(TEST_MAGIC),
             std::iter::once(&txs.commit).chain(txs.reveals.iter()),
-            TEST_L1_HEIGHT,
+            make_block_commitment(TEST_L1_HEIGHT),
         );
 
         assert_eq!(output.payloads.len(), 1);
@@ -553,10 +604,13 @@ mod tests {
         let txs = build_commit_reveal_set(&TEST_MAGIC, &[7, 8], &chunks, 13);
         let mut parser = PayloadParser::new(PayloadParserConfig::chunked_reveals(TEST_MAGIC));
 
-        let reveal_first = parser.parse(txs.reveals.iter(), TEST_L1_HEIGHT + 1);
+        let reveal_first = parser.parse(
+            txs.reveals.iter(),
+            make_block_commitment(TEST_L1_HEIGHT + 1),
+        );
         assert!(reveal_first.payloads.is_empty());
 
-        let commit_second = parser.parse([&txs.commit], TEST_L1_HEIGHT);
+        let commit_second = parser.parse([&txs.commit], make_block_commitment(TEST_L1_HEIGHT));
 
         assert!(commit_second.payloads.is_empty());
     }
@@ -569,19 +623,34 @@ mod tests {
         let txs2 = build_commit_reveal_set(&TEST_MAGIC, &[2], &chunks2, 12);
         let mut parser = PayloadParser::new(PayloadParserConfig::chunked_reveals(TEST_MAGIC));
 
-        let commits = parser.parse([&txs1.commit, &txs2.commit], TEST_L1_HEIGHT);
+        let commits = parser.parse(
+            [&txs1.commit, &txs2.commit],
+            make_block_commitment(TEST_L1_HEIGHT),
+        );
         assert!(commits.payloads.is_empty());
 
-        let first_reveals = parser.parse([&txs1.reveals[0], &txs2.reveals[0]], TEST_L1_HEIGHT + 1);
+        let first_reveals = parser.parse(
+            [&txs1.reveals[0], &txs2.reveals[0]],
+            make_block_commitment(TEST_L1_HEIGHT + 1),
+        );
         assert!(first_reveals.payloads.is_empty());
 
         // Parse reveals for `chunks1` before prune height.
         let chunks1_completion_height = TEST_L1_HEIGHT + PENDING_PAYLOAD_RETENTION_BLOCKS - 1;
-        let chunks1_output = parser.parse([&txs1.reveals[1]], chunks1_completion_height);
+        let chunks1_output = parser.parse(
+            [&txs1.reveals[1]],
+            make_block_commitment(chunks1_completion_height),
+        );
         assert!(chunks1_output.payloads.len() == 1);
         assert_eq!(
             chunks1_output.payloads[0].anchor_txid(),
             txs1.commit.compute_txid()
+        );
+        // The commit block survives the whole retention window, not just the
+        // block that completed the set.
+        assert_eq!(
+            chunks1_output.payloads[0].anchor_txref().block(),
+            make_block_commitment(TEST_L1_HEIGHT)
         );
         assert_eq!(
             chunks1_output.payloads[0].chunks(),
@@ -595,11 +664,14 @@ mod tests {
             DEFAULT_KEY_SEED,
         )]);
         let prune_height = chunks1_completion_height + 1;
-        let unrelated = parser.parse([&unrelated_tx], prune_height);
+        let unrelated = parser.parse([&unrelated_tx], make_block_commitment(prune_height));
         assert!(unrelated.payloads.is_empty());
 
         // Parse reveals for `chunks2` after prune height.
-        let pruned = parser.parse(txs2.reveals[1..].iter(), prune_height + 1);
+        let pruned = parser.parse(
+            txs2.reveals[1..].iter(),
+            make_block_commitment(prune_height + 1),
+        );
         // Incomplete entry should have been pruned. So no payloads.
         assert_eq!(pruned.payloads.len(), 0);
     }
@@ -616,7 +688,7 @@ mod tests {
         let output = parse_with_config(
             PayloadParserConfig::chunked_reveals(TEST_MAGIC),
             [&unrelated],
-            TEST_L1_HEIGHT,
+            make_block_commitment(TEST_L1_HEIGHT),
         );
 
         assert!(output.payloads.is_empty());
@@ -631,8 +703,8 @@ mod tests {
         ]);
 
         let mut parser = PayloadParser::new(PayloadParserConfig::chunked_reveals(TEST_MAGIC));
-        parser.parse([&commit], TEST_L1_HEIGHT);
-        let output = parser.parse([&reveal], TEST_L1_HEIGHT + 1);
+        parser.parse([&commit], make_block_commitment(TEST_L1_HEIGHT));
+        let output = parser.parse([&reveal], make_block_commitment(TEST_L1_HEIGHT + 1));
 
         assert!(output.payloads.is_empty());
     }
@@ -657,9 +729,12 @@ mod tests {
         ]);
 
         let mut parser = PayloadParser::new(PayloadParserConfig::chunked_reveals(TEST_MAGIC));
-        parser.parse([&first_commit, &second_commit], TEST_L1_HEIGHT);
+        parser.parse(
+            [&first_commit, &second_commit],
+            make_block_commitment(TEST_L1_HEIGHT),
+        );
 
-        let output = parser.parse([&reveal], TEST_L1_HEIGHT);
+        let output = parser.parse([&reveal], make_block_commitment(TEST_L1_HEIGHT));
 
         assert!(output.payloads.is_empty());
     }
@@ -670,13 +745,13 @@ mod tests {
         let txs = build_commit_reveal_set(&TEST_MAGIC, &[7, 8], &chunks, DEFAULT_KEY_SEED);
         let mut parser = PayloadParser::new(PayloadParserConfig::chunked_reveals(TEST_MAGIC));
 
-        let commit = parser.parse([&txs.commit], TEST_L1_HEIGHT);
+        let commit = parser.parse([&txs.commit], make_block_commitment(TEST_L1_HEIGHT));
         assert!(commit.payloads.is_empty());
 
-        let first = parser.parse([&txs.reveals[0]], TEST_L1_HEIGHT + 1);
+        let first = parser.parse([&txs.reveals[0]], make_block_commitment(TEST_L1_HEIGHT + 1));
         assert!(first.payloads.is_empty());
 
-        let duplicate = parser.parse([&txs.reveals[0]], TEST_L1_HEIGHT + 2);
+        let duplicate = parser.parse([&txs.reveals[0]], make_block_commitment(TEST_L1_HEIGHT + 2));
 
         assert!(duplicate.payloads.is_empty());
     }
@@ -698,14 +773,15 @@ mod tests {
         )]);
         let mut parser = PayloadParser::new(PayloadParserConfig::chunked_reveals(TEST_MAGIC));
 
-        let commit_output = parser.parse([&commit], TEST_L1_HEIGHT);
+        let commit_output = parser.parse([&commit], make_block_commitment(TEST_L1_HEIGHT));
         assert!(commit_output.payloads.is_empty());
 
-        let first = parser.parse([&first_reveal], TEST_L1_HEIGHT + 1);
-        assert!(first.payloads.is_empty());
+        let first_output = parser.parse([&first_reveal], make_block_commitment(TEST_L1_HEIGHT + 1));
+        assert!(first_output.payloads.is_empty());
 
-        let inconsistent = parser.parse([&second_reveal], TEST_L1_HEIGHT + 2);
+        let second_output =
+            parser.parse([&second_reveal], make_block_commitment(TEST_L1_HEIGHT + 2));
 
-        assert!(inconsistent.payloads.is_empty());
+        assert!(second_output.payloads.is_empty());
     }
 }
