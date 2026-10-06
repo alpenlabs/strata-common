@@ -1,6 +1,6 @@
 //! The storage backend trait and the derived MMR API.
 
-use strata_merkle::{MerkleHash, MerkleHasher, MerkleProof};
+use strata_merkle::{MerkleHash, MerkleHasher, MerkleProof, MmrState};
 
 use super::algorithm::{
     assemble_proof, iter_prune_after_positions, iter_prune_before_positions, proof_positions,
@@ -317,6 +317,57 @@ where
             count += 1;
         }
         Ok(())
+    }
+
+    /// Seeds an empty store with the peaks of `accumulator`, without the leaves
+    /// under them.
+    ///
+    /// The result is the store that appending every leaf `accumulator` commits
+    /// to and then calling [`prune_before`](Self::prune_before) at its entry
+    /// count would leave: only the peaks are written, and the leaf count and
+    /// prune watermark both become `accumulator.num_entries()`. Appends,
+    /// overwrites, and proofs of later leaves read only those peaks, so they
+    /// behave as if the leaves were stored. Proving or overwriting a seeded
+    /// leaf fails with [`MmrError::Pruned`]. This writes `O(log n)` nodes where
+    /// [`prefill`](Self::prefill) writes `O(n)`, which matters when the prefix
+    /// only aligns leaf indices with an external numbering and is never read.
+    ///
+    /// Errors with [`MmrError::NotEmpty`] if the store already holds leaves.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `accumulator` lacks a peak for a set bit of its entry count,
+    /// which a well-formed [`MmrState`] never does.
+    fn seed_from_peaks(
+        &self,
+        accumulator: &impl MmrState<MH::Hash>,
+    ) -> Result<(), MmrError<Self::Error>> {
+        let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
+        if leaf_count != 0 {
+            return Err(MmrError::NotEmpty { leaf_count });
+        }
+        let num_entries = accumulator.num_entries();
+        if num_entries == 0 {
+            return Ok(());
+        }
+
+        let mut writes: Vec<(NodePos, MH::Hash)> = peak_positions(num_entries)
+            .map(|pos| {
+                let peak = accumulator
+                    .get_peak(pos.height())
+                    .expect("accumulator holds a peak for every set bit of its entry count");
+                (pos, *peak)
+            })
+            .collect();
+        writes.push((
+            NodePos::meta(NEXT_INDEX_TAG),
+            MH::Hash::pack_u64(num_entries),
+        ));
+        writes.push((
+            NodePos::meta(PRUNED_BEFORE_TAG),
+            MH::Hash::pack_u64(num_entries),
+        ));
+        self.commit(&writes, &[]).map_err(MmrError::Backend)
     }
 
     /// Prunes every node strictly before `before`, retaining only the peaks of
@@ -651,6 +702,20 @@ mod tests {
             put(&mmr, u64::MAX, leaf(0)),
             Err(MmrError::MaxCapacity)
         ));
+    }
+
+    #[test]
+    fn seed_from_peaks_rejects_non_empty_store() {
+        let store = MemMmr::<Hash32>::default();
+        append(&store, leaf(0));
+        let accumulator = reference_mmr(&[leaf(1), leaf(2)]);
+
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::seed_from_peaks(&store, &accumulator),
+            Err(MmrError::NotEmpty { leaf_count: 1 })
+        ));
+        assert_eq!(count(&store), 1);
+        assert_eq!(read_leaf(&store, 0), Some(leaf(0)));
     }
 
     #[test]
@@ -1278,6 +1343,38 @@ mod tests {
             for idx in k..n {
                 let proof = proof_at_size(&store, idx, n);
                 prop_assert!(reference.verify::<Sha256Hasher>(&proof, &leaves[idx as usize]));
+            }
+        }
+
+        /// Seeding from the peaks of `prefix` leaves the same store as appending
+        /// `prefix` and pruning all of it, and the two stay equal through later
+        /// appends and an overwrite. Every `prune_before` guarantee therefore
+        /// holds for a seeded store.
+        #[test]
+        fn seed_from_peaks_equals_append_then_prune(
+            prefix in prop::collection::vec(leaf_bytes(), 0..64),
+            suffix in prop::collection::vec(leaf_bytes(), 0..16),
+        ) {
+            let seeded = MemMmr::<Hash32>::default();
+            StoredMmr::<Sha256Hasher>::seed_from_peaks(&seeded, &reference_mmr(&prefix)).unwrap();
+            let pruned = MemMmr::<Hash32>::default();
+            for value in &prefix {
+                append(&pruned, *value);
+            }
+            prune_before(&pruned, prefix.len() as u64);
+            prop_assert_eq!(&seeded, &pruned);
+
+            for value in &suffix {
+                append(&seeded, *value);
+                append(&pruned, *value);
+            }
+            prop_assert_eq!(&seeded, &pruned);
+
+            if !suffix.is_empty() {
+                let first_suffix = prefix.len() as u64;
+                put(&seeded, first_suffix, leaf(0)).unwrap();
+                put(&pruned, first_suffix, leaf(0)).unwrap();
+                prop_assert_eq!(&seeded, &pruned);
             }
         }
     }

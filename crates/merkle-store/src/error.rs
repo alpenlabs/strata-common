@@ -40,6 +40,15 @@ pub enum MmrError<E> {
         leaf_count: u64,
     },
 
+    /// The store already holds leaves, so it cannot be seeded with
+    /// [`seed_from_peaks`](super::store::StoredMmr::seed_from_peaks), which
+    /// only accepts an empty store.
+    #[error("cannot seed an mmr that already holds {leaf_count} leaves")]
+    NotEmpty {
+        /// The store's current leaf count.
+        leaf_count: u64,
+    },
+
     /// The MMR already holds the maximum `u64::MAX` leaves, so no further leaf
     /// can be appended — the next index would overflow `u64`.
     #[error("MMR has reached max capacity")]
