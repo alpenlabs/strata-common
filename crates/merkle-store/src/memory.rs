@@ -10,7 +10,7 @@ use super::index::NodePos;
 use super::store::MmrNodeStore;
 
 /// A non-persistent [`MmrNodeStore`] backed by a `BTreeMap`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct MemMmr<H: MerkleHash> {
     nodes: RefCell<BTreeMap<NodePos, H>>,
 }

@@ -6,6 +6,7 @@ mod mmr64b32 {
 
     #[cfg(any(feature = "legacy_compact", test))]
     use crate::CompactMmr64;
+    use crate::error::MerkleError;
     use crate::ext::*;
     use crate::hasher::*;
     use crate::traits::*;
@@ -154,6 +155,11 @@ mod mmr64b32 {
                 roots: &self.roots,
             }
         }
+
+        fn validate(&self) -> Result<(), MerkleError> {
+            check_peak_count(self.entries, self.roots.len())?;
+            check_peaks(self)
+        }
     }
 
     /// Iterator that yields (peak_index, &hash) pairs from lowest to highest peak index for
@@ -206,7 +212,7 @@ mod tests {
 
     use crate::proof::MerkleProof;
     use crate::traits::MmrState;
-    use crate::{CompactMmr64, Mmr, Sha256Hasher};
+    use crate::{CompactMmr64, MerkleError, Mmr, Sha256Hasher};
 
     type Hash32 = [u8; 32];
 
@@ -568,5 +574,81 @@ mod tests {
         // Verify proof verification fails for wrong leaf
         let wrong_hash: Hash32 = Sha256::digest(b"wrong").into();
         assert!(!concrete_mmr.verify(&concrete_proof, &wrong_hash));
+    }
+
+    #[test]
+    fn validate_accepts_well_formed_mmr() {
+        assert_eq!(CompactMmr64::<Hash32>::new(64).validate(), Ok(()));
+        let (mmr, _) = generate_mmr_with_proofs(11);
+        assert_eq!(mmr.validate(), Ok(()));
+    }
+
+    #[test]
+    fn validate_rejects_peaks_that_do_not_match_entries() {
+        let peak = make_hash(b"peak");
+        let cases = [
+            (
+                3,
+                vec![peak],
+                MerkleError::PeakCountMismatch {
+                    expected: 2,
+                    actual: 1,
+                },
+            ),
+            (
+                1,
+                vec![peak, peak],
+                MerkleError::PeakCountMismatch {
+                    expected: 1,
+                    actual: 2,
+                },
+            ),
+            (
+                3,
+                vec![peak, [0; 32]],
+                MerkleError::MissingPeak { height: 1 },
+            ),
+        ];
+
+        for (entries, roots, error) in cases {
+            let mmr = CompactMmr64 {
+                entries,
+                cap_log2: 64,
+                roots,
+            };
+            assert_eq!(mmr.validate(), Err(error));
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "ssz")]
+    fn validate_rejects_malformed_decoded_mmr() {
+        let (mmr, _) = generate_mmr_with_proofs(11);
+        assert_eq!(Mmr64B32::from_generic(&mmr).validate(), Ok(()));
+
+        // Decoding accepts an entry count with no peaks behind it.
+        let peakless = Mmr64B32 {
+            entries: 3,
+            roots: vec![].try_into().expect("empty vec should work"),
+        };
+        let decoded = Mmr64B32::from_ssz_bytes(&peakless.as_ssz_bytes()).expect("decode");
+        assert_eq!(
+            decoded.validate(),
+            Err(MerkleError::PeakCountMismatch {
+                expected: 2,
+                actual: 0
+            })
+        );
+
+        let zero_peak = Mmr64B32 {
+            entries: 1,
+            roots: vec![FixedBytes::from([0; 32])]
+                .try_into()
+                .expect("one root fits"),
+        };
+        assert_eq!(
+            zero_peak.validate(),
+            Err(MerkleError::MissingPeak { height: 0 })
+        );
     }
 }

@@ -24,6 +24,23 @@ pub enum MerkleError {
     #[error("MMR has reached max capacity")]
     MaxCapacity,
 
+    /// The MMR's entry count says there is a peak at `height`, but the MMR does
+    /// not hold one.
+    #[error("MMR has no peak at height {height}")]
+    MissingPeak {
+        /// The height of the missing peak.
+        height: u8,
+    },
+
+    /// The MMR stores a different number of peaks than its entry count implies.
+    #[error("MMR stores {actual} peaks but its entry count implies {expected}")]
+    PeakCountMismatch {
+        /// The number of peaks the entry count implies.
+        expected: usize,
+        /// The number of peaks stored.
+        actual: usize,
+    },
+
     /// An unknown or unexpected error occurred.
     #[error("unknown error")]
     Unknown,
