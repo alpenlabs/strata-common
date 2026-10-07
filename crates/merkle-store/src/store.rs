@@ -364,12 +364,16 @@ where
                 Ok((pos, *peak))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        // Write the leaf count last, as `prune_after` does. If a backend without
+        // an atomic `commit` stops partway, the count is still 0, so the store
+        // can be seeded again instead of being left with a count but no
+        // watermark.
         writes.push((
-            NodePos::meta(NEXT_INDEX_TAG),
+            NodePos::meta(PRUNED_BEFORE_TAG),
             MH::Hash::pack_u64(num_entries),
         ));
         writes.push((
-            NodePos::meta(PRUNED_BEFORE_TAG),
+            NodePos::meta(NEXT_INDEX_TAG),
             MH::Hash::pack_u64(num_entries),
         ));
         self.commit(&writes, &[]).map_err(MmrError::Backend)
@@ -541,6 +545,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::iter;
     use std::ops::Range;
 
@@ -658,6 +663,34 @@ mod tests {
         }
     }
 
+    /// A [`MemMmr`] whose `put_node` fails once `puts_left` runs out, like a
+    /// backend without an atomic `commit` that stops partway.
+    struct FlakyStore {
+        inner: MemMmr<Hash32>,
+        puts_left: Cell<usize>,
+    }
+
+    impl MmrNodeStore for FlakyStore {
+        type Hash = Hash32;
+        type Error = ();
+
+        fn get_node(&self, pos: NodePos) -> Result<Option<Hash32>, ()> {
+            self.inner.get_node(pos).map_err(|never| match never {})
+        }
+
+        fn put_node(&self, pos: NodePos, value: Hash32) -> Result<(), ()> {
+            let puts_left = self.puts_left.get().checked_sub(1).ok_or(())?;
+            self.puts_left.set(puts_left);
+            self.inner
+                .put_node(pos, value)
+                .map_err(|never| match never {})
+        }
+
+        fn delete_node(&self, pos: NodePos) -> Result<(), ()> {
+            self.inner.delete_node(pos).map_err(|never| match never {})
+        }
+    }
+
     // ---- concrete edge cases ----
 
     #[test]
@@ -772,6 +805,30 @@ mod tests {
             }))
         ));
         assert_eq!(store, MemMmr::default());
+    }
+
+    /// A seed cut short before its last write leaves the leaf count at 0, so
+    /// the store can be seeded again.
+    #[test]
+    fn interrupted_seed_can_be_retried() {
+        let accumulator = reference_mmr(&[leaf(0), leaf(1), leaf(2)]);
+        // Room for the two peaks and the watermark, but not the leaf count.
+        let store = FlakyStore {
+            inner: MemMmr::default(),
+            puts_left: Cell::new(3),
+        };
+
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::seed_from_peaks(&store, &accumulator),
+            Err(MmrError::Backend(()))
+        ));
+        assert_eq!(StoredMmr::<Sha256Hasher>::leaf_count(&store).unwrap(), 0);
+
+        store.puts_left.set(usize::MAX);
+        StoredMmr::<Sha256Hasher>::seed_from_peaks(&store, &accumulator).unwrap();
+        let clean = MemMmr::default();
+        StoredMmr::<Sha256Hasher>::seed_from_peaks(&clean, &accumulator).unwrap();
+        assert_eq!(store.inner, clean);
     }
 
     #[test]
