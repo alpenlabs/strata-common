@@ -599,8 +599,11 @@ mod tests {
     }
 
     /// Strategy for a random 32-byte leaf value.
+    ///
+    /// Never all zeros: the compact reference accumulator reads a zero hash as
+    /// an unset peak, so it cannot hold a zero leaf.
     fn leaf_bytes() -> impl Strategy<Value = Hash32> {
-        prop::array::uniform32(any::<u8>())
+        prop::array::uniform32(any::<u8>()).prop_filter("zero leaf", |value| *value != [0; 32])
     }
 
     /// Strategy for `(leaves, size, leaf_index)` with `len` in `len_range`,
