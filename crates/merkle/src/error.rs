@@ -24,6 +24,14 @@ pub enum MerkleError {
     #[error("MMR has reached max capacity")]
     MaxCapacity,
 
+    /// The MMR's entry count says there is a peak at `height`, but the MMR does
+    /// not hold one.
+    #[error("MMR has no peak at height {height}")]
+    MissingPeak {
+        /// The height of the missing peak.
+        height: u8,
+    },
+
     /// An unknown or unexpected error occurred.
     #[error("unknown error")]
     Unknown,
