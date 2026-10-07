@@ -338,7 +338,12 @@ where
     fn seed_from_peaks(
         &self,
         accumulator: &impl MmrState<MH::Hash>,
-    ) -> Result<(), MmrError<Self::Error>> {
+    ) -> Result<(), MmrError<Self::Error>>
+    where
+        // Keeps `StoredMmr` usable as a trait object despite the generic
+        // parameter.
+        Self: Sized,
+    {
         accumulator
             .validate()
             .map_err(MmrError::MalformedAccumulator)?;
@@ -546,6 +551,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
+    use std::convert::Infallible;
     use std::iter;
     use std::ops::Range;
 
@@ -829,6 +835,13 @@ mod tests {
         let clean = MemMmr::default();
         StoredMmr::<Sha256Hasher>::seed_from_peaks(&clean, &accumulator).unwrap();
         assert_eq!(store.inner, clean);
+    }
+
+    #[test]
+    fn stored_mmr_is_dyn_compatible() {
+        let store = MemMmr::<Hash32>::default();
+        let store: &dyn StoredMmr<Sha256Hasher, Hash = Hash32, Error = Infallible> = &store;
+        assert_eq!(store.leaf_count().unwrap(), 0);
     }
 
     #[test]
