@@ -1,6 +1,6 @@
 //! The storage backend trait and the derived MMR API.
 
-use strata_merkle::{MerkleHash, MerkleHasher, MerkleProof, MmrState};
+use strata_merkle::{MerkleError, MerkleHash, MerkleHasher, MerkleProof, MmrState};
 
 use super::algorithm::{
     assemble_proof, iter_prune_after_positions, iter_prune_before_positions, proof_positions,
@@ -332,16 +332,16 @@ where
     /// [`prefill`](Self::prefill) writes `O(n)`, which matters when the prefix
     /// only aligns leaf indices with an external numbering and is never read.
     ///
-    /// Errors with [`MmrError::NotEmpty`] if the store already holds leaves.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `accumulator` lacks a peak for a set bit of its entry count,
-    /// which a well-formed [`MmrState`] never does.
+    /// Errors with [`MmrError::MalformedAccumulator`] if `accumulator` fails
+    /// [`MmrState::validate`], and with [`MmrError::NotEmpty`] if the store
+    /// already holds leaves. Either way nothing is written.
     fn seed_from_peaks(
         &self,
         accumulator: &impl MmrState<MH::Hash>,
     ) -> Result<(), MmrError<Self::Error>> {
+        accumulator
+            .validate()
+            .map_err(MmrError::MalformedAccumulator)?;
         let leaf_count = <Self as StoredMmr<MH>>::leaf_count(self)?;
         if leaf_count != 0 {
             return Err(MmrError::NotEmpty { leaf_count });
@@ -351,14 +351,19 @@ where
             return Ok(());
         }
 
-        let mut writes: Vec<(NodePos, MH::Hash)> = peak_positions(num_entries)
+        let mut writes = peak_positions(num_entries)
             .map(|pos| {
+                let height = pos.height();
+                // `validate` already checked this. Checking again means a bad
+                // `validate` override returns an error rather than a panic.
                 let peak = accumulator
-                    .get_peak(pos.height())
-                    .expect("accumulator holds a peak for every set bit of its entry count");
-                (pos, *peak)
+                    .get_peak(height)
+                    .ok_or(MmrError::MalformedAccumulator(MerkleError::MissingPeak {
+                        height,
+                    }))?;
+                Ok((pos, *peak))
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
         writes.push((
             NodePos::meta(NEXT_INDEX_TAG),
             MH::Hash::pack_u64(num_entries),
@@ -536,6 +541,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::iter;
     use std::ops::Range;
 
     use proptest::prelude::*;
@@ -613,6 +619,40 @@ mod tests {
             Mmr::<Sha256Hasher>::add_leaf(&mut mmr, *value).unwrap();
         }
         mmr
+    }
+
+    /// An accumulator that reports entries but holds no peaks, like a decoded
+    /// `Mmr64B32` whose root list is shorter than its entry count implies.
+    struct PeaklessAccumulator(u64);
+
+    impl MmrState<Hash32> for PeaklessAccumulator {
+        fn new_empty() -> Self {
+            Self(0)
+        }
+
+        fn max_num_peaks(&self) -> u8 {
+            64
+        }
+
+        fn num_entries(&self) -> u64 {
+            self.0
+        }
+
+        fn num_present_peaks(&self) -> u8 {
+            0
+        }
+
+        fn get_peak(&self, _i: u8) -> Option<&Hash32> {
+            None
+        }
+
+        fn set_peak(&mut self, _i: u8, _val: Hash32) -> bool {
+            false
+        }
+
+        fn iter_peaks<'a>(&'a self) -> impl Iterator<Item = (u8, &'a Hash32)> + 'a {
+            iter::empty()
+        }
     }
 
     // ---- concrete edge cases ----
@@ -716,6 +756,19 @@ mod tests {
         ));
         assert_eq!(count(&store), 1);
         assert_eq!(read_leaf(&store, 0), Some(leaf(0)));
+    }
+
+    #[test]
+    fn seed_from_peaks_rejects_malformed_accumulator() {
+        let store = MemMmr::<Hash32>::default();
+
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::seed_from_peaks(&store, &PeaklessAccumulator(3)),
+            Err(MmrError::MalformedAccumulator(MerkleError::MissingPeak {
+                height: 0
+            }))
+        ));
+        assert_eq!(store, MemMmr::default());
     }
 
     #[test]

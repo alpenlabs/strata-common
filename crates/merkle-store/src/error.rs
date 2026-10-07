@@ -1,5 +1,7 @@
 //! Error type for derived MMR node-store operations.
 
+use strata_merkle::MerkleError;
+
 use super::index::NodePos;
 
 /// Error returned by the derived [`StoredMmr`](super::store::StoredMmr)
@@ -48,6 +50,12 @@ pub enum MmrError<E> {
         /// The store's current leaf count.
         leaf_count: u64,
     },
+
+    /// The accumulator passed to
+    /// [`seed_from_peaks`](super::store::StoredMmr::seed_from_peaks) failed
+    /// [`MmrState::validate`](strata_merkle::MmrState::validate).
+    #[error("malformed accumulator: {0}")]
+    MalformedAccumulator(MerkleError),
 
     /// The MMR already holds the maximum `u64::MAX` leaves, so no further leaf
     /// can be appended — the next index would overflow `u64`.
