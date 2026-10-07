@@ -837,6 +837,39 @@ mod tests {
         assert_eq!(store.inner, clean);
     }
 
+    /// The append-then-prune property only reaches low peaks. Here a single
+    /// append merges the seeded peaks of heights 0 to 19, so its proof checks
+    /// all of them against the accumulator.
+    #[test]
+    fn seed_from_peaks_supports_large_entry_counts() {
+        let num_entries = (1 << 40) | ((1 << 20) - 1);
+        let mut accumulator: CompactMmr64<Hash32> =
+            Mmr::<Sha256Hasher>::new_repeated(leaf(0), num_entries);
+        let store = MemMmr::<Hash32>::default();
+        StoredMmr::<Sha256Hasher>::seed_from_peaks(&store, &accumulator).unwrap();
+
+        let index = append(&store, leaf(1));
+        Mmr::<Sha256Hasher>::add_leaf(&mut accumulator, leaf(1)).unwrap();
+
+        assert_eq!(index, num_entries);
+        let proof = StoredMmr::<Sha256Hasher>::generate_proof_at_idx(&store, index).unwrap();
+        assert!(accumulator.verify::<Sha256Hasher>(&proof, &leaf(1)));
+    }
+
+    #[test]
+    fn seed_from_full_accumulator_rejects_append() {
+        let accumulator: CompactMmr64<Hash32> =
+            Mmr::<Sha256Hasher>::new_repeated(leaf(0), u64::MAX);
+        let store = MemMmr::<Hash32>::default();
+        StoredMmr::<Sha256Hasher>::seed_from_peaks(&store, &accumulator).unwrap();
+
+        assert_eq!(count(&store), u64::MAX);
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::append_leaf(&store, leaf(1)),
+            Err(MmrError::MaxCapacity)
+        ));
+    }
+
     #[test]
     fn stored_mmr_is_dyn_compatible() {
         let store = MemMmr::<Hash32>::default();
