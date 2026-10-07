@@ -328,9 +328,12 @@ where
     /// prune watermark both become `accumulator.num_entries()`. Appends,
     /// overwrites, and proofs of later leaves read only those peaks, so they
     /// behave as if the leaves were stored. Proving or overwriting a seeded
-    /// leaf fails with [`MmrError::Pruned`]. This writes `O(log n)` nodes where
-    /// [`prefill`](Self::prefill) writes `O(n)`, which matters when the prefix
-    /// only aligns leaf indices with an external numbering and is never read.
+    /// leaf fails with [`MmrError::Pruned`]. Reading one with
+    /// [`get_leaf`](Self::get_leaf) returns `None`, except for the last seeded
+    /// leaf when it is a lone height-0 peak, since that peak is the leaf itself.
+    /// This writes `O(log n)` nodes where [`prefill`](Self::prefill) writes
+    /// `O(n)`, which matters when the prefix only aligns leaf indices with an
+    /// external numbering and is never read.
     ///
     /// Errors with [`MmrError::MalformedAccumulator`] if `accumulator` fails
     /// [`MmrState::validate`], and with [`MmrError::NotEmpty`] if the store

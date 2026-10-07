@@ -10,8 +10,6 @@ use super::index::NodePos;
 use super::store::MmrNodeStore;
 
 /// A non-persistent [`MmrNodeStore`] backed by a `BTreeMap`.
-///
-/// Two stores compare equal when they hold the same nodes and metadata.
 #[derive(Debug, PartialEq, Eq)]
 pub struct MemMmr<H: MerkleHash> {
     nodes: RefCell<BTreeMap<NodePos, H>>,
