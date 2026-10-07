@@ -32,6 +32,15 @@ pub enum MerkleError {
         height: u8,
     },
 
+    /// The MMR stores a different number of peaks than its entry count implies.
+    #[error("MMR stores {actual} peaks but its entry count implies {expected}")]
+    PeakCountMismatch {
+        /// The number of peaks the entry count implies.
+        expected: usize,
+        /// The number of peaks stored.
+        actual: usize,
+    },
+
     /// An unknown or unexpected error occurred.
     #[error("unknown error")]
     Unknown,
