@@ -55,7 +55,7 @@ pub enum MmrError<E> {
     /// [`seed_from_peaks`](super::store::StoredMmr::seed_from_peaks) failed
     /// [`MmrState::validate`](strata_merkle::MmrState::validate).
     #[error("malformed accumulator: {0}")]
-    MalformedAccumulator(MerkleError),
+    MalformedAccumulator(#[source] MerkleError),
 
     /// The MMR already holds the maximum `u64::MAX` leaves, so no further leaf
     /// can be appended — the next index would overflow `u64`.

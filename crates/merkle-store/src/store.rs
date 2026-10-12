@@ -567,6 +567,7 @@ where
 mod tests {
     use std::cell::Cell;
     use std::convert::Infallible;
+    use std::error::Error;
     use std::iter;
     use std::ops::Range;
 
@@ -819,15 +820,18 @@ mod tests {
     fn seed_from_peaks_rejects_malformed_accumulator() {
         let store = MemMmr::<Hash32>::default();
 
-        assert!(matches!(
-            StoredMmr::<Sha256Hasher>::seed_from_peaks(&store, &PeaklessAccumulator(3)),
-            Err(MmrError::MalformedAccumulator(
-                MerkleError::PeakCountMismatch {
-                    expected: 2,
-                    actual: 0
-                }
-            ))
-        ));
+        let err = StoredMmr::<Sha256Hasher>::seed_from_peaks(&store, &PeaklessAccumulator(3))
+            .expect_err("peakless accumulator must be rejected");
+        let cause = MerkleError::PeakCountMismatch {
+            expected: 2,
+            actual: 0,
+        };
+        assert!(matches!(&err, MmrError::MalformedAccumulator(inner) if *inner == cause));
+        assert_eq!(
+            err.source()
+                .and_then(|source| source.downcast_ref::<MerkleError>()),
+            Some(&cause)
+        );
         assert_eq!(store, MemMmr::default());
     }
 
