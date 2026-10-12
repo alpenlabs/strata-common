@@ -623,6 +623,58 @@ mod tests {
         }
     }
 
+    /// `CompactMmr64` decodes `cap_log2`, so its entry count can need peaks it
+    /// has no room for.
+    fn over_capacity_mmrs() -> [CompactMmr64<Hash32>; 2] {
+        let peak = make_hash(b"peak");
+        [
+            // `add_leaf` would drop the leaf and lower the entry count.
+            CompactMmr64 {
+                entries: 3,
+                cap_log2: 1,
+                roots: vec![peak; 2],
+            },
+            // `add_leaf` would overflow the shift in its merge loop.
+            CompactMmr64 {
+                entries: u64::MAX,
+                cap_log2: 63,
+                roots: vec![peak; 64],
+            },
+        ]
+    }
+
+    #[test]
+    fn validate_rejects_entries_beyond_capacity() {
+        for mmr in over_capacity_mmrs() {
+            assert_eq!(
+                mmr.validate(),
+                Err(MerkleError::EntriesExceedCapacity {
+                    entries: mmr.entries,
+                    max_num_peaks: mmr.cap_log2,
+                })
+            );
+        }
+
+        let full = CompactMmr64 {
+            entries: (1 << 63) - 1,
+            cap_log2: 63,
+            roots: vec![make_hash(b"peak"); 63],
+        };
+        assert_eq!(full.validate(), Ok(()));
+    }
+
+    #[test]
+    fn add_leaf_rejects_entries_beyond_capacity() {
+        for mut mmr in over_capacity_mmrs() {
+            let before = mmr.clone();
+            assert_eq!(
+                Mmr::<Sha256Hasher>::add_leaf(&mut mmr, make_hash(b"leaf")),
+                Err(MerkleError::MaxCapacity)
+            );
+            assert_eq!(mmr, before);
+        }
+    }
+
     #[test]
     #[cfg(feature = "ssz")]
     fn validate_rejects_malformed_decoded_mmr() {

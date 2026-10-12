@@ -22,7 +22,8 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
     /// Returns the maximum capacity of the MMR based on `max_num_peaks`.
     fn max_capacity(&self) -> u64;
 
-    /// Checks if we can insert a new element. Returns error if at capacity.
+    /// Checks if we can insert a new element. Returns error if at or over
+    /// capacity.
     fn check_capacity(&self) -> Result<(), MerkleError>;
 
     /// Adds a new leaf to the MMR.
@@ -115,7 +116,7 @@ where
     }
 
     fn check_capacity(&self) -> Result<(), MerkleError> {
-        if self.num_entries() == <S as Mmr<MH>>::max_capacity(self) {
+        if self.num_entries() >= <S as Mmr<MH>>::max_capacity(self) {
             return Err(MerkleError::MaxCapacity);
         }
         Ok(())

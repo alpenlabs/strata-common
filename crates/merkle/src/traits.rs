@@ -38,17 +38,27 @@ pub trait MmrState<H: MerkleHash> {
     fn iter_peaks<'a>(&'a self) -> impl Iterator<Item = (u8, &'a H)> + 'a;
 
     /// Checks that the peaks match the entry count: one non-zero peak for each
-    /// set bit of [`num_entries`](Self::num_entries), and no others.
+    /// set bit of [`num_entries`](Self::num_entries), and no others, all below
+    /// [`max_num_peaks`](Self::max_num_peaks).
     ///
     /// Decoding does not check this, so call it on any accumulator built from
     /// untrusted bytes.
     ///
-    /// Errors with [`MerkleError::PeakCountMismatch`] when
+    /// Errors with [`MerkleError::EntriesExceedCapacity`] when the entry count
+    /// has a bit at or above `max_num_peaks`, since `set_peak` cannot store
+    /// that peak. Errors with [`MerkleError::PeakCountMismatch`] when
     /// [`num_present_peaks`](Self::num_present_peaks) is wrong, and with
     /// [`MerkleError::MissingPeak`] for a set bit with no peak or a zero-hash
     /// peak, which `set_peak` treats as unset.
     fn validate(&self) -> Result<(), MerkleError> {
         let entries = self.num_entries();
+        let max_num_peaks = self.max_num_peaks();
+        if u32::from(max_num_peaks) < u64::BITS && entries >> max_num_peaks != 0 {
+            return Err(MerkleError::EntriesExceedCapacity {
+                entries,
+                max_num_peaks,
+            });
+        }
         let expected = entries.count_ones() as usize;
         let actual = self.num_present_peaks() as usize;
         if actual != expected {

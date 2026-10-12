@@ -41,6 +41,15 @@ pub enum MerkleError {
         actual: usize,
     },
 
+    /// The MMR's entry count needs more peaks than it can hold.
+    #[error("MMR holds {entries} entries but has room for only {max_num_peaks} peaks")]
+    EntriesExceedCapacity {
+        /// The MMR's entry count.
+        entries: u64,
+        /// The most peaks the MMR can hold.
+        max_num_peaks: u8,
+    },
+
     /// An unknown or unexpected error occurred.
     #[error("unknown error")]
     Unknown,
