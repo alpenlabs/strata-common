@@ -1,6 +1,6 @@
 //! The storage backend trait and the derived MMR API.
 
-use strata_merkle::{MerkleError, MerkleHash, MerkleHasher, MerkleProof, MmrState};
+use strata_merkle::{MerkleHash, MerkleHasher, MerkleProof, MmrState};
 
 use super::algorithm::{
     assemble_proof, iter_prune_after_positions, iter_prune_before_positions, proof_positions,
@@ -361,17 +361,12 @@ where
 
         let mut writes = peak_positions(num_entries)
             .map(|pos| {
-                let height = pos.height();
-                // `validate` already checked this. Checking again means a bad
-                // `validate` override returns an error rather than a panic.
                 let peak = accumulator
-                    .get_peak(height)
-                    .ok_or(MmrError::MalformedAccumulator(MerkleError::MissingPeak {
-                        height,
-                    }))?;
-                Ok((pos, *peak))
+                    .get_peak(pos.height())
+                    .expect("validate ensures every peak of num_entries is present");
+                (pos, *peak)
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
         // Write the leaf count last, as `prune_after` does. If a backend without
         // an atomic `commit` stops partway, the count is still 0, so the store
         // can be seeded again instead of being left with a count but no
@@ -559,7 +554,7 @@ mod tests {
     use std::ops::Range;
 
     use proptest::prelude::*;
-    use strata_merkle::{CompactMmr64, MerkleProof, Mmr, Sha256Hasher};
+    use strata_merkle::{CompactMmr64, MerkleError, MerkleProof, Mmr, Sha256Hasher};
 
     use super::*;
     use crate::memory::MemMmr;
