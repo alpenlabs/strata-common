@@ -1,6 +1,6 @@
 //! The storage backend trait and the derived MMR API.
 
-use strata_merkle::{MerkleHash, MerkleHasher, MerkleProof, MmrState};
+use strata_merkle::{MerkleError, MerkleHash, MerkleHasher, MerkleProof, MmrState};
 
 use super::algorithm::{
     assemble_proof, iter_prune_after_positions, iter_prune_before_positions, proof_positions,
@@ -382,12 +382,17 @@ where
                 NodePos::meta(PRUNED_BEFORE_TAG),
                 MH::Hash::pack_u64(num_entries),
             ));
-            writes.extend(peaks.iter().map(|&pos| {
+            for &pos in &peaks {
+                let height = pos.height();
+                // `validate` already checked this. Checking again means a bad
+                // `validate` override returns an error rather than a panic.
                 let peak = accumulator
-                    .get_peak(pos.height())
-                    .expect("validate ensures every peak of num_entries is present");
-                (pos, *peak)
-            }));
+                    .get_peak(height)
+                    .ok_or(MmrError::MalformedAccumulator(MerkleError::MissingPeak {
+                        height,
+                    }))?;
+                writes.push((pos, *peak));
+            }
             // Write the leaf count last, as `prune_after` does. If the commit
             // stops partway, the count is still 0, so the store can be seeded
             // again.
@@ -572,7 +577,7 @@ mod tests {
     use std::ops::Range;
 
     use proptest::prelude::*;
-    use strata_merkle::{CompactMmr64, MerkleError, MerkleProof, Mmr, Sha256Hasher};
+    use strata_merkle::{CompactMmr64, MerkleProof, Mmr, Sha256Hasher};
 
     use super::*;
     use crate::memory::MemMmr;
@@ -682,6 +687,44 @@ mod tests {
 
         fn iter_peaks<'a>(&'a self) -> impl Iterator<Item = (u8, &'a Hash32)> + 'a {
             iter::empty()
+        }
+    }
+
+    /// Wraps an accumulator with a `validate` override that accepts anything,
+    /// like a buggy third-party implementation.
+    struct UnvalidatedAccumulator<A>(A);
+
+    impl<A: MmrState<Hash32>> MmrState<Hash32> for UnvalidatedAccumulator<A> {
+        fn new_empty() -> Self {
+            Self(A::new_empty())
+        }
+
+        fn max_num_peaks(&self) -> u8 {
+            self.0.max_num_peaks()
+        }
+
+        fn num_entries(&self) -> u64 {
+            self.0.num_entries()
+        }
+
+        fn num_present_peaks(&self) -> u8 {
+            self.0.num_present_peaks()
+        }
+
+        fn get_peak(&self, i: u8) -> Option<&Hash32> {
+            self.0.get_peak(i)
+        }
+
+        fn set_peak(&mut self, i: u8, val: Hash32) -> bool {
+            self.0.set_peak(i, val)
+        }
+
+        fn iter_peaks<'a>(&'a self) -> impl Iterator<Item = (u8, &'a Hash32)> + 'a {
+            self.0.iter_peaks()
+        }
+
+        fn validate(&self) -> Result<(), MerkleError> {
+            Ok(())
         }
     }
 
@@ -832,6 +875,23 @@ mod tests {
                 .and_then(|source| source.downcast_ref::<MerkleError>()),
             Some(&cause)
         );
+        assert_eq!(store, MemMmr::default());
+    }
+
+    /// A `validate` override that misses a gap must not turn into a panic.
+    #[test]
+    fn seed_from_peaks_rejects_missing_peak_that_validate_missed() {
+        let store = MemMmr::<Hash32>::default();
+
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::seed_from_peaks(
+                &store,
+                &UnvalidatedAccumulator(PeaklessAccumulator(3))
+            ),
+            Err(MmrError::MalformedAccumulator(MerkleError::MissingPeak {
+                height: 1
+            }))
+        ));
         assert_eq!(store, MemMmr::default());
     }
 
