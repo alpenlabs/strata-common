@@ -338,6 +338,10 @@ where
     /// Errors with [`MmrError::MalformedAccumulator`] if `accumulator` fails
     /// [`MmrState::validate`], and with [`MmrError::NotEmpty`] if the store
     /// already holds leaves. Either way nothing is written.
+    ///
+    /// If an earlier seed was cut short on a backend without an atomic
+    /// [`commit`](MmrNodeStore::commit), this clears the nodes it left. The
+    /// retry can use any accumulator, not just the one that failed.
     fn seed_from_peaks(
         &self,
         accumulator: &impl MmrState<MH::Hash>,
@@ -355,31 +359,44 @@ where
             return Err(MmrError::NotEmpty { leaf_count });
         }
         let num_entries = accumulator.num_entries();
-        if num_entries == 0 {
+        // A seed that a backend without an atomic `commit` cut short leaves the
+        // count at 0, but may leave its watermark and some of its peaks. The
+        // watermark is written first, so it names every peak that can be left.
+        // Delete the ones this seed does not overwrite, or a retry with a
+        // different accumulator would keep them as stray nodes.
+        let stale_watermark = <Self as StoredMmr<MH>>::pruned_before(self)?;
+        if num_entries == 0 && stale_watermark == 0 {
             return Ok(());
         }
 
-        let mut writes = peak_positions(num_entries)
-            .map(|pos| {
+        let peaks = peak_positions(num_entries).collect::<Vec<_>>();
+        let mut deletes = peak_positions(stale_watermark)
+            .filter(|pos| !peaks.contains(pos))
+            .collect::<Vec<_>>();
+        let mut writes = Vec::with_capacity(peaks.len() + 2);
+        if num_entries == 0 {
+            // Last, so a cleanup cut short can still find the peaks it missed.
+            deletes.push(NodePos::meta(PRUNED_BEFORE_TAG));
+        } else {
+            writes.push((
+                NodePos::meta(PRUNED_BEFORE_TAG),
+                MH::Hash::pack_u64(num_entries),
+            ));
+            writes.extend(peaks.iter().map(|&pos| {
                 let peak = accumulator
                     .get_peak(pos.height())
                     .expect("validate ensures every peak of num_entries is present");
                 (pos, *peak)
-            })
-            .collect::<Vec<_>>();
-        // Write the leaf count last, as `prune_after` does. If a backend without
-        // an atomic `commit` stops partway, the count is still 0, so the store
-        // can be seeded again instead of being left with a count but no
-        // watermark.
-        writes.push((
-            NodePos::meta(PRUNED_BEFORE_TAG),
-            MH::Hash::pack_u64(num_entries),
-        ));
-        writes.push((
-            NodePos::meta(NEXT_INDEX_TAG),
-            MH::Hash::pack_u64(num_entries),
-        ));
-        self.commit(&writes, &[]).map_err(MmrError::Backend)
+            }));
+            // Write the leaf count last, as `prune_after` does. If the commit
+            // stops partway, the count is still 0, so the store can be seeded
+            // again.
+            writes.push((
+                NodePos::meta(NEXT_INDEX_TAG),
+                MH::Hash::pack_u64(num_entries),
+            ));
+        }
+        self.commit(&writes, &deletes).map_err(MmrError::Backend)
     }
 
     /// Prunes every node strictly before `before`, retaining only the peaks of
@@ -814,28 +831,47 @@ mod tests {
         assert_eq!(store, MemMmr::default());
     }
 
-    /// A seed cut short before its last write leaves the leaf count at 0, so
-    /// the store can be seeded again.
+    /// A seed cut short before its last write leaves the leaf count at 0.
+    /// Seeding again, with any accumulator, gives the same store as a clean
+    /// seed.
     #[test]
     fn interrupted_seed_can_be_retried() {
-        let accumulator = reference_mmr(&[leaf(0), leaf(1), leaf(2)]);
-        // Room for the two peaks and the watermark, but not the leaf count.
-        let store = FlakyStore {
-            inner: MemMmr::default(),
-            puts_left: Cell::new(3),
-        };
+        let first = reference_mmr(&[leaf(0), leaf(1), leaf(2)]);
+        let retries = [
+            reference_mmr(&[leaf(0), leaf(1), leaf(2)]),
+            reference_mmr(&[]),
+            // A peak at (0, 0), which `first` lacks.
+            reference_mmr(&[leaf(3)]),
+            // A peak at (1, 0), which `first` also has.
+            reference_mmr(&[leaf(3), leaf(4)]),
+            reference_mmr(&(3..10).map(leaf).collect::<Vec<_>>()),
+        ];
+        // Seeding `first` writes the watermark, two peaks, then the leaf count.
+        // Stop it after each of the first three.
+        for puts_left in 1..=3 {
+            for retry in &retries {
+                let store = FlakyStore {
+                    inner: MemMmr::default(),
+                    puts_left: Cell::new(puts_left),
+                };
+                assert!(matches!(
+                    StoredMmr::<Sha256Hasher>::seed_from_peaks(&store, &first),
+                    Err(MmrError::Backend(()))
+                ));
+                assert_eq!(StoredMmr::<Sha256Hasher>::leaf_count(&store).unwrap(), 0);
 
-        assert!(matches!(
-            StoredMmr::<Sha256Hasher>::seed_from_peaks(&store, &accumulator),
-            Err(MmrError::Backend(()))
-        ));
-        assert_eq!(StoredMmr::<Sha256Hasher>::leaf_count(&store).unwrap(), 0);
-
-        store.puts_left.set(usize::MAX);
-        StoredMmr::<Sha256Hasher>::seed_from_peaks(&store, &accumulator).unwrap();
-        let clean = MemMmr::default();
-        StoredMmr::<Sha256Hasher>::seed_from_peaks(&clean, &accumulator).unwrap();
-        assert_eq!(store.inner, clean);
+                store.puts_left.set(usize::MAX);
+                StoredMmr::<Sha256Hasher>::seed_from_peaks(&store, retry).unwrap();
+                let clean = MemMmr::default();
+                StoredMmr::<Sha256Hasher>::seed_from_peaks(&clean, retry).unwrap();
+                assert_eq!(
+                    store.inner,
+                    clean,
+                    "puts_left {puts_left}, retry with {} entries",
+                    retry.num_entries()
+                );
+            }
+        }
     }
 
     /// The append-then-prune property only reaches low peaks. Here a single
