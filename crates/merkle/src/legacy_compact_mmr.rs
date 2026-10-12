@@ -1,4 +1,3 @@
-use crate::error::MerkleError;
 use crate::hasher::*;
 use crate::proof::*;
 use crate::traits::*;
@@ -84,7 +83,7 @@ impl<H: MerkleHash> MmrState<H> for CompactMmr64<H> {
     }
 
     fn num_present_peaks(&self) -> u8 {
-        self.entries.count_ones() as u8
+        u8::try_from(self.roots.len()).unwrap_or(u8::MAX)
     }
 
     fn get_peak(&self, i: u8) -> Option<&H> {
@@ -151,11 +150,6 @@ impl<H: MerkleHash> MmrState<H> for CompactMmr64<H> {
             original: self.entries,
             roots: &self.roots,
         }
-    }
-
-    fn validate(&self) -> Result<(), MerkleError> {
-        check_peak_count(self.entries, self.roots.len())?;
-        check_peaks(self)
     }
 }
 

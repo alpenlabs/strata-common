@@ -6,7 +6,6 @@ mod mmr64b32 {
 
     #[cfg(any(feature = "legacy_compact", test))]
     use crate::CompactMmr64;
-    use crate::error::MerkleError;
     use crate::ext::*;
     use crate::hasher::*;
     use crate::traits::*;
@@ -70,7 +69,7 @@ mod mmr64b32 {
         }
 
         fn num_present_peaks(&self) -> u8 {
-            self.entries.count_ones() as u8
+            u8::try_from(self.roots.len()).unwrap_or(u8::MAX)
         }
 
         fn get_peak(&self, i: u8) -> Option<&Hash32> {
@@ -154,11 +153,6 @@ mod mmr64b32 {
                 original: self.entries,
                 roots: &self.roots,
             }
-        }
-
-        fn validate(&self) -> Result<(), MerkleError> {
-            check_peak_count(self.entries, self.roots.len())?;
-            check_peaks(self)
         }
     }
 
@@ -607,6 +601,15 @@ mod tests {
                 3,
                 vec![peak, [0; 32]],
                 MerkleError::MissingPeak { height: 1 },
+            ),
+            // More roots than fit in a `u8` must not wrap around to a valid count.
+            (
+                1,
+                vec![peak; 257],
+                MerkleError::PeakCountMismatch {
+                    expected: 1,
+                    actual: 255,
+                },
             ),
         ];
 

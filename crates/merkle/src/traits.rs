@@ -14,9 +14,12 @@ pub trait MmrState<H: MerkleHash> {
     /// Gets the current number of entries inserted into the MMR.
     fn num_entries(&self) -> u64;
 
-    /// Gets the number of set peaks.
+    /// Gets the number of peaks actually stored, saturating at `u8::MAX`.
     ///
-    /// This should be the popcnt of `num_entries`.
+    /// For a valid state this is the popcnt of `num_entries`. Count what is
+    /// stored rather than deriving it from `num_entries`, so
+    /// [`validate`](Self::validate) can catch stored peaks that `get_peak`
+    /// never reaches.
     fn num_present_peaks(&self) -> u8;
 
     /// Gets a peak by its power-of-2 index, or `None` if unset/non-present.
@@ -35,45 +38,28 @@ pub trait MmrState<H: MerkleHash> {
     fn iter_peaks<'a>(&'a self) -> impl Iterator<Item = (u8, &'a H)> + 'a;
 
     /// Checks that the peaks match the entry count: one non-zero peak for each
-    /// set bit of [`num_entries`](Self::num_entries).
+    /// set bit of [`num_entries`](Self::num_entries), and no others.
     ///
     /// Decoding does not check this, so call it on any accumulator built from
-    /// untrusted bytes. The default only sees peaks through
-    /// [`get_peak`](Self::get_peak), so it cannot see extra stored peaks. A type
-    /// that stores its peaks in a list should override it to check the list
-    /// length too.
+    /// untrusted bytes.
     ///
-    /// Errors with [`MerkleError::MissingPeak`] for a set bit with no peak or a
-    /// zero-hash peak, which `set_peak` treats as unset, and with
-    /// [`MerkleError::PeakCountMismatch`] from overrides that check the length.
+    /// Errors with [`MerkleError::PeakCountMismatch`] when
+    /// [`num_present_peaks`](Self::num_present_peaks) is wrong, and with
+    /// [`MerkleError::MissingPeak`] for a set bit with no peak or a zero-hash
+    /// peak, which `set_peak` treats as unset.
     fn validate(&self) -> Result<(), MerkleError> {
-        check_peaks(self)
-    }
-}
-
-/// The default [`MmrState::validate`] check, shared with the overrides.
-pub(crate) fn check_peaks<H: MerkleHash, S: MmrState<H> + ?Sized>(
-    state: &S,
-) -> Result<(), MerkleError> {
-    let entries = state.num_entries();
-    for height in 0..u64::BITS as u8 {
-        let set = (entries >> height) & 1 == 1;
-        if set && !state.get_peak(height).is_some_and(|peak| !H::is_zero(peak)) {
-            return Err(MerkleError::MissingPeak { height });
+        let entries = self.num_entries();
+        let expected = entries.count_ones() as usize;
+        let actual = self.num_present_peaks() as usize;
+        if actual != expected {
+            return Err(MerkleError::PeakCountMismatch { expected, actual });
         }
+        for height in 0..u64::BITS as u8 {
+            let set = (entries >> height) & 1 == 1;
+            if set && !self.get_peak(height).is_some_and(|peak| !H::is_zero(peak)) {
+                return Err(MerkleError::MissingPeak { height });
+            }
+        }
+        Ok(())
     }
-    Ok(())
-}
-
-/// Checks that a list of `stored` peaks has one peak per set bit of `entries`.
-#[cfg(any(feature = "ssz", feature = "legacy_compact", test))]
-pub(crate) fn check_peak_count(entries: u64, stored: usize) -> Result<(), MerkleError> {
-    let expected = entries.count_ones() as usize;
-    if stored != expected {
-        return Err(MerkleError::PeakCountMismatch {
-            expected,
-            actual: stored,
-        });
-    }
-    Ok(())
 }

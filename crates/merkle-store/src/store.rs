@@ -809,9 +809,12 @@ mod tests {
 
         assert!(matches!(
             StoredMmr::<Sha256Hasher>::seed_from_peaks(&store, &PeaklessAccumulator(3)),
-            Err(MmrError::MalformedAccumulator(MerkleError::MissingPeak {
-                height: 0
-            }))
+            Err(MmrError::MalformedAccumulator(
+                MerkleError::PeakCountMismatch {
+                    expected: 2,
+                    actual: 0
+                }
+            ))
         ));
         assert_eq!(store, MemMmr::default());
     }
