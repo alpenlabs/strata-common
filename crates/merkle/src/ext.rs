@@ -27,6 +27,10 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
     fn check_capacity(&self) -> Result<(), MerkleError>;
 
     /// Adds a new leaf to the MMR.
+    ///
+    /// Errors with [`MerkleError::MaxCapacity`] if the MMR is full, and with
+    /// [`MerkleError::MissingPeak`] if it lacks a peak the new leaf merges with
+    /// (see [`MmrState::validate`]). Either way the state is left unchanged.
     fn add_leaf(&mut self, leaf: MH::Hash) -> Result<(), MerkleError>;
 
     /// If the MMR has a power-of-2 number of elements, extracts the single
@@ -43,6 +47,10 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
     ///
     /// If the proof passed does not match the accumulator, then the returned
     /// proof will be nonsensical.
+    ///
+    /// Errors with [`MerkleError::MaxCapacity`] if the MMR is full, and with
+    /// [`MerkleError::MissingPeak`] if it lacks a peak the new leaf merges with
+    /// (see [`MmrState::validate`]). Either way the state is left unchanged.
     fn add_leaf_updating_proof(
         &mut self,
         next: MH::Hash,
@@ -51,6 +59,11 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
 
     /// Adds a leaf to the accumulator, updating the proofs in a provided list
     /// of proofs in-place, and returning a proof to the new leaf.
+    ///
+    /// Errors with [`MerkleError::MaxCapacity`] if the MMR is full, and with
+    /// [`MerkleError::MissingPeak`] if it lacks a peak the new leaf merges with
+    /// (see [`MmrState::validate`]). Either way the state and `proof_list`
+    /// are left unchanged.
     fn add_leaf_updating_proof_list(
         &mut self,
         next: MH::Hash,
