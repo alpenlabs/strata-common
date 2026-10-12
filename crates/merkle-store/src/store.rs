@@ -108,6 +108,12 @@ pub trait MmrNodeStore {
     /// removed). The derived ops never pass overlapping sets, but defining the
     /// resolution rather than leaving it to the backend keeps an overriding
     /// backend consistent with the default.
+    ///
+    /// A backend that cannot apply the batch atomically must apply `deletes`
+    /// and then `writes`, each in slice order, as the default does. The derived
+    /// ops put the write that marks them done, such as the leaf count, last.
+    /// So a batch cut short leaves that marker unchanged, and the op can be run
+    /// again. A non-atomic backend that reorders the batch loses this.
     fn commit(
         &self,
         writes: &[(NodePos, Self::Hash)],
