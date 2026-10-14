@@ -391,9 +391,11 @@ where
             for &pos in &peaks {
                 let height = pos.height();
                 // `validate` already checked this. Checking again means a bad
-                // `validate` override returns an error rather than a panic.
+                // `validate` override returns an error rather than a panic or
+                // a stored zero peak, which `MmrState` reads as unset.
                 let peak = accumulator
                     .get_peak(height)
+                    .filter(|peak| !MH::Hash::is_zero(peak))
                     .ok_or(MmrError::MalformedAccumulator(MerkleError::MissingPeak {
                         height,
                     }))?;
@@ -696,6 +698,39 @@ mod tests {
         }
     }
 
+    /// An accumulator whose every required peak is the zero hash.
+    struct ZeroPeakAccumulator(u64);
+
+    impl MmrState<Hash32> for ZeroPeakAccumulator {
+        fn new_empty() -> Self {
+            Self(0)
+        }
+
+        fn max_num_peaks(&self) -> u8 {
+            64
+        }
+
+        fn num_entries(&self) -> u64 {
+            self.0
+        }
+
+        fn num_present_peaks(&self) -> u8 {
+            self.0.count_ones() as u8
+        }
+
+        fn get_peak(&self, i: u8) -> Option<&Hash32> {
+            (i < 64 && self.0 & (1 << i) != 0).then_some(&[0; 32])
+        }
+
+        fn set_peak(&mut self, _i: u8, _val: Hash32) -> bool {
+            false
+        }
+
+        fn iter_peaks<'a>(&'a self) -> impl Iterator<Item = (u8, &'a Hash32)> + 'a {
+            (0..64).filter_map(|i| self.get_peak(i).map(|peak| (i, peak)))
+        }
+    }
+
     /// Wraps an accumulator with a `validate` override that accepts anything,
     /// like a buggy third-party implementation.
     struct UnvalidatedAccumulator<A>(A);
@@ -896,6 +931,23 @@ mod tests {
             ),
             Err(MmrError::MalformedAccumulator(MerkleError::MissingPeak {
                 height: 1
+            }))
+        ));
+        assert_eq!(store, MemMmr::default());
+    }
+
+    /// A zero-hash peak that a `validate` override missed counts as unset, so
+    /// it is not stored.
+    #[test]
+    fn seed_from_peaks_rejects_zero_peak_that_validate_missed() {
+        let store = MemMmr::<Hash32>::default();
+        assert!(matches!(
+            StoredMmr::<Sha256Hasher>::seed_from_peaks(
+                &store,
+                &UnvalidatedAccumulator(ZeroPeakAccumulator(1))
+            ),
+            Err(MmrError::MalformedAccumulator(MerkleError::MissingPeak {
+                height: 0
             }))
         ));
         assert_eq!(store, MemMmr::default());
