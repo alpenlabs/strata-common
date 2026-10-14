@@ -348,13 +348,14 @@ where
 }
 
 /// Checks that `state` holds every peak a new leaf merges with, which is one
-/// per trailing set bit of the entry count.
+/// per trailing set bit of the entry count. A zero-hash peak counts as missing,
+/// as in [`MmrState::validate`].
 ///
 /// The merge loops clear peaks and update proofs as they go. Running this
 /// first means a malformed accumulator fails before anything changes.
 fn check_merge_peaks<H: MerkleHash>(state: &impl MmrState<H>) -> Result<(), MerkleError> {
     for height in 0..state.num_entries().trailing_ones() as u8 {
-        if state.get_peak(height).is_none() {
+        if !state.get_peak(height).is_some_and(|peak| !H::is_zero(peak)) {
             return Err(MerkleError::MissingPeak { height });
         }
     }
@@ -458,32 +459,49 @@ mod tests {
 
     #[test]
     fn test_add_leaf_rejects_missing_peak() {
-        // Three entries need peaks at heights 0 and 1, but only one is stored.
-        let malformed = CompactMmr64::<Hash32> {
-            entries: 3,
-            cap_log2: 64,
-            roots: vec![make_hash(b"peak")],
-        };
+        let cases = [
+            // Three entries need peaks at heights 0 and 1, but only one is stored.
+            (
+                CompactMmr64::<Hash32> {
+                    entries: 3,
+                    cap_log2: 64,
+                    roots: vec![make_hash(b"peak")],
+                },
+                1,
+            ),
+            // A zero-hash peak counts as unset.
+            (
+                CompactMmr64::<Hash32> {
+                    entries: 1,
+                    cap_log2: 64,
+                    roots: vec![[0; 32]],
+                },
+                0,
+            ),
+        ];
         let leaf = make_hash(b"leaf");
-        let missing = Err(MerkleError::MissingPeak { height: 1 });
 
-        let mut state = malformed.clone();
-        assert_eq!(Mmr::<Sha256Hasher>::add_leaf(&mut state, leaf), missing);
-        assert_eq!(state, malformed);
+        for (malformed, height) in cases {
+            let missing = Err(MerkleError::MissingPeak { height });
 
-        let mut state = malformed.clone();
-        let proof = MerkleProof::new_zero();
-        let result = Mmr::<Sha256Hasher>::add_leaf_updating_proof(&mut state, leaf, &proof);
-        assert_eq!(result.map(|_| ()), missing);
-        assert_eq!(state, malformed);
+            let mut state = malformed.clone();
+            assert_eq!(Mmr::<Sha256Hasher>::add_leaf(&mut state, leaf), missing);
+            assert_eq!(state, malformed);
 
-        let mut state = malformed.clone();
-        let mut proofs = vec![MerkleProof::new_zero()];
-        let result =
-            Mmr::<Sha256Hasher>::add_leaf_updating_proof_list(&mut state, leaf, &mut proofs);
-        assert_eq!(result.map(|_| ()), missing);
-        assert_eq!(state, malformed);
-        assert_eq!(proofs, vec![MerkleProof::new_zero()]);
+            let mut state = malformed.clone();
+            let proof = MerkleProof::new_zero();
+            let result = Mmr::<Sha256Hasher>::add_leaf_updating_proof(&mut state, leaf, &proof);
+            assert_eq!(result.map(|_| ()), missing);
+            assert_eq!(state, malformed);
+
+            let mut state = malformed.clone();
+            let mut proofs = vec![MerkleProof::new_zero()];
+            let result =
+                Mmr::<Sha256Hasher>::add_leaf_updating_proof_list(&mut state, leaf, &mut proofs);
+            assert_eq!(result.map(|_| ()), missing);
+            assert_eq!(state, malformed);
+            assert_eq!(proofs, vec![MerkleProof::new_zero()]);
+        }
     }
 
     #[test]
