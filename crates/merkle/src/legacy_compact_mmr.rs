@@ -83,7 +83,7 @@ impl<H: MerkleHash> MmrState<H> for CompactMmr64<H> {
     }
 
     fn num_present_peaks(&self) -> u8 {
-        self.entries.count_ones() as u8
+        u8::try_from(self.roots.len()).unwrap_or(u8::MAX)
     }
 
     fn get_peak(&self, i: u8) -> Option<&H> {

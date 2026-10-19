@@ -2,7 +2,7 @@
 //! [`MmrState`].
 
 use crate::error::MerkleError;
-use crate::hasher::MerkleHasher;
+use crate::hasher::{MerkleHash, MerkleHasher};
 use crate::proof::{MerkleProof, ProofData, RawMerkleProof, verify_with_root};
 use crate::traits::MmrState;
 
@@ -22,10 +22,15 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
     /// Returns the maximum capacity of the MMR based on `max_num_peaks`.
     fn max_capacity(&self) -> u64;
 
-    /// Checks if we can insert a new element. Returns error if at capacity.
+    /// Checks if we can insert a new element. Returns error if at or over
+    /// capacity.
     fn check_capacity(&self) -> Result<(), MerkleError>;
 
     /// Adds a new leaf to the MMR.
+    ///
+    /// Errors with [`MerkleError::MaxCapacity`] if the MMR is full, and with
+    /// [`MerkleError::MissingPeak`] if it lacks a peak the new leaf merges with
+    /// (see [`MmrState::validate`]). Either way the state is left unchanged.
     fn add_leaf(&mut self, leaf: MH::Hash) -> Result<(), MerkleError>;
 
     /// If the MMR has a power-of-2 number of elements, extracts the single
@@ -42,6 +47,10 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
     ///
     /// If the proof passed does not match the accumulator, then the returned
     /// proof will be nonsensical.
+    ///
+    /// Errors with [`MerkleError::MaxCapacity`] if the MMR is full, and with
+    /// [`MerkleError::MissingPeak`] if it lacks a peak the new leaf merges with
+    /// (see [`MmrState::validate`]). Either way the state is left unchanged.
     fn add_leaf_updating_proof(
         &mut self,
         next: MH::Hash,
@@ -50,6 +59,11 @@ pub trait Mmr<MH: MerkleHasher>: MmrState<MH::Hash> {
 
     /// Adds a leaf to the accumulator, updating the proofs in a provided list
     /// of proofs in-place, and returning a proof to the new leaf.
+    ///
+    /// Errors with [`MerkleError::MaxCapacity`] if the MMR is full, and with
+    /// [`MerkleError::MissingPeak`] if it lacks a peak the new leaf merges with
+    /// (see [`MmrState::validate`]). Either way the state and `proof_list`
+    /// are left unchanged.
     fn add_leaf_updating_proof_list(
         &mut self,
         next: MH::Hash,
@@ -115,7 +129,7 @@ where
     }
 
     fn check_capacity(&self) -> Result<(), MerkleError> {
-        if self.num_entries() == <S as Mmr<MH>>::max_capacity(self) {
+        if self.num_entries() >= <S as Mmr<MH>>::max_capacity(self) {
             return Err(MerkleError::MaxCapacity);
         }
         Ok(())
@@ -130,6 +144,7 @@ where
             self.set_peak(0, leaf);
             return Ok(());
         }
+        check_merge_peaks(self)?;
 
         // The number of elements in MMR is also the mask of peaks.
         let peak_mask = num;
@@ -142,7 +157,7 @@ where
             let prev_peak = self
                 .get_peak(current_height)
                 .copied()
-                .expect("mmr: peak should exist based on peak_mask");
+                .expect("mmr: check_merge_peaks found every merged peak");
 
             let next_node = MH::hash_node(prev_peak, current_node);
 
@@ -197,6 +212,7 @@ where
             <S as Mmr<MH>>::add_leaf(self, next)?;
             return Ok(MerkleProof::new_zero());
         }
+        check_merge_peaks(self)?;
 
         let mut updated_proof = proof.clone();
         let new_leaf_index = num;
@@ -209,7 +225,7 @@ where
             let prev_node = self
                 .get_peak(current_height as u8)
                 .copied()
-                .expect("mmr: peak should exist based on peak_mask");
+                .expect("mmr: check_merge_peaks found every merged peak");
 
             let next_node = MH::hash_node(prev_node, current_node);
             let leaf_parent_tree = new_leaf_index >> (current_height + 1);
@@ -249,6 +265,7 @@ where
             <S as Mmr<MH>>::add_leaf(self, next)?;
             return Ok(MerkleProof::new_zero());
         }
+        check_merge_peaks(self)?;
 
         let mut new_proof = MerkleProof::<MH::Hash>::new_empty(num);
         let new_proof_index = new_proof.index();
@@ -264,7 +281,7 @@ where
             let prev_node = self
                 .get_peak(current_height as u8)
                 .copied()
-                .expect("mmr: peak should exist based on peak_mask");
+                .expect("mmr: check_merge_peaks found every merged peak");
 
             let next_node = MH::hash_node(prev_node, current_node);
             let leaf_parent_tree = new_leaf_index >> (current_height + 1);
@@ -328,6 +345,21 @@ where
             }
         }
     }
+}
+
+/// Checks that `state` holds every peak a new leaf merges with, which is one
+/// per trailing set bit of the entry count. A zero-hash peak counts as missing,
+/// as in [`MmrState::validate`].
+///
+/// The merge loops clear peaks and update proofs as they go. Running this
+/// first means a malformed accumulator fails before anything changes.
+fn check_merge_peaks<H: MerkleHash>(state: &impl MmrState<H>) -> Result<(), MerkleError> {
+    for height in 0..state.num_entries().trailing_ones() as u8 {
+        if !state.get_peak(height).is_some_and(|peak| !H::is_zero(peak)) {
+            return Err(MerkleError::MissingPeak { height });
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -423,6 +455,53 @@ mod tests {
 
         let result = Mmr::<Sha256Hasher>::get_single_root(&state);
         assert_eq!(result, Err(MerkleError::NotPowerOfTwo));
+    }
+
+    #[test]
+    fn test_add_leaf_rejects_missing_peak() {
+        let cases = [
+            // Three entries need peaks at heights 0 and 1, but only one is stored.
+            (
+                CompactMmr64::<Hash32> {
+                    entries: 3,
+                    cap_log2: 64,
+                    roots: vec![make_hash(b"peak")],
+                },
+                1,
+            ),
+            // A zero-hash peak counts as unset.
+            (
+                CompactMmr64::<Hash32> {
+                    entries: 1,
+                    cap_log2: 64,
+                    roots: vec![[0; 32]],
+                },
+                0,
+            ),
+        ];
+        let leaf = make_hash(b"leaf");
+
+        for (malformed, height) in cases {
+            let missing = Err(MerkleError::MissingPeak { height });
+
+            let mut state = malformed.clone();
+            assert_eq!(Mmr::<Sha256Hasher>::add_leaf(&mut state, leaf), missing);
+            assert_eq!(state, malformed);
+
+            let mut state = malformed.clone();
+            let proof = MerkleProof::new_zero();
+            let result = Mmr::<Sha256Hasher>::add_leaf_updating_proof(&mut state, leaf, &proof);
+            assert_eq!(result.map(|_| ()), missing);
+            assert_eq!(state, malformed);
+
+            let mut state = malformed.clone();
+            let mut proofs = vec![MerkleProof::new_zero()];
+            let result =
+                Mmr::<Sha256Hasher>::add_leaf_updating_proof_list(&mut state, leaf, &mut proofs);
+            assert_eq!(result.map(|_| ()), missing);
+            assert_eq!(state, malformed);
+            assert_eq!(proofs, vec![MerkleProof::new_zero()]);
+        }
     }
 
     #[test]
