@@ -1,0 +1,22 @@
+# cargo-audit reads this file when run from the repository root, as the
+# Security workflow does.
+
+[advisories]
+ignore = [
+  # crypto-bigint 0.5.5 timing variability in operations meant to be
+  # constant-time, fixed in crypto-bigint >= 0.7.6. The only path to it is
+  # strata-predicate's `schnorr` feature, on by default through
+  # `all-verifiers`: k256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5, and
+  # no fixed 0.5.x exists. strata-predicate uses k256 only to verify BIP-340
+  # signatures: it parses an x-only public key and a signature and calls
+  # `VerifyingKey::verify`. No signing key or secret nonce reaches the affected
+  # arithmetic; this exception assumes callers treat the verified message as
+  # public. `SigningKey` appears only in unit tests with throwaway keys, no
+  # k256 type is part of the public API, and no other workspace crate depends
+  # on k256. Moving strata-predicate to k256 0.14 (elliptic-curve 0.14,
+  # crypto-bigint 0.7, signature 3) fixes this, but every unyanked fixed
+  # crypto-bigint release is still inside the 14-day `global-min-publish-age`
+  # in `.cargo/config.toml`; 0.7.9 clears it on 2026-11-08. Remove this entry
+  # once Cargo.lock holds no crypto-bigint below 0.7.6.
+  "RUSTSEC-2026-0387",
+]
