@@ -28,6 +28,7 @@ tree_hash_derive.workspace = true
 ssz_codegen.workspace = true
 
 [dev-dependencies]
+bincode.workspace = true
 rand_core = { workspace = true, features = ["getrandom"] }
 strata-ssz-tests.workspace = true
 
