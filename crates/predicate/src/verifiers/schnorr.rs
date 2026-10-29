@@ -38,7 +38,7 @@ impl PredicateVerifier for SchnorrVerifier {
             });
         }
 
-        VerifyingKey::from_bytes(condition).map_err(|e| PredicateError::ConditionParsingFailed {
+        VerifyingKey::from_slice(condition).map_err(|e| PredicateError::ConditionParsingFailed {
             id: PredicateTypeId::Bip340Schnorr,
             reason: format!("invalid x-only public key: {e}"),
         })
@@ -82,6 +82,7 @@ impl PredicateVerifier for SchnorrVerifier {
 
 #[cfg(test)]
 mod tests {
+    use k256::elliptic_curve::Generate;
     use k256::schnorr::SigningKey;
     use rand::RngCore;
     use rand::rngs::OsRng;
@@ -101,7 +102,7 @@ mod tests {
         OsRng.fill_bytes(&mut msg);
 
         // Generate key pair
-        let signing_key = SigningKey::random(&mut OsRng);
+        let signing_key = SigningKey::generate();
         let verifying_key = signing_key.verifying_key();
         let predicate = verifying_key.to_bytes().to_vec();
 
@@ -124,7 +125,7 @@ mod tests {
         mod_msg[0] = !mod_msg[0];
 
         // Generate key pair
-        let signing_key = SigningKey::random(&mut OsRng);
+        let signing_key = SigningKey::generate();
         let verifying_key = signing_key.verifying_key();
         let predicate = verifying_key.to_bytes();
 
@@ -236,7 +237,7 @@ mod tests {
     #[test]
     fn test_sizes() {
         // Directly check that the key size magic number is correct
-        let signing_key = SigningKey::random(&mut OsRng);
+        let signing_key = SigningKey::generate();
         assert_eq!(
             signing_key.verifying_key().to_bytes().len(),
             BIP340_PUBKEY_SIZE
