@@ -69,8 +69,7 @@ impl PredicateVerifier for SchnorrVerifier {
         claim: &[u8],
         signature: &Self::Witness,
     ) -> PredicateResult<()> {
-        // For BIP-340 Schnorr signatures, the message should be properly hashed
-        // The verify method expects a properly formatted message
+        // k256 runs BIP-340 over SHA-256(claim), not over the raw claim.
         pubkey
             .verify(claim, signature)
             .map_err(|e| PredicateError::VerificationFailed {
@@ -144,6 +143,24 @@ mod tests {
 
         // Test verification with wrong signature should fail
         assert!(verifier.verify(&predicate, &msg, &mod_sig).is_err());
+    }
+
+    /// Pins the signed message to SHA-256(claim), so a k256 bump can't change it unnoticed.
+    /// The signature was made with k256 0.13.4 over the SHA-256 digest of the claim.
+    #[test]
+    fn test_schnorr_known_answer() {
+        let verifier = SchnorrVerifier;
+        let predicate =
+            hex::decode("4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa")
+                .unwrap();
+        let claim = b"strata-predicate bip340 known answer";
+        let witness = hex::decode(
+            "05fda0574c7d0a90a2826521e2b8de5ccfe18178e7ad1377a67b1d0e863b714e\
+             c6f5f3bcff4d5d0e80f1e4682980da3e2dbb487b7107d76af8b9b80dde1b3e52",
+        )
+        .unwrap();
+
+        assert!(verifier.verify(&predicate, claim, &witness).is_ok());
     }
 
     #[test]
