@@ -124,6 +124,8 @@ mod arbitrary;
 #[cfg(all(test, not(feature = "serde")))]
 use bincode as _;
 #[cfg(all(test, not(feature = "schnorr")))]
+use k256 as _;
+#[cfg(all(test, not(feature = "schnorr")))]
 use rand as _;
 #[cfg(all(test, not(feature = "serde")))]
 use serde_json as _;
