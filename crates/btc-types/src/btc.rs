@@ -2,6 +2,7 @@ use std::fmt::{self, Debug, Display};
 #[cfg(feature = "borsh")]
 use std::io::{self, Read, Write};
 use std::ops;
+use std::str::FromStr;
 
 use arbitrary::{Arbitrary, Unstructured};
 use bitcoin::absolute::LockTime;
@@ -17,7 +18,8 @@ use bitcoin::{
 use bitcoin_bosd::Descriptor;
 #[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+use serde::de::{self, Unexpected, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use ssz::DecodeError;
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
@@ -202,15 +204,52 @@ impl From<BitcoinAmount> for u64 {
     }
 }
 
-/// Routes through the fallible `TryFrom<u64>` constructor so the `MAX_MONEY`
-/// invariant holds for deserialized (untrusted) values.
+/// Reads a satoshi count, or in human-readable formats also a string with a
+/// denomination such as `"3 BTC"` or `"1500 sat"`.
+///
+/// Serialization stays a satoshi count, so existing data reads back unchanged.
+/// Binary formats keep reading the plain count, since accepting either form
+/// needs `deserialize_any`, which they do not support.
+///
+/// Every path routes through the fallible `TryFrom<u64>` constructor so the
+/// `MAX_MONEY` invariant holds for deserialized (untrusted) values.
 impl<'de> Deserialize<'de> for BitcoinAmount {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
-        let amount = Amount::deserialize(deserializer)?;
-        Self::try_from(amount.to_sat()).map_err(serde::de::Error::custom)
+        if !deserializer.is_human_readable() {
+            let amount = Amount::deserialize(deserializer)?;
+            return Self::try_from(amount.to_sat()).map_err(de::Error::custom);
+        }
+
+        struct BitcoinAmountVisitor;
+
+        impl Visitor<'_> for BitcoinAmountVisitor {
+            type Value = BitcoinAmount;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a satoshi count or a denominated amount like \"3 BTC\"")
+            }
+
+            fn visit_u64<E: de::Error>(self, sats: u64) -> Result<Self::Value, E> {
+                BitcoinAmount::try_from(sats).map_err(E::custom)
+            }
+
+            // TOML and some other formats hand every integer over as `i64`.
+            fn visit_i64<E: de::Error>(self, sats: i64) -> Result<Self::Value, E> {
+                let sats = u64::try_from(sats)
+                    .map_err(|_| E::invalid_value(Unexpected::Signed(sats), &self))?;
+                self.visit_u64(sats)
+            }
+
+            fn visit_str<E: de::Error>(self, s: &str) -> Result<Self::Value, E> {
+                let amount = Amount::from_str(s).map_err(E::custom)?;
+                self.visit_u64(amount.to_sat())
+            }
+        }
+
+        deserializer.deserialize_any(BitcoinAmountVisitor)
     }
 }
 
@@ -1104,6 +1143,46 @@ mod tests {
         assert!(BitcoinAmount::deserialize(&mut &over.to_le_bytes()[..]).is_err());
 
         assert!(BitcoinAmount::from_ssz_bytes(&over.as_ssz_bytes()).is_err());
+    }
+
+    #[test]
+    fn bitcoin_amount_deserializes_denominated_strings() {
+        let parse = |json: &str| {
+            serde_json::from_str::<BitcoinAmount>(json)
+                .unwrap()
+                .to_sat()
+        };
+
+        assert_eq!(parse("300000000"), 300_000_000);
+        assert_eq!(parse("\"3 BTC\""), 300_000_000);
+        assert_eq!(parse("\"0.5 BTC\""), 50_000_000);
+        assert_eq!(parse("\"1500 sat\""), 1_500);
+    }
+
+    #[test]
+    fn bitcoin_amount_deserialize_rejects_bad_strings() {
+        // A bare number in a string has no denomination.
+        assert!(serde_json::from_str::<BitcoinAmount>("\"3\"").is_err());
+        assert!(serde_json::from_str::<BitcoinAmount>("\"-1 BTC\"").is_err());
+        assert!(serde_json::from_str::<BitcoinAmount>("\"21000001 BTC\"").is_err());
+        assert!(serde_json::from_str::<BitcoinAmount>("-1").is_err());
+    }
+
+    #[test]
+    fn bitcoin_amount_serializes_as_sats() {
+        let amount = BitcoinAmount::try_from(300_000_000).unwrap();
+        assert_eq!(serde_json::to_string(&amount).unwrap(), "300000000");
+    }
+
+    #[test]
+    fn bitcoin_amount_bincode_roundtrip() {
+        let amount = BitcoinAmount::try_from(300_000_000).unwrap();
+        let bytes = bincode::serialize(&amount).unwrap();
+        assert_eq!(bytes, 300_000_000u64.to_le_bytes());
+        assert_eq!(
+            bincode::deserialize::<BitcoinAmount>(&bytes).unwrap(),
+            amount
+        );
     }
 
     // `BitcoinAmount` must implement `DecodeView` to be a field in a generated
