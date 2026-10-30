@@ -191,12 +191,14 @@ where
     }
 
     fn verify<P: ProofData<Hash = MH::Hash>>(&self, proof: &P, leaf: &MH::Hash) -> bool {
-        let height = proof.cohashes_len();
-        let root = match self.get_peak(height as u8) {
-            Some(r) => r,
-            None => return false,
+        // Find the peak that holds the leaf; the proof must have that peak's height.
+        let Some(height) = peak_height_for_leaf(proof.index(), self.num_entries()) else {
+            return false;
         };
-        verify_with_root::<P, MH>(proof, root, leaf)
+        usize::from(height) == proof.cohashes_len()
+            && self
+                .get_peak(height)
+                .is_some_and(|root| verify_with_root::<P, MH>(proof, root, leaf))
     }
 
     fn add_leaf_updating_proof(
@@ -360,6 +362,18 @@ fn check_merge_peaks<H: MerkleHash>(state: &impl MmrState<H>) -> Result<(), Merk
         }
     }
     Ok(())
+}
+
+/// Returns the height of the peak containing the leaf at `leaf_index` in an MMR
+/// of `leaf_count` leaves, or `None` if `leaf_index >= leaf_count`.
+///
+/// Peaks are laid out largest first, one per set bit of `leaf_count`, so the
+/// leaf lies in the peak at the highest bit where `leaf_index` and `leaf_count`
+/// differ.
+#[inline]
+fn peak_height_for_leaf(leaf_index: u64, leaf_count: u64) -> Option<u8> {
+    // `ilog2` of a `u64` is at most 63, so the narrowing is lossless.
+    (leaf_index < leaf_count).then(|| (leaf_index ^ leaf_count).ilog2() as u8)
 }
 
 #[cfg(test)]
@@ -927,5 +941,34 @@ mod tests {
         // All should return None for any peak
         assert!(mmr_state.get_peak(0).is_none());
         assert!(compact_mmr.get_peak(0).is_none());
+    }
+
+    #[test]
+    fn test_peak_height_for_leaf() {
+        // 6 leaves = 0b110: a height-2 peak over leaves 0..4, a height-1 peak over 4..6.
+        let heights: Vec<_> = (0..7).map(|i| peak_height_for_leaf(i, 6)).collect();
+        assert_eq!(
+            heights,
+            [Some(2), Some(2), Some(2), Some(2), Some(1), Some(1), None]
+        );
+        assert_eq!(peak_height_for_leaf(0, 0), None);
+        assert_eq!(peak_height_for_leaf(u64::MAX - 1, u64::MAX), Some(0));
+    }
+
+    #[test]
+    fn test_verify_only_at_proof_index() {
+        for n in 1..=40u64 {
+            let mut state = CompactMmr64::<Hash32>::new(64);
+            let hashes: Vec<Hash32> = (0..n).map(|i| make_hash(&i.to_le_bytes())).collect();
+            let proofs = insert_leaves_with_proofs(&mut state, &hashes);
+            for (leaf, (proof, hash)) in (0..).zip(proofs.iter().zip(&hashes)) {
+                // Also covers indices past the last leaf.
+                for index in 0..n + 4 {
+                    let at_index = MerkleProof::from_cohashes(proof.cohashes().to_vec(), index);
+                    let ok = Mmr::<Sha256Hasher>::verify(&state, &at_index, hash);
+                    assert_eq!(ok, index == leaf, "n={n} leaf={leaf} index={index}");
+                }
+            }
+        }
     }
 }
