@@ -163,7 +163,22 @@ pub trait SyncServiceInput: ServiceInput {
     fn recv_next_until_shutdown(
         &mut self,
         _shutdown: &(impl AsyncGuard + Sync),
-    ) -> anyhow::Result<Option<Self::Msg>> {
+    ) -> anyhow::Result<Option<Self::Msg>>
+    where
+        // Keeps the trait usable as `dyn SyncServiceInput`, which a generic
+        // method would otherwise rule out.
+        Self: Sized,
+    {
         self.recv_next()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sync_service_input_is_dyn_compatible() {
+        fn _takes_dyn(_: &mut dyn SyncServiceInput<Msg = u32>) {}
     }
 }
