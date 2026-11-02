@@ -5,7 +5,7 @@
 //! leaf replay. The surface a backend must implement is three methods
 //! ([`MmrNodeStore::get_node`] / [`MmrNodeStore::put_node`] /
 //! [`MmrNodeStore::delete_node`]); the leaf- and proof-level API
-//! ([`StoredMmr`]) is derived on top.
+//! ([`StoredMmr`] and [`StoredMmrExt`]) is derived on top.
 //!
 //! The store is storage- and namespace-agnostic (one backend instance == one
 //! MMR) and generic over the [`MerkleHasher`](strata_merkle::MerkleHasher) used
@@ -14,9 +14,10 @@
 //! compact-peaks accumulators ([`Mmr`](strata_merkle::Mmr)) that `strata-merkle`
 //! builds with that hasher.
 //!
-//! [`StoredMmr`] names the hasher on each leaf write. To hold an MMR as a trait
-//! object instead, wrap the backend in a [`HashedMmr`], which fixes the hasher
-//! once and exposes the whole API, writes included, as [`MmrHandle`].
+//! [`StoredMmrExt`] names the hasher on each leaf write. To hold an MMR as a
+//! trait object without naming the hasher, wrap the backend in a [`HashedMmr`],
+//! which fixes the hasher once and exposes the whole API, writes included, as
+//! [`MmrHandle`].
 //!
 //! Leaf counts and indices are `u64`, matching the MMR entry ceiling documented
 //! on [`MmrState`](strata_merkle::MmrState).
@@ -36,4 +37,4 @@ pub use error::MmrError;
 pub use handle::{HashedMmr, MmrHandle};
 pub use index::{LeafPos, NodePos, peak_for_leaf, peak_positions};
 pub use memory::MemMmr;
-pub use store::{MmrMetaPack, MmrNodeStore, StoredMmr};
+pub use store::{MmrMetaPack, MmrNodeStore, StoredMmr, StoredMmrExt};

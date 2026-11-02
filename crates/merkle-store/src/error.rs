@@ -43,7 +43,7 @@ pub enum MmrError<E> {
     },
 
     /// The store already holds leaves, so it cannot be seeded with
-    /// [`seed_from_peaks`](super::store::StoredMmr::seed_from_peaks), which
+    /// [`seed_from_peaks`](super::store::StoredMmrExt::seed_from_peaks), which
     /// only accepts an empty store.
     #[error("cannot seed an mmr that already holds {leaf_count} leaves")]
     NotEmpty {
@@ -52,7 +52,7 @@ pub enum MmrError<E> {
     },
 
     /// The accumulator passed to
-    /// [`seed_from_peaks`](super::store::StoredMmr::seed_from_peaks) failed
+    /// [`seed_from_peaks`](super::store::StoredMmrExt::seed_from_peaks) failed
     /// [`MmrState::validate`](strata_merkle::MmrState::validate).
     #[error("malformed accumulator: {0}")]
     MalformedAccumulator(#[source] MerkleError),

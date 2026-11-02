@@ -7,22 +7,23 @@ use strata_merkle::{MerkleHash, MerkleHasher, MerkleProof};
 
 use super::error::MmrError;
 use super::index::LeafPos;
-use super::store::{MmrMetaPack, MmrNodeStore, StoredMmr};
+use super::store::{MmrMetaPack, MmrNodeStore, StoredMmr, StoredMmrExt};
 
 /// The full MMR API as a trait object.
 ///
-/// [`StoredMmr`] picks the hasher per call, so its leaf-writing methods are
-/// generic and drop out of `dyn StoredMmr`. This trait fixes the hasher in the
-/// implementation instead, so every method is non-generic and a
-/// `Box<dyn MmrHandle<H, Error = E>>` can read, write, prove, and prune without
-/// naming the backend or the hasher.
+/// [`StoredMmrExt`] names the hasher on every leaf write, and on a type-erased
+/// store each node read inside the write is a dynamic call. This trait fixes
+/// the hasher in the implementation instead, so every method is non-generic and
+/// a `Box<dyn MmrHandle<H, Error = E>>` can read, write, prove, and prune
+/// without naming the backend or the hasher.
 ///
 /// [`HashedMmr`] implements it over any [`MmrNodeStore`]. Each call costs one
 /// dynamic dispatch. The node reads and writes inside it are static, since
 /// `HashedMmr` knows the concrete store.
 ///
-/// Method semantics and errors match the [`StoredMmr`] method of the same name.
-/// [`seed_from_peaks`](StoredMmr::seed_from_peaks) is left out because
+/// Method semantics and errors match the [`StoredMmr`] or [`StoredMmrExt`]
+/// method of the same name.
+/// [`seed_from_peaks`](StoredMmrExt::seed_from_peaks) is left out because
 /// [`MmrState`](strata_merkle::MmrState) is not object-safe. Seed the store
 /// through [`HashedMmr::inner`] before erasing its type.
 pub trait MmrHandle<H: MerkleHash> {
@@ -38,13 +39,13 @@ pub trait MmrHandle<H: MerkleHash> {
     /// See [`StoredMmr::get_leaf`].
     fn get_leaf(&self, leaf_index: u64) -> Result<Option<H>, MmrError<Self::Error>>;
 
-    /// See [`StoredMmr::append_leaf`].
+    /// See [`StoredMmrExt::append_leaf`].
     fn append_leaf(&self, value: H) -> Result<u64, MmrError<Self::Error>>;
 
-    /// See [`StoredMmr::put_leaf`].
+    /// See [`StoredMmrExt::put_leaf`].
     fn put_leaf(&self, leaf_index: u64, value: H) -> Result<(), MmrError<Self::Error>>;
 
-    /// See [`StoredMmr::prefill`].
+    /// See [`StoredMmrExt::prefill`].
     fn prefill(&self, target_count: u64, sentinel: H) -> Result<(), MmrError<Self::Error>>;
 
     /// See [`StoredMmr::generate_proof_at_idx`].
