@@ -1,8 +1,7 @@
-//! Fixtures for commit-reveal tests.
+//! Fixtures for commit-reveal parser tests.
 //!
-//! These reproduce transaction *shape*, which is what the parser reads. Witness
-//! signatures are placeholders and the P2TR slots do not commit to the leaves
-//! revealed against them, so nothing built here is spend-valid.
+//! These model transaction shapes consumed by the parser. Witness signatures
+//! are placeholders, so the fixtures are not spend-valid.
 
 use std::sync::OnceLock;
 
@@ -88,12 +87,12 @@ pub(crate) fn build_marker_script(magic: &MagicBytes, tail: &[u8]) -> ScriptBuf 
         .into_script()
 }
 
-/// Builds a commit tx: marker at output 0, `reveal_slots` P2TR outputs, then
-/// `trailing_outputs` standing in for change.
+/// Builds a structural commit fixture with a marker, P2TR reveal slots, and trailing outputs.
 ///
-/// # Panics
-///
-/// If `tail` exceeds [`MAX_MARKER_TAIL_BYTES`](crate::MAX_MARKER_TAIL_BYTES).
+/// Each reveal slot commits to a deterministic placeholder leaf derived from
+/// its slot index. This helper models commit transaction shape and does not
+/// produce matching reveal transactions. Use [`build_commit_reveal_set`] when
+/// the commit must bind to its reveal leaves.
 pub fn build_commit_tx(
     magic: &MagicBytes,
     tail: &[u8],
@@ -101,7 +100,14 @@ pub fn build_commit_tx(
     trailing_outputs: &[ScriptBuf],
 ) -> Transaction {
     let marker = build_marker_script(magic, tail);
-    let mut tx = assemble_commit_tx(marker, reveal_slots);
+    let pubkey = make_xonly_pubkey_bytes(0);
+    let leaves: Vec<ScriptBuf> = (0..reveal_slots)
+        .map(|idx| {
+            build_signed_envelope_leaf(&pubkey, &idx.to_le_bytes())
+                .expect("placeholder leaf builds")
+        })
+        .collect();
+    let mut tx = assemble_commit_tx(marker, &leaves);
     for script in trailing_outputs {
         tx.output.push(TxOut {
             value: Amount::from_sat(1000),
@@ -122,6 +128,10 @@ pub struct CommitRevealTxSet {
 }
 
 /// Builds one valid commit and one reveal per supplied chunk.
+///
+/// # Panics
+///
+/// If a chunk exceeds the per-reveal envelope maximum.
 pub fn build_commit_reveal_set(
     magic: &MagicBytes,
     tail: &[u8],
@@ -134,7 +144,7 @@ pub fn build_commit_reveal_set(
         .map(|chunk| build_signed_envelope_leaf(&pubkey, chunk.as_ref()).expect("leaf builds"))
         .collect();
     let marker = build_marker_script(magic, tail);
-    let commit = assemble_commit_tx(marker, leaves.len());
+    let commit = assemble_commit_tx(marker, &leaves);
     let commit_txid = commit.compute_txid();
     let reveals = leaves
         .into_iter()
@@ -152,19 +162,22 @@ pub fn build_commit_reveal_set(
     CommitRevealTxSet { commit, reveals }
 }
 
-/// Assembles a commit tx from a prebuilt marker script and a slot count.
-///
-/// A writer funds exactly `reveal_slots` P2TR outputs after the marker.
-fn assemble_commit_tx(marker: ScriptBuf, reveal_slots: usize) -> Transaction {
-    let reveal_key = make_xonly_pubkey(3);
+/// Assembles a commit tx: the marker at output 0, then one P2TR output per leaf.
+fn assemble_commit_tx(marker: ScriptBuf, leaves: &[ScriptBuf]) -> Transaction {
+    // Not the producer key SPS-53 tweaks, so a reveal's control block does not
+    // match the output it spends. The parser does not check.
+    let internal_key = make_xonly_pubkey(3);
     let mut output = vec![TxOut {
         value: Amount::ZERO,
         script_pubkey: marker,
     }];
-    for _ in 0..reveal_slots {
+    // Binding each slot to its supplied leaf makes the commit txid depend on
+    // the payload and prevents distinct commit/reveal sets from colliding.
+    for leaf in leaves {
+        let leaf_hash = TapNodeHash::from_script(leaf, LeafVersion::TapScript);
         output.push(TxOut {
             value: Amount::from_sat(1000),
-            script_pubkey: ScriptBuf::new_p2tr(secp(), reveal_key, None),
+            script_pubkey: ScriptBuf::new_p2tr(secp(), internal_key, Some(leaf_hash)),
         });
     }
 
@@ -328,5 +341,16 @@ mod tests {
         let keys: BTreeSet<_> = (u8::MIN..=u8::MAX).map(make_xonly_pubkey_bytes).collect();
 
         assert_eq!(keys.len(), 256, "each seed must give a distinct key");
+    }
+
+    #[test]
+    fn test_commit_txid_depends_on_reveal_leaves() {
+        let first_chunks: [&[u8]; 2] = [b"first", b"second"];
+        let second_chunks: [&[u8]; 2] = [b"first", b"changed"];
+        let first = build_commit_reveal_set(&TEST_MAGIC, &[1, 2], &first_chunks, DEFAULT_KEY_SEED);
+        let second =
+            build_commit_reveal_set(&TEST_MAGIC, &[1, 2], &second_chunks, DEFAULT_KEY_SEED);
+
+        assert_ne!(first.commit.compute_txid(), second.commit.compute_txid());
     }
 }

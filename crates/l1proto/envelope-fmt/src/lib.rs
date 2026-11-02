@@ -84,7 +84,7 @@ pub use builder::{
     split_payload_into_envelope_chunks,
 };
 pub use parser::{
-    CommitRevealParseError, EnvelopeParseError, PayloadParser, PayloadParserConfig,
+    CommitRevealParseError, EnvelopeParseError, L1TxRef, PayloadParser, PayloadParserConfig,
     PayloadParserOutput, RecoveredPayload, SignedEnvelopeLeaf, parse_envelope_container,
     parse_envelope_payload, parse_multi_envelope_payloads, parse_signed_envelope_leaf,
 };
