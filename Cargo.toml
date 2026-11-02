@@ -80,18 +80,18 @@ http = "1"
 int-enum = "1"
 jsonrpsee = "0.26"
 metrics = "0.24"
-metrics-exporter-otel = "0.3"
 metrics-exporter-prometheus = { version = "0.18", default-features = false, features = [
   "http-listener",
 ] }
+metrics-opentelemetry = "0.24033"
 metrics-util = { version = "0.20", default-features = false, features = [
   "layers",
 ] }
 musig2 = "0.1"
 num_enum = "0.7"
-opentelemetry = "0.31"
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
-opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
+opentelemetry = "0.33"
+opentelemetry-otlp = { version = "0.33", features = ["grpc-tonic"] }
+opentelemetry_sdk = { version = "0.33", features = ["rt-tokio"] }
 paste = "1"
 proptest = "1.8"
 rand = "0.8"
@@ -107,7 +107,7 @@ tokio = { version = "1.37", default-features = false }
 tower = "0.5"
 tracing = "0.1"
 tracing-appender = "0.2"
-tracing-opentelemetry = "0.32"
+tracing-opentelemetry = "0.34"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.4.0" }
