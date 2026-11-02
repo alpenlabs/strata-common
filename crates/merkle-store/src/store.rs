@@ -139,6 +139,11 @@ pub trait MmrNodeStore {
 /// over the [`MerkleHasher`] used to combine nodes — and only they need a
 /// turbofish, e.g. `store.put_leaf::<Sha256Hasher>(index, value)`. Every other
 /// method works on the stored [`Hash`](MmrNodeStore::Hash) alone.
+///
+/// The generic writers are left out of `dyn StoredMmr`, so a trait object only
+/// reads, proves, and prunes. For a trait object that also writes, wrap the
+/// backend in a [`HashedMmr`](crate::HashedMmr) and use it as an
+/// [`MmrHandle`](crate::MmrHandle).
 pub trait StoredMmr: MmrNodeStore
 where
     Self::Hash: MmrMetaPack,

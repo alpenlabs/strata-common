@@ -14,11 +14,16 @@
 //! compact-peaks accumulators ([`Mmr`](strata_merkle::Mmr)) that `strata-merkle`
 //! builds with that hasher.
 //!
+//! [`StoredMmr`] names the hasher on each leaf write. To hold an MMR as a trait
+//! object instead, wrap the backend in a [`HashedMmr`], which fixes the hasher
+//! once and exposes the whole API, writes included, as [`MmrHandle`].
+//!
 //! Leaf counts and indices are `u64`, matching the MMR entry ceiling documented
 //! on [`MmrState`](strata_merkle::MmrState).
 
 mod algorithm;
 mod error;
+mod handle;
 mod index;
 mod memory;
 mod store;
@@ -28,6 +33,7 @@ pub use algorithm::{
     write_plan,
 };
 pub use error::MmrError;
+pub use handle::{HashedMmr, MmrHandle};
 pub use index::{LeafPos, NodePos, peak_for_leaf, peak_positions};
 pub use memory::MemMmr;
 pub use store::{MmrMetaPack, MmrNodeStore, StoredMmr};
