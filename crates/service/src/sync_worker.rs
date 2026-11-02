@@ -172,6 +172,7 @@ fn handle_shutdown<S: SyncService>(
 
 #[cfg(test)]
 mod tests {
+    use std::pin::pin;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::thread;
@@ -291,8 +292,14 @@ mod tests {
 
     impl AsyncGuard for FlagShutdown {
         async fn wait_for_shutdown(&self) {
-            while !self.should_shutdown() {
-                self.notify.notified().await;
+            let mut notified = pin!(self.notify.notified());
+            loop {
+                notified.as_mut().enable();
+                if self.should_shutdown() {
+                    return;
+                }
+                notified.as_mut().await;
+                notified.set(self.notify.notified());
             }
         }
     }
