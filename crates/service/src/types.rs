@@ -152,12 +152,12 @@ pub trait SyncServiceInput: ServiceInput {
     /// `shutdown` fires while we are waiting.
     ///
     /// A sync worker runs on its own thread and cannot be cancelled from
-    /// outside, so an input that parks indefinitely in [`recv_next`] would sit
+    /// outside, so an input that parks indefinitely in [`recv_next`](Self::recv_next) would sit
     /// through a shutdown until the next message happens to arrive.  Any input
     /// that can block without bound should override this so the worker stops
     /// when asked.
     ///
-    /// The default ignores `shutdown` and defers to [`recv_next`], which is
+    /// The default ignores `shutdown` and defers to [`recv_next`](Self::recv_next), which is
     /// correct for inputs that never block indefinitely (an in-memory queue, a
     /// finite iterator).
     fn recv_next_until_shutdown(
