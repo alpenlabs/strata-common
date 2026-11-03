@@ -63,13 +63,81 @@ where
 /// Verifies a proof for a leaf against an expected root.
 ///
 /// This generic function works with any type implementing `ProofData`.
+///
+/// Hashing reads one index bit per cohash, starting from the lowest, to pick
+/// the side at each level, and ignores the rest. A proof whose index has a set
+/// bit at or above `cohashes_len` is therefore rejected; otherwise the same
+/// proof would also verify under every index with matching low bits.
+///
+/// This does not know the tree's depth, so it cannot bound the path length.
+/// A path shorter than the tree is deep lets an inner node pass as a leaf.
+/// Use [`verify_with_root_at_depth`] when the depth is known, or a
+/// structure-aware check such as
+/// [`BinaryMerkleTree::verify_proof`](crate::BinaryMerkleTree::verify_proof) or
+/// [`Mmr::verify`](crate::Mmr::verify).
 pub fn verify_with_root<P, MH>(proof: &P, root: &P::Hash, leaf: &P::Hash) -> bool
 where
     P: ProofData,
     MH: MerkleHasher<Hash = P::Hash>,
 {
-    let computed = compute_root::<P, MH>(proof, leaf);
-    <P::Hash as MerkleHash>::eq_ct(&computed, root)
+    verify_path::<P::Hash, MH, _>(
+        proof.cohashes_iter(),
+        proof.cohashes_len(),
+        proof.index(),
+        root,
+        leaf,
+    )
+}
+
+/// Verifies a proof for a leaf at `depth` in a tree against an expected root.
+///
+/// Like [`verify_with_root`], but also rejects a proof unless its cohash path
+/// has exactly `depth` entries, so an inner node cannot pass as a leaf. With
+/// the path length fixed, an accepted index is below `2^depth`.
+pub fn verify_with_root_at_depth<P, MH>(
+    proof: &P,
+    root: &P::Hash,
+    depth: usize,
+    leaf: &P::Hash,
+) -> bool
+where
+    P: ProofData,
+    MH: MerkleHasher<Hash = P::Hash>,
+{
+    proof.cohashes_len() == depth && verify_with_root::<P, MH>(proof, root, leaf)
+}
+
+/// Checks that `index` fits a path of `cohash_count` cohashes and that the
+/// path leads from `leaf` to `root`.
+///
+/// Shared by [`verify_with_root`] and by [`Mmr::verify`](crate::Mmr::verify),
+/// which verifies against a peak using the leaf's index within that peak.
+pub(crate) fn verify_path<'a, H, MH, I>(
+    cohashes: I,
+    cohash_count: usize,
+    index: u64,
+    root: &H,
+    leaf: &H,
+) -> bool
+where
+    H: MerkleHash + 'a,
+    MH: MerkleHasher<Hash = H>,
+    I: Iterator<Item = &'a H>,
+{
+    index_fits_path(index, cohash_count)
+        && H::eq_ct(
+            &compute_root_generic::<H, MH, _>(cohashes, cohash_count, index, leaf),
+            root,
+        )
+}
+
+/// Returns whether `index` has no set bits at or above `cohash_count`.
+fn index_fits_path(index: u64, cohash_count: usize) -> bool {
+    // A path of 64 or more cohashes reads every bit of a `u64` index.
+    u32::try_from(cohash_count)
+        .ok()
+        .and_then(|shift| index.checked_shr(shift))
+        .is_none_or(|high_bits| high_bits == 0)
 }
 
 /// Core merkle proof computation algorithm.
@@ -183,11 +251,24 @@ impl<H: MerkleHash> MerkleProof<H> {
     }
 
     /// Verifies this proof for `leaf` against the expected `root`.
+    ///
+    /// This does not bound the path length; see [`verify_with_root`], and
+    /// prefer [`Self::verify_with_root_at_depth`] when the depth is known.
     pub fn verify_with_root<MH>(&self, root: &H, leaf: &H) -> bool
     where
         MH: MerkleHasher<Hash = H>,
     {
         verify_with_root::<Self, MH>(self, root, leaf)
+    }
+
+    /// Verifies this proof for `leaf` at `depth` against the expected `root`.
+    ///
+    /// See [`verify_with_root_at_depth`].
+    pub fn verify_with_root_at_depth<MH>(&self, root: &H, depth: usize, leaf: &H) -> bool
+    where
+        MH: MerkleHasher<Hash = H>,
+    {
+        verify_with_root_at_depth::<Self, MH>(self, root, depth, leaf)
     }
 }
 
@@ -505,11 +586,30 @@ mod proofb32 {
         /// Verifies this proof for `leaf` against the expected `root`.
         ///
         /// This method is generic over `MerkleHasher` and is bounded by `Hash = [u8; 32]`.
+        ///
+        /// This does not bound the path length; see [`verify_with_root`], and
+        /// prefer [`Self::verify_with_root_at_depth`] when the depth is known.
         pub fn verify_with_root<MH>(&self, root: &[u8; 32], leaf: &[u8; 32]) -> bool
         where
             MH: MerkleHasher<Hash = [u8; 32]>,
         {
             verify_with_root::<Self, MH>(self, root, leaf)
+        }
+
+        /// Verifies this proof for `leaf` at `depth` against the expected `root`.
+        ///
+        /// This method is generic over `MerkleHasher` and is bounded by `Hash = [u8; 32]`.
+        /// See [`verify_with_root_at_depth`].
+        pub fn verify_with_root_at_depth<MH>(
+            &self,
+            root: &[u8; 32],
+            depth: usize,
+            leaf: &[u8; 32],
+        ) -> bool
+        where
+            MH: MerkleHasher<Hash = [u8; 32]>,
+        {
+            verify_with_root_at_depth::<Self, MH>(self, root, depth, leaf)
         }
     }
 
@@ -684,5 +784,96 @@ mod tests {
         assert_eq!(ssz_proof.index, decoded.index);
         assert_eq!(ssz_proof.inner.cohashes.len(), 0);
         assert_eq!(decoded.inner.cohashes.len(), 0);
+    }
+
+    mod verify {
+        #[cfg(feature = "ssz")]
+        use crate::MerkleProofB32;
+        use crate::{BinaryMerkleTree, MerkleHasher, MerkleProof, Sha256Hasher};
+
+        type Hash32 = [u8; 32];
+
+        fn leaf(i: u64) -> Hash32 {
+            Sha256Hasher::hash_leaf(&i.to_le_bytes())
+        }
+
+        fn four_leaf_tree() -> (BinaryMerkleTree<Hash32>, Vec<Hash32>) {
+            let leaves: Vec<_> = (0..4).map(leaf).collect();
+            let tree = BinaryMerkleTree::from_leaves::<Sha256Hasher>(leaves.clone()).unwrap();
+            (tree, leaves)
+        }
+
+        #[test]
+        fn verify_with_root_rejects_index_bits_above_path() {
+            let (tree, leaves) = four_leaf_tree();
+            for (leaf_index, leaf) in (0u64..).zip(&leaves) {
+                let cohashes = tree
+                    .gen_proof(leaf_index as usize)
+                    .unwrap()
+                    .cohashes()
+                    .to_vec();
+                // Indices congruent to `leaf_index` mod 4 hash to the same root.
+                for claimed in (0..64).chain([1 << 32, u64::MAX]) {
+                    let proof = MerkleProof::from_cohashes(cohashes.clone(), claimed);
+                    assert_eq!(
+                        proof.verify_with_root::<Sha256Hasher>(tree.root(), leaf),
+                        claimed == leaf_index,
+                        "leaf_index={leaf_index} claimed={claimed}"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn verify_with_root_reads_every_index_bit_on_long_paths() {
+            // From 64 cohashes on, every bit of a `u64` index picks a side, so
+            // no index is too large and the bound check must not overflow.
+            let target = leaf(u64::MAX);
+            for len in [63u64, 64, 65] {
+                let cohashes: Vec<_> = (0..len).map(leaf).collect();
+                for index in [0, 1 << 62, u64::MAX] {
+                    let proof = MerkleProof::from_cohashes(cohashes.clone(), index);
+                    let root = proof.compute_root::<Sha256Hasher>(&target);
+                    assert_eq!(
+                        proof.verify_with_root::<Sha256Hasher>(&root, &target),
+                        len >= 64 || index >> len == 0,
+                        "len={len} index={index}"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn verify_with_root_at_depth_rejects_other_path_lengths() {
+            let (tree, leaves) = four_leaf_tree();
+            let proof = tree.gen_proof(2).unwrap();
+            for depth in 0..5 {
+                assert_eq!(
+                    proof.verify_with_root_at_depth::<Sha256Hasher>(tree.root(), depth, &leaves[2]),
+                    depth == 2,
+                    "depth={depth}"
+                );
+            }
+
+            // An inner node with a one-step path passes only the depth-agnostic check.
+            let left = Sha256Hasher::hash_node(leaves[0], leaves[1]);
+            let right = Sha256Hasher::hash_node(leaves[2], leaves[3]);
+            let short = MerkleProof::from_cohashes(vec![right], 0);
+            assert!(short.verify_with_root::<Sha256Hasher>(tree.root(), &left));
+            assert!(!short.verify_with_root_at_depth::<Sha256Hasher>(tree.root(), 2, &left));
+        }
+
+        #[test]
+        #[cfg(feature = "ssz")]
+        fn b32_proof_checks_index_and_path_length() {
+            // Leaf 1 of a four-leaf tree, as in a two-cohash state commitment proof.
+            let (tree, leaves) = four_leaf_tree();
+            let proof = MerkleProofB32::from_generic(&tree.gen_proof(1).unwrap());
+            assert!(proof.verify_with_root_at_depth::<Sha256Hasher>(tree.root(), 2, &leaves[1]));
+            assert!(!proof.verify_with_root_at_depth::<Sha256Hasher>(tree.root(), 3, &leaves[1]));
+
+            let aliased = MerkleProofB32::from_cohashes(proof.cohashes(), 5);
+            assert!(!aliased.verify_with_root::<Sha256Hasher>(tree.root(), &leaves[1]));
+        }
     }
 }
