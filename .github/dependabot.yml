@@ -12,3 +12,13 @@ updates:
       interval: "monthly"
     cooldown:
       default-days: 14
+    groups:
+      # These crates pin each other's versions, so bumping one alone breaks the build.
+      opentelemetry:
+        patterns:
+          - "opentelemetry*"
+          - "tracing-opentelemetry"
+          - "metrics-opentelemetry"
+        update-types:
+          - "minor"
+          - "patch"

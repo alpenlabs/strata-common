@@ -9,7 +9,7 @@ workspace = true
 [features]
 default = ["otlp", "prometheus"]
 otlp = [
-  "dep:metrics-exporter-otel",
+  "dep:metrics-opentelemetry",
   "dep:metrics-util",
   "dep:opentelemetry",
   "dep:opentelemetry-otlp",
@@ -19,8 +19,8 @@ prometheus = ["dep:metrics-exporter-prometheus", "dep:metrics-util"]
 
 [dependencies]
 metrics.workspace = true
-metrics-exporter-otel = { workspace = true, optional = true }
 metrics-exporter-prometheus = { workspace = true, optional = true }
+metrics-opentelemetry = { workspace = true, optional = true }
 metrics-util = { workspace = true, optional = true }
 opentelemetry = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }

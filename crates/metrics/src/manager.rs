@@ -5,10 +5,10 @@ use std::sync::OnceLock;
 
 #[cfg(any(feature = "otlp", feature = "prometheus"))]
 use metrics::Recorder;
-#[cfg(feature = "otlp")]
-use metrics_exporter_otel::OpenTelemetryRecorder;
 #[cfg(feature = "prometheus")]
 use metrics_exporter_prometheus::PrometheusBuilder;
+#[cfg(feature = "otlp")]
+use metrics_opentelemetry::{OpenTelemetryMetrics, OpenTelemetryRecorder};
 #[cfg(any(feature = "otlp", feature = "prometheus"))]
 use metrics_util::layers::FanoutBuilder;
 #[cfg(feature = "otlp")]
@@ -155,7 +155,8 @@ fn build_otlp_metrics_recorder(
     set_meter_provider(mp.clone());
 
     let meter_scope = InstrumentationScope::builder(config.meter_name.clone()).build();
-    let recorder = OpenTelemetryRecorder::new(mp.meter_with_scope(meter_scope));
+    let recorder =
+        OpenTelemetryRecorder::new(OpenTelemetryMetrics::new(mp.meter_with_scope(meter_scope)));
 
     if METER_PROVIDER.set(mp).is_err() {
         error!("failed to set global meter provider");
