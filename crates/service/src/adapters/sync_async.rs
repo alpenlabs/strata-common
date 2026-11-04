@@ -29,7 +29,7 @@ impl<I: AsyncServiceInput> SyncServiceInput for SyncAsyncInput<I> {
 
     fn recv_next_until_shutdown(
         &mut self,
-        shutdown: &(impl AsyncGuard + Sync),
+        shutdown: &impl AsyncGuard,
     ) -> anyhow::Result<Option<Self::Msg>> {
         // The wrapped input may park indefinitely, so race it against shutdown
         // rather than blocking on it alone.

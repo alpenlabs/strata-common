@@ -14,7 +14,7 @@ pub(crate) fn worker_task<S: SyncService, I>(
     mut state: S::State,
     mut inp: I,
     status_tx: watch::Sender<S::Status>,
-    shutdown_guard: impl SyncGuard + AsyncGuard + Sync,
+    shutdown_guard: impl SyncGuard + AsyncGuard,
 ) -> anyhow::Result<()>
 where
     I: SyncServiceInput<Msg = S::Msg>,

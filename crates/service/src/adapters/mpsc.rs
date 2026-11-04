@@ -57,7 +57,7 @@ impl<T: ServiceMsg> SyncServiceInput for TokioMpscInput<T> {
 
     fn recv_next_until_shutdown(
         &mut self,
-        shutdown: &(impl AsyncGuard + Sync),
+        shutdown: &impl AsyncGuard,
     ) -> anyhow::Result<Option<Self::Msg>> {
         if self.closed {
             return Ok(None);

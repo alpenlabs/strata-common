@@ -162,7 +162,7 @@ pub trait SyncServiceInput: ServiceInput {
     /// finite iterator).
     fn recv_next_until_shutdown(
         &mut self,
-        _shutdown: &(impl AsyncGuard + Sync),
+        _shutdown: &impl AsyncGuard,
     ) -> anyhow::Result<Option<Self::Msg>>
     where
         // Keeps the trait usable as `dyn SyncServiceInput`, which a generic

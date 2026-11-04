@@ -10,7 +10,7 @@ pub trait SyncExecutor {
     /// [`SyncServiceInput::recv_next_until_shutdown`].
     ///
     /// [`SyncServiceInput::recv_next_until_shutdown`]: crate::SyncServiceInput::recv_next_until_shutdown
-    type ShutdownGuard: SyncGuard + AsyncGuard + Send + Sync + 'static;
+    type ShutdownGuard: SyncGuard + AsyncGuard + Send + 'static;
 
     /// Spawn a sync worker task.
     fn spawn_sync(
