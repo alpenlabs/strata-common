@@ -1,6 +1,10 @@
 use crate::{ServiceInput, ServiceMsg, SyncServiceInput};
 
 /// Adapter for using an [`Iterator`] as a [`SyncServiceInput`].
+///
+/// This does not observe shutdown while waiting for input. If `next()` can
+/// block, such as on a channel receiver's iterator, an idle worker keeps
+/// running through a shutdown until the next item arrives.
 pub struct IterInput<I> {
     iter: I,
     closed: bool,

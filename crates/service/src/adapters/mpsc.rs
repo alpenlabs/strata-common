@@ -40,9 +40,9 @@ impl<T: ServiceMsg> AsyncServiceInput for TokioMpscInput<T> {
     }
 }
 
-/// This impl is technically redundant since we can use the type as an
-/// [`Iterator`], but someone might find it useful and it's easy enough to
-/// implement.
+/// Blocking receive for sync workers. Overrides
+/// [`SyncServiceInput::recv_next_until_shutdown`] so an idle worker still
+/// stops on shutdown.
 impl<T: ServiceMsg> SyncServiceInput for TokioMpscInput<T> {
     fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
         // We fuse it off ourselves just in case, it'd be weird not to.
@@ -68,16 +68,14 @@ impl<T: ServiceMsg> SyncServiceInput for TokioMpscInput<T> {
         // message no matter what else is going on.  Wait on the shutdown signal
         // alongside it instead.
         //
-        // `futures::executor::block_on` rather than a tokio runtime: both halves
-        // here are driven purely by wakers (an mpsc channel and, for
-        // `strata-tasks`, an `AtomicBool` plus a `Notify`), so neither needs the
-        // timer or the IO driver.  A sync worker gets its own plain thread with
-        // no runtime entered, so there may not be one to borrow.
+        // `futures::executor::block_on` rather than a tokio runtime, because a
+        // sync worker's thread may have no runtime entered. This relies on the
+        // guard contract documented on `SyncExecutor::ShutdownGuard`.
         let recv = async {
             futures::select_biased! {
-                // Biased so a shutdown already in flight wins over a queued
-                // message.  The loop below discards that message anyway once it
-                // sees the guard, so this only makes the exit prompter.
+                // Biased so that once shutdown is signalled, a queued message
+                // stays in the channel rather than being dequeued and dropped
+                // by the caller.
                 _ = shutdown.wait_for_shutdown().fuse() => None,
                 item = self.rx.recv().fuse() => Some(item),
             }

@@ -9,6 +9,12 @@ pub trait SyncExecutor {
     /// signal alongside its input instead of parking on the input alone.  See
     /// [`SyncServiceInput::recv_next_until_shutdown`].
     ///
+    /// Inputs may drive [`AsyncGuard::wait_for_shutdown`] on the worker's own
+    /// thread with no Tokio runtime entered. So the returned future must be
+    /// woken only through its waker, and must not use Tokio timers or IO. It
+    /// should also not busy-poll, since it waits for as long as the worker is
+    /// idle.
+    ///
     /// [`SyncServiceInput::recv_next_until_shutdown`]: crate::SyncServiceInput::recv_next_until_shutdown
     type ShutdownGuard: SyncGuard + AsyncGuard + Send + 'static;
 

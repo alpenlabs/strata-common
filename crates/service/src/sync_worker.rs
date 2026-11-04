@@ -53,10 +53,10 @@ where
     // Process each message in a loop.  We do a shutdown check after each
     // possibly long-running call.
     //
-    // The wait for input is itself shutdown-aware: this worker owns a plain
-    // thread that nothing can cancel from outside, so a plain blocking receive
-    // would sit through a shutdown until the next message arrived (for a command
-    // channel, possibly never).
+    // This worker owns a plain thread that nothing can cancel from outside, so
+    // a plain blocking receive would sit through a shutdown until the next
+    // message arrived (for a command channel, possibly never). The wait is only
+    // shutdown-aware if the input overrides `recv_next_until_shutdown`.
     let mut err = None;
     while let Some(input) = inp.recv_next_until_shutdown(&shutdown_guard)? {
         // Check after getting a new input.

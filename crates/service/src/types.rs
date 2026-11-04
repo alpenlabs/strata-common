@@ -160,6 +160,10 @@ pub trait SyncServiceInput: ServiceInput {
     /// The default ignores `shutdown` and defers to [`recv_next`](Self::recv_next), which is
     /// correct for inputs that never block indefinitely (an in-memory queue, a
     /// finite iterator).
+    ///
+    /// An input that wraps another input must forward this method as well as
+    /// `recv_next`. Otherwise it falls back to the default and silently stops
+    /// observing shutdown.
     fn recv_next_until_shutdown(
         &mut self,
         _shutdown: &impl AsyncGuard,
