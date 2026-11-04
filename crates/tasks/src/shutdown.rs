@@ -1,3 +1,4 @@
+use std::pin::pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -44,8 +45,17 @@ impl Shutdown {
     }
 
     pub(crate) async fn wait_for_shutdown(&self) {
-        while !self.should_shutdown() {
-            self.0.notified().await
+        // Register for the wakeup before checking the flag. Checking first
+        // misses a signal sent between the check and the registration, and
+        // the waiter then sleeps forever.
+        let mut notified = pin!(self.0.notified());
+        loop {
+            notified.as_mut().enable();
+            if self.should_shutdown() {
+                return;
+            }
+            notified.as_mut().await;
+            notified.set(self.0.notified());
         }
     }
 }

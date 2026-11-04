@@ -4,7 +4,19 @@ use std::future::Future;
 /// Executor for synchronous workers.
 pub trait SyncExecutor {
     /// To get shutdown signal notification.
-    type ShutdownGuard: SyncGuard + Send + 'static;
+    ///
+    /// This is also an [`AsyncGuard`] so a sync worker can wait on the shutdown
+    /// signal alongside its input instead of parking on the input alone.  See
+    /// [`SyncServiceInput::recv_next`].
+    ///
+    /// Inputs may drive [`AsyncGuard::wait_for_shutdown`] on the worker's own
+    /// thread with no Tokio runtime entered. So the returned future must be
+    /// woken only through its waker, and must not use Tokio timers or IO. It
+    /// should also not busy-poll, since it waits for as long as the worker is
+    /// idle.
+    ///
+    /// [`SyncServiceInput::recv_next`]: crate::SyncServiceInput::recv_next
+    type ShutdownGuard: SyncGuard + AsyncGuard + Send + 'static;
 
     /// Spawn a sync worker task.
     fn spawn_sync(

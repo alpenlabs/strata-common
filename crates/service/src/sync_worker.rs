@@ -8,13 +8,13 @@ use tracing::*;
 use crate::instrumentation::{
     record_shutdown_result, OperationResult, ServiceInstrumentation, ShutdownReason,
 };
-use crate::{Response, ServiceState, SyncGuard, SyncService, SyncServiceInput};
+use crate::{AsyncGuard, Response, ServiceState, SyncGuard, SyncService, SyncServiceInput};
 
 pub(crate) fn worker_task<S: SyncService, I>(
     mut state: S::State,
     mut inp: I,
     status_tx: watch::Sender<S::Status>,
-    shutdown_guard: impl SyncGuard,
+    shutdown_guard: impl SyncGuard + AsyncGuard,
 ) -> anyhow::Result<()>
 where
     I: SyncServiceInput<Msg = S::Msg>,
@@ -52,11 +52,12 @@ where
 
     // Process each message in a loop.  We do a shutdown check after each
     // possibly long-running call.
+    //
+    // Passing the guard lets the input return on shutdown while it waits.
     let mut err = None;
-    while let Some(input) = inp.recv_next()? {
+    while let Some(input) = inp.recv_next(&shutdown_guard)? {
         // Check after getting a new input.
         if shutdown_guard.should_shutdown() {
-            info!(service.name = %service_name, "shutdown signal received");
             break;
         }
 
@@ -95,7 +96,6 @@ where
 
         // Also check after processing input before trying to get a new one.
         if shutdown_guard.should_shutdown() {
-            info!(service.name = %service_name, "shutdown signal received");
             break;
         }
 
@@ -106,6 +106,12 @@ where
         if res == Response::ShouldExit {
             break;
         }
+    }
+
+    // Logged once here rather than at each break, so it also covers a worker
+    // that was parked on its input when the signal arrived.
+    if err.is_none() && shutdown_guard.should_shutdown() {
+        info!(service.name = %service_name, "shutdown signal received");
     }
 
     // Perform shutdown handling.
@@ -167,11 +173,16 @@ fn handle_shutdown<S: SyncService>(
 
 #[cfg(test)]
 mod tests {
+    use std::thread;
+    use std::time::Duration;
+
     use serde::Serialize;
+    use strata_tasks::TaskManager;
+    use tokio::runtime;
     use tokio::sync::watch;
 
     use super::*;
-    use crate::{SyncGuard, VecInput};
+    use crate::{ServiceBuilder, SyncGuard, VecInput};
 
     /// Guard that never signals shutdown.
     struct NeverShutdown;
@@ -179,6 +190,12 @@ mod tests {
     impl SyncGuard for NeverShutdown {
         fn should_shutdown(&self) -> bool {
             false
+        }
+    }
+
+    impl AsyncGuard for NeverShutdown {
+        async fn wait_for_shutdown(&self) {
+            std::future::pending().await
         }
     }
 
@@ -251,5 +268,48 @@ mod tests {
         let result = worker_task::<OkService, _>(TestState, inp, status_tx, NeverShutdown);
 
         result.expect("worker_task should return Ok when all inputs succeed");
+    }
+
+    /// A worker parked on an idle command channel must stop when shutdown is
+    /// signalled. Nothing can cancel the worker's thread from outside, so if the
+    /// wait for input ignored the guard the worker would sit here until the next
+    /// message — which, on a command channel whose senders are held for the life
+    /// of the process, may be never.
+    ///
+    /// This runs through the real `strata-tasks` executor and guard, the same
+    /// path production uses. `spawn_critical` runs the worker on a plain thread
+    /// with no runtime entered.
+    #[test]
+    fn worker_exits_on_shutdown_while_parked_on_idle_input() {
+        let rt = runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("test: build runtime");
+        let manager = TaskManager::new(rt.handle().clone());
+        let executor = manager.create_executor();
+
+        let mut builder = ServiceBuilder::<OkService, _>::new();
+        // Held for the whole test, so the channel never closes on its own and
+        // only the shutdown signal can end the wait.
+        let _cmd_handle = builder.create_command_handle(4);
+        let _monitor = builder
+            .with_state(TestState)
+            .launch_sync("test-sync", &executor)
+            .expect("test: launch service");
+
+        // Give the worker time to park on the input, so the signal has to wake
+        // it rather than being seen on the first check.
+        thread::sleep(Duration::from_millis(100));
+
+        manager.get_shutdown_signal().send();
+        let start = Instant::now();
+        manager
+            .monitor(Some(Duration::from_secs(10)))
+            .expect("test: no task should fail");
+
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "worker did not wake on the shutdown signal",
+        );
     }
 }
