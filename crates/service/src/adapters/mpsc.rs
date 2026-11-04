@@ -1,7 +1,7 @@
 use std::future::Future;
 
 use futures::FutureExt;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{AsyncGuard, AsyncServiceInput, ServiceInput, ServiceMsg, SyncServiceInput};
 
@@ -40,8 +40,15 @@ impl<T: ServiceMsg> AsyncServiceInput for TokioMpscInput<T> {
     }
 }
 
+/// # Panics
+///
+/// Panics if called from a thread that is driving async tasks, like
+/// [`mpsc::Receiver::blocking_recv`]. A `spawn_blocking` thread is fine.
 impl<T: ServiceMsg> SyncServiceInput for TokioMpscInput<T> {
+    #[track_caller]
     fn recv_next(&mut self, shutdown: &impl AsyncGuard) -> anyhow::Result<Option<Self::Msg>> {
+        assert_blocking_allowed();
+
         if self.closed {
             return Ok(None);
         }
@@ -75,6 +82,17 @@ impl<T: ServiceMsg> SyncServiceInput for TokioMpscInput<T> {
             None => Ok(None),
         }
     }
+}
+
+/// Panics if the current thread is driving async tasks.
+///
+/// `futures::executor::block_on` would just block such a thread, which can
+/// deadlock the runtime. Tokio's own check is private, but a blocking receive
+/// on a closed oneshot runs it and then returns at once.
+#[track_caller]
+fn assert_blocking_allowed() {
+    let (_, rx) = oneshot::channel::<()>();
+    let _ = rx.blocking_recv();
 }
 
 #[cfg(test)]
@@ -115,6 +133,15 @@ mod tests {
             .expect("test: have input");
 
         assert_eq!(rv, v, "test: input match");
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "Cannot block the current thread")]
+    async fn recv_blocking_panics_on_an_async_thread() {
+        let (_tx, rx) = mpsc::channel::<u32>(10);
+        let mut inp = TokioMpscInput::new(rx);
+
+        let _ = SyncServiceInput::recv_next(&mut inp, &FlagShutdown::default());
     }
 
     #[test]
