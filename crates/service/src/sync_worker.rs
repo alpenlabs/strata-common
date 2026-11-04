@@ -176,17 +176,16 @@ fn handle_shutdown<S: SyncService>(
 
 #[cfg(test)]
 mod tests {
-    use std::pin::pin;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
 
     use serde::Serialize;
-    use tokio::sync::{mpsc, watch, Notify};
+    use strata_tasks::TaskManager;
+    use tokio::runtime;
+    use tokio::sync::watch;
 
     use super::*;
-    use crate::{SyncGuard, TokioMpscInput, VecInput};
+    use crate::{ServiceBuilder, SyncGuard, VecInput};
 
     /// Guard that never signals shutdown.
     struct NeverShutdown;
@@ -274,81 +273,46 @@ mod tests {
         result.expect("worker_task should return Ok when all inputs succeed");
     }
 
-    /// Guard whose shutdown is driven by a flag we flip from the test.
-    #[derive(Clone, Default)]
-    struct FlagShutdown {
-        flag: Arc<AtomicBool>,
-        notify: Arc<Notify>,
-    }
-
-    impl FlagShutdown {
-        fn trigger(&self) {
-            self.flag.store(true, Ordering::SeqCst);
-            self.notify.notify_waiters();
-        }
-    }
-
-    impl SyncGuard for FlagShutdown {
-        fn should_shutdown(&self) -> bool {
-            self.flag.load(Ordering::SeqCst)
-        }
-    }
-
-    impl AsyncGuard for FlagShutdown {
-        async fn wait_for_shutdown(&self) {
-            let mut notified = pin!(self.notify.notified());
-            loop {
-                notified.as_mut().enable();
-                if self.should_shutdown() {
-                    return;
-                }
-                notified.as_mut().await;
-                notified.set(self.notify.notified());
-            }
-        }
-    }
-
     /// A worker parked on an idle command channel must stop when shutdown is
     /// signalled. Nothing can cancel the worker's thread from outside, so if the
     /// wait for input ignored the guard the worker would sit here until the next
     /// message — which, on a command channel whose senders are held for the life
     /// of the process, may be never.
+    ///
+    /// This runs through the real `strata-tasks` executor and guard, the same
+    /// path production uses. `spawn_critical` runs the worker on a plain thread
+    /// with no runtime entered.
     #[test]
-    fn worker_task_exits_while_parked_on_idle_input() {
-        // Sender stays alive for the whole test, so the channel never closes on
-        // its own and only the shutdown signal can end the wait.
-        let (_tx, rx) = mpsc::channel::<u32>(4);
-        let inp = TokioMpscInput::new(rx);
-        let (status_tx, _status_rx) = watch::channel(TestStatus);
-        let shutdown = FlagShutdown::default();
+    fn worker_exits_on_shutdown_while_parked_on_idle_input() {
+        let rt = runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("test: build runtime");
+        let manager = TaskManager::new(rt.handle().clone());
+        let executor = manager.create_executor();
 
-        let worker_shutdown = shutdown.clone();
-        let worker = thread::spawn(move || {
-            worker_task::<OkService, _>(TestState, inp, status_tx, worker_shutdown)
-        });
+        let mut builder = ServiceBuilder::<OkService, _>::new();
+        // Held for the whole test, so the channel never closes on its own and
+        // only the shutdown signal can end the wait.
+        let _cmd_handle = builder.create_command_handle(4);
+        let _monitor = builder
+            .with_state(TestState)
+            .launch_sync("test-sync", &executor)
+            .expect("test: launch service");
 
-        // Let the worker reach the parked state before signalling, so we are
-        // testing the wait rather than the pre-loop check.
+        // Give the worker time to park on the input, so the signal has to wake
+        // it rather than being seen on the first check.
         thread::sleep(Duration::from_millis(100));
+
+        manager.get_shutdown_signal().send();
+        let start = Instant::now();
+        manager
+            .monitor(Some(Duration::from_secs(10)))
+            .expect("test: no task should fail");
+
         assert!(
-            !worker.is_finished(),
-            "worker should be parked on the input"
+            start.elapsed() < Duration::from_secs(5),
+            "worker did not wake on the shutdown signal",
         );
-
-        shutdown.trigger();
-
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while !worker.is_finished() {
-            assert!(
-                Instant::now() < deadline,
-                "worker did not wake on the shutdown signal",
-            );
-            thread::sleep(Duration::from_millis(10));
-        }
-
-        worker
-            .join()
-            .expect("worker thread panicked")
-            .expect("a shutdown is a normal exit, not an error");
     }
 }

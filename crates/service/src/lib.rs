@@ -97,6 +97,8 @@ mod executor;
 mod instrumentation;
 mod status;
 mod sync_worker;
+#[cfg(test)]
+mod test_utils;
 mod types;
 
 pub use adapters::*;

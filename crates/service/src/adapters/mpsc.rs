@@ -99,6 +99,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::*;
+    use crate::test_utils::FlagShutdown;
 
     #[tokio::test]
     async fn test_mpsc_input_async() {
@@ -131,5 +132,39 @@ mod tests {
             .expect("test: have input");
 
         assert_eq!(rv, v, "test: input match");
+    }
+
+    #[test]
+    fn recv_until_shutdown_leaves_queued_message_once_shutdown_is_set() {
+        let (tx, rx) = mpsc::channel(10);
+        let mut inp = TokioMpscInput::new(rx);
+        let shutdown = FlagShutdown::default();
+
+        tx.blocking_send(7).expect("test: send input");
+        shutdown.trigger();
+
+        let rv = inp
+            .recv_next_until_shutdown(&shutdown)
+            .expect("test: recv input");
+        assert_eq!(rv, None, "shutdown should win over a queued message");
+        assert!(!inp.closed, "shutdown must not mark the input closed");
+
+        let rv = SyncServiceInput::recv_next(&mut inp).expect("test: recv input");
+        assert_eq!(rv, Some(7), "queued message should still be in the channel");
+    }
+
+    #[test]
+    fn recv_until_shutdown_closes_when_senders_drop() {
+        let (tx, rx) = mpsc::channel::<u32>(10);
+        let mut inp = TokioMpscInput::new(rx);
+        let shutdown = FlagShutdown::default();
+
+        drop(tx);
+
+        let rv = inp
+            .recv_next_until_shutdown(&shutdown)
+            .expect("test: recv input");
+        assert_eq!(rv, None);
+        assert!(inp.closed, "a closed channel should mark the input closed");
     }
 }
