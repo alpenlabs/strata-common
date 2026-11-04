@@ -23,14 +23,7 @@ where
 }
 
 impl<I: AsyncServiceInput> SyncServiceInput for SyncAsyncInput<I> {
-    fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
-        self.handle.block_on(self.inner.recv_next())
-    }
-
-    fn recv_next_until_shutdown(
-        &mut self,
-        shutdown: &impl AsyncGuard,
-    ) -> anyhow::Result<Option<Self::Msg>> {
+    fn recv_next(&mut self, shutdown: &impl AsyncGuard) -> anyhow::Result<Option<Self::Msg>> {
         // The wrapped input may park indefinitely, so race it against shutdown
         // rather than blocking on it alone.
         self.handle.block_on(async {
@@ -52,11 +45,11 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::*;
-    use crate::test_utils::FlagShutdown;
+    use crate::flag_shutdown::FlagShutdown;
     use crate::TokioMpscInput;
 
     #[test]
-    fn recv_until_shutdown_wakes_on_shutdown_while_parked() {
+    fn recv_wakes_on_shutdown_while_parked() {
         let rt = runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -69,7 +62,7 @@ mod tests {
         let (done_tx, done_rx) = std_mpsc::channel();
         let worker_shutdown = shutdown.clone();
         thread::spawn(move || {
-            let res = inp.recv_next_until_shutdown(&worker_shutdown);
+            let res = inp.recv_next(&worker_shutdown);
             let _ = done_tx.send(res);
         });
 

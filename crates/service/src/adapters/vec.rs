@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::future::Future;
 
-use crate::{AsyncServiceInput, ServiceInput, ServiceMsg, SyncServiceInput};
+use crate::{AsyncGuard, AsyncServiceInput, ServiceInput, ServiceMsg, SyncServiceInput};
 
 /// A simple preconfigured queue of input messages.  This would be useful
 /// primarily for testing services in isolation.
@@ -44,8 +44,9 @@ impl<T: ServiceMsg> ServiceInput for VecInput<T> {
     type Msg = T;
 }
 
+/// Ignores `shutdown`, since popping from the queue never blocks.
 impl<T: ServiceMsg> SyncServiceInput for VecInput<T> {
-    fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
+    fn recv_next(&mut self, _shutdown: &impl AsyncGuard) -> anyhow::Result<Option<Self::Msg>> {
         Ok(self.items.pop_front())
     }
 }
@@ -65,6 +66,7 @@ impl<T> FromIterator<T> for VecInput<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::flag_shutdown::FlagShutdown;
 
     #[tokio::test]
     async fn test_vec_input_async() {
@@ -85,9 +87,11 @@ mod tests {
         let v = [1, 2, 3];
         let mut inp = VecInput::from_iter(v);
 
+        let shutdown = FlagShutdown::default();
+
         let vv = [Some(1), Some(2), Some(3), None];
         for e in vv {
-            let res = SyncServiceInput::recv_next(&mut inp).expect("test: recv input");
+            let res = SyncServiceInput::recv_next(&mut inp, &shutdown).expect("test: recv input");
             assert_eq!(res, e);
         }
     }

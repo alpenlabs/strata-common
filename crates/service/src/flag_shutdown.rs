@@ -1,4 +1,4 @@
-//! Shared test helpers.
+//! A shutdown guard driven by a flag.
 
 use std::pin::pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -8,12 +8,13 @@ use tokio::sync::Notify;
 
 use crate::{AsyncGuard, SyncGuard};
 
-/// Shutdown guard driven by a flag that the test flips.
+/// Shutdown guard driven by a flag that its owner flips with
+/// [`trigger`](Self::trigger).
 ///
-/// Use this for adapter-level tests that need to call
-/// [`SyncServiceInput::recv_next_until_shutdown`](crate::SyncServiceInput::recv_next_until_shutdown)
-/// directly. Worker-level tests should go through a real `strata_tasks`
-/// executor instead.
+/// Its wait future is woken only through its waker, so it meets the guard
+/// contract on [`SyncExecutor::ShutdownGuard`](crate::SyncExecutor::ShutdownGuard).
+/// Tests also use it to drive inputs directly. Worker-level tests should go
+/// through a real `strata_tasks` executor instead.
 #[derive(Clone, Default)]
 pub(crate) struct FlagShutdown {
     flag: Arc<AtomicBool>,

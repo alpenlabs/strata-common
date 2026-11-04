@@ -94,11 +94,10 @@ mod builder;
 mod command;
 mod errors;
 mod executor;
+mod flag_shutdown;
 mod instrumentation;
 mod status;
 mod sync_worker;
-#[cfg(test)]
-mod test_utils;
 mod types;
 
 pub use adapters::*;

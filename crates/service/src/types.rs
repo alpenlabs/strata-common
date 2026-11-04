@@ -143,46 +143,17 @@ pub trait AsyncServiceInput: ServiceInput {
 /// Common inputs for blocking service input sources.
 pub trait SyncServiceInput: ServiceInput {
     /// Receives the "next input".  If returns `Ok(None)` then there is no more
-    /// input and we should exit.
+    /// input or `shutdown` fired, and we should exit.
     ///
     /// This is like a specialized `TryIterator`.
-    fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>>;
-
-    /// Receives the "next input", giving up and returning `Ok(None)` if
-    /// `shutdown` fires while we are waiting.
     ///
     /// A sync worker runs on its own thread and cannot be cancelled from
-    /// outside, so an input that parks indefinitely in [`recv_next`](Self::recv_next) would sit
-    /// through a shutdown until the next message happens to arrive.  Any input
-    /// that can block without bound should override this so the worker stops
-    /// when asked.
+    /// outside. So an input that can block without bound must also return
+    /// when `shutdown` fires, or an idle worker sits through a shutdown until
+    /// the next message happens to arrive. An input that never blocks
+    /// indefinitely, such as an in-memory queue, may ignore `shutdown`.
     ///
-    /// The default ignores `shutdown` and defers to [`recv_next`](Self::recv_next), which is
-    /// correct for inputs that never block indefinitely (an in-memory queue, a
-    /// finite iterator).
-    ///
-    /// An input that wraps another input must forward this method as well as
-    /// `recv_next`. Otherwise it falls back to the default and silently stops
-    /// observing shutdown.
-    fn recv_next_until_shutdown(
-        &mut self,
-        _shutdown: &impl AsyncGuard,
-    ) -> anyhow::Result<Option<Self::Msg>>
-    where
-        // Keeps the trait usable as `dyn SyncServiceInput`, which a generic
-        // method would otherwise rule out.
-        Self: Sized,
-    {
-        self.recv_next()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sync_service_input_is_dyn_compatible() {
-        fn _takes_dyn(_: &mut dyn SyncServiceInput<Msg = u32>) {}
-    }
+    /// Taking a generic guard means this trait cannot be used as
+    /// `dyn SyncServiceInput`.
+    fn recv_next(&mut self, shutdown: &impl AsyncGuard) -> anyhow::Result<Option<Self::Msg>>;
 }
