@@ -61,7 +61,6 @@ where
     while let Some(input) = inp.recv_next_until_shutdown(&shutdown_guard)? {
         // Check after getting a new input.
         if shutdown_guard.should_shutdown() {
-            info!(service.name = %service_name, "shutdown signal received");
             break;
         }
 
@@ -100,7 +99,6 @@ where
 
         // Also check after processing input before trying to get a new one.
         if shutdown_guard.should_shutdown() {
-            info!(service.name = %service_name, "shutdown signal received");
             break;
         }
 
@@ -111,6 +109,12 @@ where
         if res == Response::ShouldExit {
             break;
         }
+    }
+
+    // Logged once here rather than at each break, so it also covers a worker
+    // that was parked on its input when the signal arrived.
+    if err.is_none() && shutdown_guard.should_shutdown() {
+        info!(service.name = %service_name, "shutdown signal received");
     }
 
     // Perform shutdown handling.
