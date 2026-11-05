@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use bitcoin::{Transaction, Txid};
+use bitcoin::{OutPoint, ScriptBuf, Transaction, Txid};
 use strata_identifiers::{L1BlockCommitment, L1Height};
 use strata_l1_txfmt::MagicBytes;
 use tracing::warn;
 
 use super::commit_reveal::{
-    ParsedCommit, RevealSlotSpend, convert_marker_tail_to_array, extract_signed_reveal_envelope,
+    ParsedCommit, RevealSlotSpend, convert_marker_tail_to_array, extract_signed_reveal_spend,
     parse_commit_candidate, read_anchor_marker,
 };
 use super::envelope::SignedEnvelopeLeaf;
@@ -147,6 +147,11 @@ pub struct PayloadParserConfig {
 
 impl PayloadParserConfig {
     /// Configuration to extract payloads carried by a marker-bearing reveal transaction.
+    ///
+    /// A single reveal can spend any output, and its leaf pubkey authenticates
+    /// the payload only if that output is a native P2TR output. Parse with
+    /// [`PayloadParser::parse_with_spent_outputs`]: [`PayloadParser::parse`]
+    /// knows no spent outputs, so it recovers no single-reveal payloads.
     pub const fn single_reveal(magic: MagicBytes) -> Self {
         Self {
             magic,
@@ -195,6 +200,19 @@ impl IncompletePayloadEntry {
     }
 }
 
+/// Extracts a single reveal's envelope and authenticates it against the output
+/// its input spends.
+fn authenticate_single_reveal(
+    tx: &Transaction,
+    spent_output: impl Fn(&OutPoint) -> Option<ScriptBuf>,
+) -> Result<SignedEnvelopeLeaf, CommitRevealParseError> {
+    let spend = extract_signed_reveal_spend(tx)?;
+    let outpoint = spend.spent_outpoint();
+    let script_pubkey = spent_output(&outpoint)
+        .ok_or(CommitRevealParseError::UnknownRevealSpentOutput { outpoint })?;
+    Ok(spend.verify_spent_output(&script_pubkey)?)
+}
+
 /// Payload parser.
 ///
 /// Parses a batch of transactions and recovers payloads.
@@ -217,17 +235,40 @@ impl PayloadParser {
     ///
     /// `l1_block` is the block that confirmed `txs`. Transactions that lead to
     /// errors are ignored.
+    ///
+    /// Knows no spent outputs, so recovers no
+    /// [single-reveal](PayloadParserConfig::single_reveal) payloads; use
+    /// [`parse_with_spent_outputs`](Self::parse_with_spent_outputs) for those.
     pub fn parse<'a>(
         &mut self,
         txs: impl IntoIterator<Item = &'a Transaction>,
         l1_block: L1BlockCommitment,
+    ) -> PayloadParserOutput {
+        self.parse_with_spent_outputs(txs, l1_block, |_| None)
+    }
+
+    /// Parses transactions and returns recovered payloads, looking up the
+    /// outputs that single reveals spend.
+    ///
+    /// `l1_block` is the block that confirmed `txs`. `spent_output` returns the
+    /// locking script of the output at an outpoint, or `None` if it is unknown.
+    /// A single reveal whose spent output is unknown or not a native P2TR
+    /// output is ignored, since its leaf pubkey authenticates nothing. Chunked
+    /// reveals never consult `spent_output`: they must spend the commit's
+    /// reveal slots, which are P2TR outputs. Transactions that lead to errors
+    /// are ignored.
+    pub fn parse_with_spent_outputs<'a>(
+        &mut self,
+        txs: impl IntoIterator<Item = &'a Transaction>,
+        l1_block: L1BlockCommitment,
+        spent_output: impl Fn(&OutPoint) -> Option<ScriptBuf>,
     ) -> PayloadParserOutput {
         // Prune stale incomplete entries.
         // We prune before processing because incoming transactions may update stale entries.
         self.prune_stale(l1_block.height());
 
         match self.config.carrier {
-            PayloadCarrier::SingleReveal => self.parse_single_reveals(txs, l1_block),
+            PayloadCarrier::SingleReveal => self.parse_single_reveals(txs, l1_block, spent_output),
             PayloadCarrier::ChunkedReveals => self.parse_chunked_reveals(txs, l1_block),
         }
     }
@@ -235,11 +276,13 @@ impl PayloadParser {
     /// Parses transactions that match [`PayloadCarrier::SingleReveal`].
     ///
     /// Reveal transactions matching the carrier must have protocol marker in output 0
-    /// and payload in input 0 witness. Malformed candidates are ignored.
+    /// and payload in input 0 witness, spending a native P2TR output that
+    /// `spent_output` knows. Malformed candidates are ignored.
     fn parse_single_reveals<'a>(
         &mut self,
         txs: impl IntoIterator<Item = &'a Transaction>,
         l1_block: L1BlockCommitment,
+        spent_output: impl Fn(&OutPoint) -> Option<ScriptBuf>,
     ) -> PayloadParserOutput {
         let mut payloads = Vec::new();
 
@@ -252,7 +295,7 @@ impl PayloadParser {
                 }
             };
 
-            let envelope = match extract_signed_reveal_envelope(tx) {
+            let envelope = match authenticate_single_reveal(tx, &spent_output) {
                 Ok(reveal_envelope) => reveal_envelope,
                 Err(e) => {
                     warn!(txid = %txid, error = %e, "failed to parse single reveal");
@@ -341,7 +384,9 @@ impl PayloadParser {
             return Ok(None);
         };
 
-        let envelope = extract_signed_reveal_envelope(tx)?;
+        // `find_reveal_slot_spend` matched the reveal's only input to a reveal
+        // slot, and `derive_reveal_slot_range` admits only P2TR outputs.
+        let envelope = extract_signed_reveal_spend(tx)?.into_leaf_spending_taproot();
         let Some(entry) = self.incomplete_payloads.get_mut(&spend.commit_txid) else {
             return Ok(None);
         };
@@ -421,7 +466,7 @@ impl PayloadParser {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{Amount, Transaction, TxOut};
+    use bitcoin::{Amount, ScriptBuf, Transaction, TxOut, WitnessProgram, WitnessVersion};
     use strata_identifiers::{L1BlockId, RBuf32};
     use strata_l1_txfmt::MagicBytes;
 
@@ -471,6 +516,15 @@ mod tests {
         parser.parse(txs, l1_block)
     }
 
+    /// Parses single reveals as though every spent output were a native P2TR output.
+    fn parse_single_reveals_spending_p2tr<'a>(
+        txs: impl IntoIterator<Item = &'a Transaction>,
+        l1_block: L1BlockCommitment,
+    ) -> PayloadParserOutput {
+        let mut parser = PayloadParser::new(PayloadParserConfig::single_reveal(TEST_MAGIC));
+        parser.parse_with_spent_outputs(txs, l1_block, |_| Some(make_p2tr_script()))
+    }
+
     #[test]
     fn test_recovered_payload_requires_expected_producer() {
         let observed_pubkey = [1u8; SIGNED_LEAF_PUBKEY_LEN];
@@ -497,11 +551,8 @@ mod tests {
     fn test_single_reveal_payload() {
         let tx = build_single_reveal_tx(&TEST_MAGIC, &[1, 2, 3, 4], b"payload", 11);
         let txid = tx.compute_txid();
-        let output = parse_with_config(
-            PayloadParserConfig::single_reveal(TEST_MAGIC),
-            [&tx],
-            make_block_commitment(TEST_L1_HEIGHT),
-        );
+        let output =
+            parse_single_reveals_spending_p2tr([&tx], make_block_commitment(TEST_L1_HEIGHT));
 
         assert_eq!(output.payloads.len(), 1);
         let payload = &output.payloads[0];
@@ -523,6 +574,17 @@ mod tests {
             Some(b"checkpoint"),
             DEFAULT_KEY_SEED,
         )]);
+        let output =
+            parse_single_reveals_spending_p2tr([&tx], make_block_commitment(TEST_L1_HEIGHT));
+
+        assert!(output.payloads.is_empty());
+    }
+
+    /// The parser cannot authenticate a single reveal without the output it
+    /// spends, so `parse` recovers none.
+    #[test]
+    fn test_single_reveal_without_spent_outputs_ignored() {
+        let tx = build_single_reveal_tx(&TEST_MAGIC, &[1, 2, 3, 4], b"payload", DEFAULT_KEY_SEED);
         let output = parse_with_config(
             PayloadParserConfig::single_reveal(TEST_MAGIC),
             [&tx],
@@ -533,13 +595,64 @@ mod tests {
     }
 
     #[test]
-    fn test_recovered_payload_tail_requires_requested_width() {
+    fn test_single_reveal_looks_up_its_spent_outpoint() {
         let tx = build_single_reveal_tx(&TEST_MAGIC, &[1, 2, 3, 4], b"payload", DEFAULT_KEY_SEED);
-        let output = parse_with_config(
-            PayloadParserConfig::single_reveal(TEST_MAGIC),
+        let spent = tx.input[0].previous_output;
+        let mut parser = PayloadParser::new(PayloadParserConfig::single_reveal(TEST_MAGIC));
+
+        let output = parser.parse_with_spent_outputs(
             [&tx],
             make_block_commitment(TEST_L1_HEIGHT),
+            |outpoint| (*outpoint == spent).then(make_p2tr_script),
         );
+
+        assert_eq!(output.payloads.len(), 1);
+    }
+
+    /// Bitcoin never executes a witness spending a non-taproot output, so the
+    /// leaf pubkey of such a reveal authenticates nothing.
+    #[test]
+    fn test_single_reveal_spending_non_taproot_output_ignored() {
+        let tx = build_single_reveal_tx(&TEST_MAGIC, &[1, 2, 3, 4], b"payload", DEFAULT_KEY_SEED);
+        let witness_v2 = ScriptBuf::new_witness_program(
+            &WitnessProgram::new(WitnessVersion::V2, &[0x11; 32]).expect("valid witness program"),
+        );
+        let mut parser = PayloadParser::new(PayloadParserConfig::single_reveal(TEST_MAGIC));
+
+        let output =
+            parser.parse_with_spent_outputs([&tx], make_block_commitment(TEST_L1_HEIGHT), |_| {
+                Some(witness_v2.clone())
+            });
+
+        assert!(output.payloads.is_empty());
+    }
+
+    #[test]
+    fn test_authenticate_single_reveal_errors() {
+        let tx = build_single_reveal_tx(&TEST_MAGIC, &[1, 2, 3, 4], b"payload", DEFAULT_KEY_SEED);
+        let spent = tx.input[0].previous_output;
+
+        let unknown = authenticate_single_reveal(&tx, |_| None).expect_err("unknown output");
+        assert!(matches!(
+            unknown,
+            CommitRevealParseError::UnknownRevealSpentOutput { outpoint } if outpoint == spent
+        ));
+
+        let change = make_change_script();
+        let non_taproot =
+            authenticate_single_reveal(&tx, |_| Some(change.clone())).expect_err("non-taproot");
+        assert!(matches!(
+            non_taproot,
+            CommitRevealParseError::RevealSpendsNonTaprootOutput { script_pubkey }
+                if script_pubkey == change
+        ));
+    }
+
+    #[test]
+    fn test_recovered_payload_tail_requires_requested_width() {
+        let tx = build_single_reveal_tx(&TEST_MAGIC, &[1, 2, 3, 4], b"payload", DEFAULT_KEY_SEED);
+        let output =
+            parse_single_reveals_spending_p2tr([&tx], make_block_commitment(TEST_L1_HEIGHT));
         let payload = &output.payloads[0];
 
         assert_eq!(
@@ -578,6 +691,23 @@ mod tests {
         let txref = second.payloads[0].anchor_txref();
         assert_eq!(txref.txid(), txs.commit.compute_txid());
         assert_eq!(txref.block(), make_block_commitment(TEST_L1_HEIGHT));
+    }
+
+    /// Chunked reveals spend the commit's P2TR reveal slots, so the parser
+    /// never needs a spent-output lookup for them.
+    #[test]
+    fn test_chunked_reveals_do_not_consult_spent_outputs() {
+        let chunks: [&[u8]; 2] = [b"first", b"second"];
+        let txs = build_commit_reveal_set(&TEST_MAGIC, &[7, 8], &chunks, 13);
+        let mut parser = PayloadParser::new(PayloadParserConfig::chunked_reveals(TEST_MAGIC));
+
+        let output = parser.parse_with_spent_outputs(
+            std::iter::once(&txs.commit).chain(txs.reveals.iter()),
+            make_block_commitment(TEST_L1_HEIGHT),
+            |outpoint| panic!("chunked reveals must not look up {outpoint}"),
+        );
+
+        assert_eq!(output.payloads.len(), 1);
     }
 
     #[test]

@@ -37,6 +37,16 @@
 //! the shape authenticates, since only then can no later opcode discard or
 //! invert the `OP_CHECKSIG` result.
 //!
+//! # Authenticating an envelope
+//!
+//! SPS-51 lets a consumer treat an envelope container's pubkey as signing the
+//! envelopes, since Bitcoin verified a signature by it when the carrying input
+//! was spent. The leaf shape alone does not establish that: Bitcoin runs the
+//! leaf only for a tapscript leaf spending a native P2TR output. Authenticate
+//! through [`parse_signed_envelope_spend`] and
+//! [`SignedEnvelopeSpend::verify_spent_output`], which check all three, rather
+//! than through the script-level parsers.
+//!
 //! # Examples
 //!
 //! Creating a single envelope:
@@ -85,6 +95,7 @@ pub use builder::{
 };
 pub use parser::{
     CommitRevealParseError, EnvelopeParseError, L1TxRef, PayloadParser, PayloadParserConfig,
-    PayloadParserOutput, RecoveredPayload, SignedEnvelopeLeaf, parse_envelope_container,
-    parse_envelope_payload, parse_multi_envelope_payloads, parse_signed_envelope_leaf,
+    PayloadParserOutput, RecoveredPayload, SignedEnvelopeLeaf, SignedEnvelopeSpend,
+    SignedEnvelopeSpendError, parse_envelope_container, parse_envelope_payload,
+    parse_multi_envelope_payloads, parse_signed_envelope_leaf, parse_signed_envelope_spend,
 };

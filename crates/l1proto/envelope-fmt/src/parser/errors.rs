@@ -1,3 +1,4 @@
+use bitcoin::{OutPoint, ScriptBuf};
 use thiserror::Error;
 
 use crate::SIGNED_LEAF_PUBKEY_LEN;
@@ -76,6 +77,44 @@ pub enum EnvelopeParseError {
     /// Script could not be decoded into instructions.
     #[error("malformed script")]
     MalformedScript,
+}
+
+/// Reasons a transaction input is not a signed envelope spend whose leaf pubkey
+/// stands in for a signature.
+///
+/// See [`SignedEnvelopeSpend`](crate::SignedEnvelopeSpend) for why each check
+/// is required.
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum SignedEnvelopeSpendError {
+    /// The input witness reveals no taproot leaf script.
+    #[error("input witness reveals no taproot leaf script")]
+    MissingLeafScript,
+
+    /// The leaf version is not
+    /// [`LeafVersion::TapScript`](bitcoin::taproot::LeafVersion::TapScript).
+    ///
+    /// BIP341 executes no other leaf version, so the leaf's `OP_CHECKSIG`
+    /// never runs.
+    #[error("leaf uses unsupported leaf version {version:#04x}")]
+    UnsupportedLeafVersion {
+        /// Consensus encoding of the offending leaf version.
+        version: u8,
+    },
+
+    /// The leaf script is not a strict signed envelope leaf.
+    #[error("leaf is not a strict signed envelope leaf: {0}")]
+    InvalidLeaf(#[from] EnvelopeParseError),
+
+    /// The spent output is not a native P2TR output.
+    ///
+    /// BIP341 interprets the witness of no other output type, so the leaf was
+    /// never executed.
+    #[error("spent output is not a native P2TR output: {script_pubkey}")]
+    NonTaprootSpentOutput {
+        /// The spent output's locking script.
+        script_pubkey: ScriptBuf,
+    },
 }
 
 /// Errors that can occur when parsing a batch of transactions including commit and reveal txs.
@@ -183,7 +222,41 @@ pub enum CommitRevealParseError {
         source: EnvelopeParseError,
     },
 
+    /// A reveal transaction spends an output that is not a native P2TR output.
+    ///
+    /// The reveal's leaf pubkey authenticates nothing; see
+    /// [`SignedEnvelopeSpend`](crate::SignedEnvelopeSpend).
+    #[error("reveal spends a non-taproot output: {script_pubkey}")]
+    RevealSpendsNonTaprootOutput {
+        /// The spent output's locking script.
+        script_pubkey: ScriptBuf,
+    },
+
+    /// The output a single reveal spends is unknown to the parser.
+    ///
+    /// Without its locking script the reveal cannot be authenticated.
+    #[error("output {outpoint} spent by the reveal is unknown")]
+    UnknownRevealSpentOutput {
+        /// The outpoint the reveal spends.
+        outpoint: OutPoint,
+    },
+
     /// A reveal transaction spends reveal slots from more than one commit.
     #[error("reveal tx spends reveal slots of multiple commits")]
     RevealSpansMultipleCommits,
+}
+
+impl From<SignedEnvelopeSpendError> for CommitRevealParseError {
+    fn from(error: SignedEnvelopeSpendError) -> Self {
+        match error {
+            SignedEnvelopeSpendError::MissingLeafScript => Self::RevealMissingLeafScript,
+            SignedEnvelopeSpendError::UnsupportedLeafVersion { version } => {
+                Self::UnsupportedRevealLeafVersion { version }
+            }
+            SignedEnvelopeSpendError::InvalidLeaf(source) => Self::InvalidRevealEnvelope { source },
+            SignedEnvelopeSpendError::NonTaprootSpentOutput { script_pubkey } => {
+                Self::RevealSpendsNonTaprootOutput { script_pubkey }
+            }
+        }
+    }
 }

@@ -2,11 +2,10 @@ use std::num::{NonZeroU32, NonZeroUsize};
 
 use bitcoin::opcodes::all::OP_RETURN;
 use bitcoin::script::Instruction;
-use bitcoin::taproot::LeafVersion;
 use bitcoin::{Transaction, Txid};
 use strata_l1_txfmt::MagicBytes;
 
-use super::envelope::{SignedEnvelopeLeaf, parse_signed_envelope_leaf};
+use super::spend::{SignedEnvelopeSpend, parse_signed_envelope_spend};
 use crate::parser::errors::CommitRevealParseError;
 
 /// Maximum commit-marker push, in bytes.
@@ -195,20 +194,21 @@ pub(crate) fn parse_commit_candidate(
     }))
 }
 
-/// Extracts the signed envelope leaf carried by a reveal transaction's first input.
+/// Extracts the signed envelope spend carried by a reveal transaction's only input.
 ///
-/// Checks the reveal witness shape: the input must carry a taproot
-/// leaf script, the leaf version must be Tapscript, and the script must be a
-/// strict signed envelope leaf.
+/// Checks the reveal shape: the transaction must have exactly one input, whose
+/// witness reveals a tapscript leaf that is a strict signed envelope leaf with
+/// a non-empty payload. The output the input spends is not checked; see
+/// [`SignedEnvelopeSpend`].
 ///
 /// # Errors
 ///
 /// Returns [`CommitRevealParseError`] if the transaction has no inputs or multiple inputs,
-/// the first input does not carry a taproot leaf script, the leaf version is not
-/// Tapscript, or the script is not a strict signed envelope leaf.
-pub(crate) fn extract_signed_reveal_envelope(
+/// the input does not carry a taproot leaf script, the leaf version is not
+/// Tapscript, the script is not a strict signed envelope leaf, or the payload is empty.
+pub(crate) fn extract_signed_reveal_spend(
     tx: &Transaction,
-) -> Result<SignedEnvelopeLeaf, CommitRevealParseError> {
+) -> Result<SignedEnvelopeSpend, CommitRevealParseError> {
     let first_input = tx
         .input
         .first()
@@ -218,22 +218,12 @@ pub(crate) fn extract_signed_reveal_envelope(
         return Err(CommitRevealParseError::RevealHasMultipleInputs);
     }
 
-    let leaf = first_input
-        .witness
-        .taproot_leaf_script()
-        .ok_or(CommitRevealParseError::RevealMissingLeafScript)?;
-    if leaf.version != LeafVersion::TapScript {
-        return Err(CommitRevealParseError::UnsupportedRevealLeafVersion {
-            version: leaf.version.to_consensus(),
-        });
-    }
-
-    let envelope = parse_signed_envelope_leaf(leaf.script)?;
-    if envelope.payload().is_empty() {
+    let spend = parse_signed_envelope_spend(first_input)?;
+    if spend.unverified_leaf().payload().is_empty() {
         return Err(CommitRevealParseError::EmptyRevealPayload);
     }
 
-    Ok(envelope)
+    Ok(spend)
 }
 
 #[cfg(test)]
@@ -243,6 +233,7 @@ mod tests {
     use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
     use bitcoin::opcodes::{OP_FALSE, OP_TRUE};
     use bitcoin::script::PushBytesBuf;
+    use bitcoin::taproot::LeafVersion;
 
     use super::*;
     use crate::test_utils::*;
@@ -455,17 +446,21 @@ mod tests {
             11,
         )]);
 
-        let leaf = extract_signed_reveal_envelope(&tx).expect("valid reveal tx");
+        let spend = extract_signed_reveal_spend(&tx).expect("valid reveal tx");
 
-        assert_eq!(leaf.pubkey(), &make_xonly_pubkey_bytes(11));
-        assert_eq!(leaf.payload(), b"chunk");
+        assert_eq!(spend.spent_outpoint(), tx.input[0].previous_output);
+        assert_eq!(
+            spend.unverified_leaf().pubkey(),
+            &make_xonly_pubkey_bytes(11)
+        );
+        assert_eq!(spend.unverified_leaf().payload(), b"chunk");
     }
 
     #[test]
     fn test_reveal_envelope_without_input_rejected() {
         let tx = build_reveal_tx(vec![]);
 
-        let error = extract_signed_reveal_envelope(&tx).expect_err("input required");
+        let error = extract_signed_reveal_spend(&tx).expect_err("input required");
 
         assert!(matches!(error, CommitRevealParseError::RevealMissingInputs));
     }
@@ -477,7 +472,7 @@ mod tests {
             build_reveal_input(make_txid(2), 1, Some(b"chunk"), DEFAULT_KEY_SEED),
         ]);
 
-        let error = extract_signed_reveal_envelope(&tx).expect_err("one input is required");
+        let error = extract_signed_reveal_spend(&tx).expect_err("one input is required");
 
         assert!(matches!(
             error,
@@ -494,7 +489,7 @@ mod tests {
             DEFAULT_KEY_SEED,
         )]);
 
-        let error = extract_signed_reveal_envelope(&tx).expect_err("leaf script required");
+        let error = extract_signed_reveal_spend(&tx).expect_err("leaf script required");
 
         assert!(matches!(
             error,
@@ -513,8 +508,7 @@ mod tests {
             future,
         )]);
 
-        let error =
-            extract_signed_reveal_envelope(&tx).expect_err("only tapscript leaves are parsed");
+        let error = extract_signed_reveal_spend(&tx).expect_err("only tapscript leaves are parsed");
 
         assert!(matches!(
             error,
@@ -541,8 +535,7 @@ mod tests {
             DEFAULT_KEY_SEED,
         )]);
 
-        let error =
-            extract_signed_reveal_envelope(&tx).expect_err("strict leaf parser rejects this");
+        let error = extract_signed_reveal_spend(&tx).expect_err("strict leaf parser rejects this");
 
         assert!(matches!(
             error,
@@ -561,7 +554,7 @@ mod tests {
             DEFAULT_KEY_SEED,
         )]);
 
-        let error = extract_signed_reveal_envelope(&tx).expect_err("empty payload is invalid");
+        let error = extract_signed_reveal_spend(&tx).expect_err("empty payload is invalid");
 
         assert!(matches!(error, CommitRevealParseError::EmptyRevealPayload));
     }

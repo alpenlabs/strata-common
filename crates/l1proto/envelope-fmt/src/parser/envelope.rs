@@ -103,8 +103,9 @@ pub fn parse_envelope_container(
 /// and an empty push are equivalent openers).
 ///
 /// The strict shape authenticates only for a
-/// [`LeafVersion::TapScript`](bitcoin::taproot::LeafVersion) leaf. This parses a script, not a
-/// leaf, so the caller must confirm the leaf version itself.
+/// [`LeafVersion::TapScript`](bitcoin::taproot::LeafVersion) leaf spending a native P2TR output.
+/// This parses a script, not a spend, so it checks neither; authenticate through
+/// [`parse_signed_envelope_spend`](crate::parse_signed_envelope_spend) instead.
 ///
 /// The pubkey must be exactly [`SIGNED_LEAF_PUBKEY_LEN`] bytes — see
 /// [`EnvelopeParseError::InvalidPubkeyLength`] for why a laxer rule breaks
