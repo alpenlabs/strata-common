@@ -3,7 +3,7 @@
 
 use crate::error::MerkleError;
 use crate::hasher::{MerkleHash, MerkleHasher};
-use crate::proof::{MerkleProof, ProofData, RawMerkleProof, verify_with_root};
+use crate::proof::{MerkleProof, ProofData, RawMerkleProof, verify_path};
 use crate::traits::MmrState;
 
 /// Extension trait that provides MMR algorithms over any [`MmrState`] implementation.
@@ -195,10 +195,19 @@ where
         let Some(height) = peak_height_for_leaf(proof.index(), self.num_entries()) else {
             return false;
         };
+        // A peak's first leaf index is a multiple of its leaf count, so the low
+        // `height` bits of the MMR-wide index are the leaf's index in the peak.
+        let index_in_peak = proof.index() & ((1 << height) - 1);
         usize::from(height) == proof.cohashes_len()
-            && self
-                .get_peak(height)
-                .is_some_and(|root| verify_with_root::<P, MH>(proof, root, leaf))
+            && self.get_peak(height).is_some_and(|peak| {
+                verify_path::<MH::Hash, MH, _>(
+                    proof.cohashes_iter(),
+                    proof.cohashes_len(),
+                    index_in_peak,
+                    peak,
+                    leaf,
+                )
+            })
     }
 
     fn add_leaf_updating_proof(

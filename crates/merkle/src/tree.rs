@@ -108,12 +108,24 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
         Some(MerkleProof::from_cohashes(path, index as u64))
     }
 
-    /// Verifies a `proof` for `leaf` against the provided `root`.
+    /// Verifies that `proof` proves `leaf` at `proof.index()` in this tree.
+    ///
+    /// Rejects a proof whose cohash path is not exactly as long as the tree is
+    /// deep, since a path of any other length would let a node that isn't a
+    /// leaf pass as one. With the path length fixed, the index check in
+    /// [`verify_with_root`](crate::verify_with_root) limits the index to this
+    /// tree's leaves.
     pub fn verify_proof<MH>(&self, proof: &MerkleProof<H>, leaf: &H) -> bool
     where
         MH: MerkleHasher<Hash = H>,
     {
-        proof.verify_with_root::<MH>(self.root(), leaf)
+        proof.verify_with_root_at_depth::<MH>(self.root(), self.depth(), leaf)
+    }
+
+    /// Returns the number of edges from a leaf to the root, which is the
+    /// cohash count of every proof in this tree.
+    fn depth(&self) -> usize {
+        self.height() - 1
     }
 }
 
@@ -181,6 +193,54 @@ mod tests {
             let proof: MerkleProof<H> = tree.gen_proof(i).unwrap();
             assert!(tree.verify_proof::<Sha256Hasher>(&proof, leaf));
         }
+    }
+
+    #[test]
+    fn verify_proof_rejects_other_indices() {
+        for num_leafs in [1, 2, 4, 8] {
+            let leaves = make_leaves(num_leafs);
+            let tree = BinaryMerkleTree::from_leaves::<Sha256Hasher>(leaves.clone()).unwrap();
+            for (leaf_index, leaf) in leaves.iter().enumerate() {
+                let cohashes = tree.gen_proof(leaf_index).unwrap().cohashes().to_vec();
+                // Hashing reads only the low `depth` bits of the index, so an
+                // index past the last leaf whose low bits equal `leaf_index`
+                // would pass on hashing alone.
+                let claimed_indices = (0..num_leafs as u64 * 4)
+                    .chain([512, u64::MAX - 1, u64::MAX])
+                    .collect::<Vec<_>>();
+                for claimed in claimed_indices {
+                    let proof = MerkleProof::from_cohashes(cohashes.clone(), claimed);
+                    assert_eq!(
+                        tree.verify_proof::<Sha256Hasher>(&proof, leaf),
+                        claimed == leaf_index as u64,
+                        "num_leafs={num_leafs} leaf_index={leaf_index} claimed={claimed}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn verify_proof_rejects_wrong_path_length() {
+        let leaves = make_leaves(4);
+        let tree = BinaryMerkleTree::from_leaves::<Sha256Hasher>(leaves.clone()).unwrap();
+        let ab = Sha256Hasher::hash_node(leaves[0], leaves[1]);
+        let cd = Sha256Hasher::hash_node(leaves[2], leaves[3]);
+
+        // The root itself with an empty path.
+        let empty = MerkleProof::from_cohashes(Vec::new(), 0);
+        assert!(!tree.verify_proof::<Sha256Hasher>(&empty, tree.root()));
+
+        // An inner node with a one-step path.
+        let short = MerkleProof::from_cohashes(vec![cd], 0);
+        assert_eq!(short.compute_root::<Sha256Hasher>(&ab), *tree.root());
+        assert!(!tree.verify_proof::<Sha256Hasher>(&short, &ab));
+
+        // A valid path with an extra cohash.
+        let mut cohashes = tree.gen_proof(0).unwrap().cohashes().to_vec();
+        cohashes.push(leaves[0]);
+        let long = MerkleProof::from_cohashes(cohashes, 0);
+        assert!(!tree.verify_proof::<Sha256Hasher>(&long, &leaves[0]));
     }
 
     #[test]
