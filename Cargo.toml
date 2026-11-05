@@ -55,13 +55,13 @@ strata-ssz-tests = { path = "crates/ssz-tests" }
 strata-tasks = { path = "crates/tasks" }
 
 # SSZ dependencies
-ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.17.0" }
-ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.17.0" }
-ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.17.0" }
-ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.17.0" }
-ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.17.0" }
-tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.17.0" }
-tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.17.0" }
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.18.1" }
+ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.18.1" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.18.1" }
+ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.18.1" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.18.1" }
+tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.18.1" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.18.1" }
 
 # External dependencies
 anyhow = "1"
@@ -110,8 +110,8 @@ tracing-appender = "0.2"
 tracing-opentelemetry = "0.34"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
-zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.4.0" }
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.4.0", default-features = false }
+zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.5.0" }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.5.0", default-features = false }
 
 [workspace.lints]
 rust.missing_debug_implementations = "warn"
