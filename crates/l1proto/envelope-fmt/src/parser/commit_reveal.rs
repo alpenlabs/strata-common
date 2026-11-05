@@ -237,7 +237,7 @@ mod tests {
 
     use super::*;
     use crate::test_utils::*;
-    use crate::{EnvelopeParseError, SIGNED_LEAF_PUBKEY_LEN};
+    use crate::{EnvelopeParseError, SIGNED_LEAF_PUBKEY_LEN, SignedEnvelopeSpendError};
 
     const OTHER_MAGIC: MagicBytes = MagicBytes::new(*b"OTHR");
 
@@ -493,7 +493,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            CommitRevealParseError::RevealMissingLeafScript
+            CommitRevealParseError::InvalidRevealSpend(SignedEnvelopeSpendError::MissingLeafScript)
         ));
     }
 
@@ -512,7 +512,9 @@ mod tests {
 
         assert!(matches!(
             error,
-            CommitRevealParseError::UnsupportedRevealLeafVersion { version } if version == 0xc2
+            CommitRevealParseError::InvalidRevealSpend(
+                SignedEnvelopeSpendError::UnsupportedLeafVersion { version: 0xc2 }
+            )
         ));
     }
 
@@ -539,9 +541,9 @@ mod tests {
 
         assert!(matches!(
             error,
-            CommitRevealParseError::InvalidRevealEnvelope {
-                source: EnvelopeParseError::InvalidPubkeyLength { found: 33, .. }
-            }
+            CommitRevealParseError::InvalidRevealSpend(SignedEnvelopeSpendError::InvalidLeaf(
+                EnvelopeParseError::InvalidPubkeyLength { found: 33, .. }
+            ))
         ));
     }
 

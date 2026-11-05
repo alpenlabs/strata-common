@@ -162,17 +162,6 @@ pub enum CommitRevealParseError {
         vout: u32,
     },
 
-    /// A reveal leaf uses a version other than tapscript.
-    #[error("reveal leaf uses unsupported leaf version {version:#04x}")]
-    UnsupportedRevealLeafVersion {
-        /// Consensus encoding of the offending leaf version.
-        version: u8,
-    },
-
-    /// A reveal input carries no taproot leaf script in its witness.
-    #[error("reveal tx witness has no taproot leaf script")]
-    RevealMissingLeafScript,
-
     /// The reveal pubkey does not match the key the caller expected.
     #[error("unexpected reveal pubkey (expected {expected:?}, found {found:?})")]
     UnexpectedRevealPubkey {
@@ -214,23 +203,14 @@ pub enum CommitRevealParseError {
     #[error("reveal carries an empty payload")]
     EmptyRevealPayload,
 
-    /// A reveal leaf did not match the strict signed envelope shape.
-    #[error("failed to parse reveal envelope: {source}")]
-    InvalidRevealEnvelope {
-        /// The underlying envelope parse failure.
-        #[from]
-        source: EnvelopeParseError,
-    },
-
-    /// A reveal transaction spends an output that is not a native P2TR output.
+    /// A reveal input is not a signed envelope spend: its witness reveals no
+    /// tapscript leaf, or the leaf is not a strict signed envelope leaf, or it
+    /// spends an output that is not a native P2TR output.
     ///
-    /// The reveal's leaf pubkey authenticates nothing; see
+    /// Its leaf pubkey authenticates nothing; see
     /// [`SignedEnvelopeSpend`](crate::SignedEnvelopeSpend).
-    #[error("reveal spends a non-taproot output: {script_pubkey}")]
-    RevealSpendsNonTaprootOutput {
-        /// The spent output's locking script.
-        script_pubkey: ScriptBuf,
-    },
+    #[error("reveal is not a signed envelope spend: {0}")]
+    InvalidRevealSpend(#[from] SignedEnvelopeSpendError),
 
     /// The output a single reveal spends is unknown to the parser.
     ///
@@ -244,19 +224,4 @@ pub enum CommitRevealParseError {
     /// A reveal transaction spends reveal slots from more than one commit.
     #[error("reveal tx spends reveal slots of multiple commits")]
     RevealSpansMultipleCommits,
-}
-
-impl From<SignedEnvelopeSpendError> for CommitRevealParseError {
-    fn from(error: SignedEnvelopeSpendError) -> Self {
-        match error {
-            SignedEnvelopeSpendError::MissingLeafScript => Self::RevealMissingLeafScript,
-            SignedEnvelopeSpendError::UnsupportedLeafVersion { version } => {
-                Self::UnsupportedRevealLeafVersion { version }
-            }
-            SignedEnvelopeSpendError::InvalidLeaf(source) => Self::InvalidRevealEnvelope { source },
-            SignedEnvelopeSpendError::NonTaprootSpentOutput { script_pubkey } => {
-                Self::RevealSpendsNonTaprootOutput { script_pubkey }
-            }
-        }
-    }
 }

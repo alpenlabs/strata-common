@@ -471,6 +471,7 @@ mod tests {
     use strata_l1_txfmt::MagicBytes;
 
     use super::*;
+    use crate::SignedEnvelopeSpendError;
     use crate::test_utils::*;
 
     const TEST_L1_HEIGHT: L1Height = 100;
@@ -643,8 +644,9 @@ mod tests {
             authenticate_single_reveal(&tx, |_| Some(change.clone())).expect_err("non-taproot");
         assert!(matches!(
             non_taproot,
-            CommitRevealParseError::RevealSpendsNonTaprootOutput { script_pubkey }
-                if script_pubkey == change
+            CommitRevealParseError::InvalidRevealSpend(
+                SignedEnvelopeSpendError::NonTaprootSpentOutput { script_pubkey }
+            ) if script_pubkey == change
         ));
     }
 
