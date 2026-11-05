@@ -125,7 +125,7 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
     /// Returns the number of edges from a leaf to the root, which is the
     /// cohash count of every proof in this tree.
     fn depth(&self) -> usize {
-        self.num_leafs().ilog2() as usize
+        self.height() - 1
     }
 }
 
