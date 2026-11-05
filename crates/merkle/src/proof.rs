@@ -47,6 +47,10 @@ pub trait ProofDataMut: ProofData {
 /// Computes the root obtained by applying a proof to a leaf.
 ///
 /// This generic function works with any type implementing `ProofData`.
+///
+/// This does not check the proof. It ignores index bits at or above
+/// `cohashes_len`, so comparing its result to a root does not bind the index.
+/// To check a proof, use [`verify_with_root`] or [`verify_with_root_at_depth`].
 pub fn compute_root<P, MH>(proof: &P, leaf: &P::Hash) -> P::Hash
 where
     P: ProofData,
@@ -70,9 +74,11 @@ where
 /// proof would also verify under every index with matching low bits.
 ///
 /// This does not know the tree's depth, so it cannot bound the path length.
-/// A path shorter than the tree is deep lets an inner node pass as a leaf.
-/// Use [`verify_with_root_at_depth`] when the depth is known, or a
-/// structure-aware check such as
+/// A path of the wrong length lets a node that isn't a leaf pass as one. A
+/// shorter path accepts an inner node. A longer path accepts a node below a
+/// leaf when the leaf is itself a node hash, as in an SSZ tree. Use
+/// [`verify_with_root_at_depth`] when the depth is known, or a structure-aware
+/// check such as
 /// [`BinaryMerkleTree::verify_proof`](crate::BinaryMerkleTree::verify_proof) or
 /// [`Mmr::verify`](crate::Mmr::verify).
 pub fn verify_with_root<P, MH>(proof: &P, root: &P::Hash, leaf: &P::Hash) -> bool
@@ -92,8 +98,8 @@ where
 /// Verifies a proof for a leaf at `depth` in a tree against an expected root.
 ///
 /// Like [`verify_with_root`], but also rejects a proof unless its cohash path
-/// has exactly `depth` entries, so an inner node cannot pass as a leaf. With
-/// the path length fixed, an accepted index is below `2^depth`.
+/// has exactly `depth` entries, so only a leaf can pass. With the path length
+/// fixed, an accepted index is below `2^depth`.
 pub fn verify_with_root_at_depth<P, MH>(
     proof: &P,
     root: &P::Hash,
@@ -243,6 +249,8 @@ impl<H: MerkleHash> MerkleProof<H> {
     /// Computes the root obtained by applying this proof to `leaf`.
     ///
     /// The caller specifies the merkle hasher implementation via `MH`.
+    ///
+    /// This does not check the proof; see [`compute_root`].
     pub fn compute_root<MH>(&self, leaf: &H) -> H
     where
         MH: MerkleHasher<Hash = H>,
@@ -576,6 +584,8 @@ mod proofb32 {
         /// Computes the root obtained by applying this proof to `leaf`.
         ///
         /// This method is generic over `MerkleHasher` and is bounded by `Hash = [u8; 32]`.
+        ///
+        /// This does not check the proof; see [`compute_root`].
         pub fn compute_root<MH>(&self, leaf: &[u8; 32]) -> [u8; 32]
         where
             MH: MerkleHasher<Hash = [u8; 32]>,

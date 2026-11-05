@@ -111,8 +111,8 @@ impl<H: MerkleHash> BinaryMerkleTree<H> {
     /// Verifies that `proof` proves `leaf` at `proof.index()` in this tree.
     ///
     /// Rejects a proof whose cohash path is not exactly as long as the tree is
-    /// deep, since a shorter path would let an inner node pass as a leaf. With
-    /// the path length fixed, the index check in
+    /// deep, since a path of any other length would let a node that isn't a
+    /// leaf pass as one. With the path length fixed, the index check in
     /// [`verify_with_root`](crate::verify_with_root) limits the index to this
     /// tree's leaves.
     pub fn verify_proof<MH>(&self, proof: &MerkleProof<H>, leaf: &H) -> bool
