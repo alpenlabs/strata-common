@@ -9,6 +9,15 @@ docs.
 
 More will be here in the future.
 
+## Deposit descriptors
+
+`strata-identifiers` exports `DepositDescriptor` and `DepositDescriptorError` for
+wallet construction, admission-time syntax validation, and execution-layer decoding.
+The compact wire format is unchanged from alpen's deposit descriptor. Decoding
+checks syntax only; account existence and deposit routing remain execution-layer policy.
+The type and its byte-vector encoding work without default features. Enable `codec`
+for `encode_to_varvec()` and `arbitrary` for the `Arbitrary` implementation.
+
 ## Optional Borsh support
 
 Borsh support is disabled by default. Consumers that need it can enable the

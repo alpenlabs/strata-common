@@ -16,6 +16,7 @@ mod macros;
 mod acct;
 mod array_keys;
 mod buf;
+mod deposit_descriptor;
 mod epoch;
 mod exec;
 mod l1;
@@ -39,6 +40,7 @@ pub use acct::{
 };
 pub use array_keys::{ArrayKey, ArrayKeyArr, ArrayKeyBuf, ArrayKeyExt};
 pub use buf::{Buf20, Buf32, Buf64, RBuf32};
+pub use deposit_descriptor::{DepositDescriptor, DepositDescriptorError};
 pub use epoch::EpochCommitment;
 #[cfg(feature = "ssz")]
 pub use epoch::EpochCommitmentRef;
