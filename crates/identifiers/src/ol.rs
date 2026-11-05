@@ -63,7 +63,11 @@ pub struct OLBlockCommitment {
 }
 
 #[cfg(feature = "ssz")]
-crate::impl_ssz_fixed_container!(OLBlockCommitment, [slot: Slot, blkid: OLBlockId]);
+crate::impl_ssz_fixed_container!(
+    OLBlockCommitment,
+    OLBlockCommitmentRef,
+    [slot: Slot, blkid: OLBlockId]
+);
 
 decl_array_key_struct_impl!(OLBlockCommitment, [slot: Slot, blkid: OLBlockId]);
 

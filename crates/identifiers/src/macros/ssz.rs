@@ -41,10 +41,9 @@
 /// whose fields are all fixed-size. Generates:
 /// - `TreeHash` implementation
 /// - `SszTypeInfo` implementation (computes fixed size from field types)
-/// - A `{Type}Ref` type with `DecodeView`, `SszTypeInfo`, `TreeHash`, and `ToOwnedSsz`, which
-///   decodes rather than borrowing
-///
-/// The `{Type}Ref` name is auto-generated via [`paste`].
+/// - A view type named by the second argument, with `DecodeView`, `SszTypeInfo`, `TreeHash`, and
+///   `ToOwnedSsz`, which decodes rather than borrowing. An `external_kind: container` field
+///   resolves only to a view named `{Type}Ref`.
 ///
 /// # Example
 ///
@@ -56,111 +55,109 @@
 ///     pub b: Buf32,
 /// }
 ///
-/// impl_ssz_fixed_container!(MyContainer, [a: u64, b: Buf32]);
+/// impl_ssz_fixed_container!(MyContainer, MyContainerRef, [a: u64, b: Buf32]);
 /// // Generates: MyContainerRef<'a>
 /// ```
 #[macro_export]
 macro_rules! impl_ssz_fixed_container {
-    ($type:ident, [$($field:ident: $field_ty:ty),+ $(,)?]) => {
-        ::paste::paste! {
-            // TreeHash implementation
-            impl ::tree_hash::TreeHash for $type {
-                fn tree_hash_type() -> ::tree_hash::TreeHashType {
-                    ::tree_hash::TreeHashType::Container
-                }
+    ($type:ident, $view:ident, [$($field:ident: $field_ty:ty),+ $(,)?]) => {
+        // TreeHash implementation
+        impl ::tree_hash::TreeHash for $type {
+            fn tree_hash_type() -> ::tree_hash::TreeHashType {
+                ::tree_hash::TreeHashType::Container
+            }
 
-                fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
-                    unreachable!("Container should never be packed")
-                }
+            fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
+                unreachable!("Container should never be packed")
+            }
 
-                fn tree_hash_packing_factor() -> usize {
-                    unreachable!("Container should never be packed")
-                }
+            fn tree_hash_packing_factor() -> usize {
+                unreachable!("Container should never be packed")
+            }
 
-                fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
-                    let mut hasher = ::tree_hash::MerkleHasher::<H>::with_leaves(
-                        $crate::impl_ssz_fixed_container!(@count $($field),+)
-                    );
-                    $(
-                        hasher
-                            .write(
-                                <$field_ty as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.$field)
-                                    .as_ref(),
-                            )
-                            .expect("tree hash derive should not apply too many leaves");
-                    )+
+            fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
+                let mut hasher = ::tree_hash::MerkleHasher::<H>::with_leaves(
+                    $crate::impl_ssz_fixed_container!(@count $($field),+)
+                );
+                $(
                     hasher
-                        .finish()
-                        .expect("tree hash derive should not have a remaining buffer")
-                }
+                        .write(
+                            <$field_ty as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.$field)
+                                .as_ref(),
+                        )
+                        .expect("tree hash derive should not apply too many leaves");
+                )+
+                hasher
+                    .finish()
+                    .expect("tree hash derive should not have a remaining buffer")
+            }
+        }
+
+        // SszTypeInfo implementation
+        impl ::ssz::view::SszTypeInfo for $type {
+            fn is_ssz_fixed_len() -> bool {
+                true
             }
 
-            // SszTypeInfo implementation
-            impl ::ssz::view::SszTypeInfo for $type {
-                fn is_ssz_fixed_len() -> bool {
-                    true
-                }
+            fn ssz_fixed_len() -> usize {
+                0 $(+ <$field_ty as ::ssz::view::SszTypeInfo>::ssz_fixed_len())+
+            }
+        }
 
-                fn ssz_fixed_len() -> usize {
-                    0 $(+ <$field_ty as ::ssz::view::SszTypeInfo>::ssz_fixed_len())+
-                }
+        // Ref view type
+        /// Adapts the parent type to the SSZ view interface.
+        ///
+        /// Decodes during `DecodeView::from_ssz_bytes` and holds the value;
+        /// it does not borrow the input. `'a` is present only because
+        /// ssz-gen resolves an `external_kind: container` field to a
+        /// `{Type}Ref<'a>` path.
+        #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
+        pub struct $view<'a> {
+            inner: $type,
+            _phantom: ::std::marker::PhantomData<&'a ()>,
+        }
+
+        impl<'a> ::ssz::view::DecodeView<'a> for $view<'a> {
+            fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ::ssz::DecodeError> {
+                let inner = <$type as ::ssz::Decode>::from_ssz_bytes(bytes)?;
+                Ok(Self {
+                    inner,
+                    _phantom: ::std::marker::PhantomData,
+                })
+            }
+        }
+
+        impl<'a> ::ssz::view::SszTypeInfo for $view<'a> {
+            fn is_ssz_fixed_len() -> bool {
+                <$type as ::ssz::view::SszTypeInfo>::is_ssz_fixed_len()
             }
 
-            // Ref view type
-            /// Adapts the parent type to the SSZ view interface.
-            ///
-            /// Decodes during `DecodeView::from_ssz_bytes` and holds the value;
-            /// it does not borrow the input. `'a` is present only because
-            /// ssz-gen resolves an `external_kind: container` field to a
-            /// `{Type}Ref<'a>` path.
-            #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
-            pub struct [<$type Ref>]<'a> {
-                inner: $type,
-                _phantom: ::std::marker::PhantomData<&'a ()>,
+            fn ssz_fixed_len() -> usize {
+                <$type as ::ssz::view::SszTypeInfo>::ssz_fixed_len()
+            }
+        }
+
+        impl<'a> ::tree_hash::TreeHash for $view<'a> {
+            fn tree_hash_type() -> ::tree_hash::TreeHashType {
+                <$type as ::tree_hash::TreeHash>::tree_hash_type()
             }
 
-            impl<'a> ::ssz::view::DecodeView<'a> for [<$type Ref>]<'a> {
-                fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ::ssz::DecodeError> {
-                    let inner = <$type as ::ssz::Decode>::from_ssz_bytes(bytes)?;
-                    Ok(Self {
-                        inner,
-                        _phantom: ::std::marker::PhantomData,
-                    })
-                }
+            fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
+                <$type as ::tree_hash::TreeHash>::tree_hash_packed_encoding(&self.inner)
             }
 
-            impl<'a> ::ssz::view::SszTypeInfo for [<$type Ref>]<'a> {
-                fn is_ssz_fixed_len() -> bool {
-                    <$type as ::ssz::view::SszTypeInfo>::is_ssz_fixed_len()
-                }
-
-                fn ssz_fixed_len() -> usize {
-                    <$type as ::ssz::view::SszTypeInfo>::ssz_fixed_len()
-                }
+            fn tree_hash_packing_factor() -> usize {
+                <$type as ::tree_hash::TreeHash>::tree_hash_packing_factor()
             }
 
-            impl<'a> ::tree_hash::TreeHash for [<$type Ref>]<'a> {
-                fn tree_hash_type() -> ::tree_hash::TreeHashType {
-                    <$type as ::tree_hash::TreeHash>::tree_hash_type()
-                }
-
-                fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
-                    <$type as ::tree_hash::TreeHash>::tree_hash_packed_encoding(&self.inner)
-                }
-
-                fn tree_hash_packing_factor() -> usize {
-                    <$type as ::tree_hash::TreeHash>::tree_hash_packing_factor()
-                }
-
-                fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
-                    <$type as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.inner)
-                }
+            fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
+                <$type as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.inner)
             }
+        }
 
-            impl<'a> ::ssz_types::view::ToOwnedSsz<$type> for [<$type Ref>]<'a> {
-                fn to_owned(&self) -> $type {
-                    self.inner
-                }
+        impl<'a> ::ssz_types::view::ToOwnedSsz<$type> for $view<'a> {
+            fn to_owned(&self) -> $type {
+                self.inner
             }
         }
     };

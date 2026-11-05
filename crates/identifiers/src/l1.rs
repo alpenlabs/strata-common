@@ -83,7 +83,11 @@ pub struct L1BlockCommitment {
 }
 
 #[cfg(feature = "ssz")]
-crate::impl_ssz_fixed_container!(L1BlockCommitment, [height: L1Height, blkid: L1BlockId]);
+crate::impl_ssz_fixed_container!(
+    L1BlockCommitment,
+    L1BlockCommitmentRef,
+    [height: L1Height, blkid: L1BlockId]
+);
 
 decl_array_key_struct_impl!(L1BlockCommitment, [height: L1Height, blkid: L1BlockId]);
 
