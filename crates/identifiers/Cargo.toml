@@ -23,6 +23,7 @@ paste = { workspace = true, optional = true }
 proptest = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
+thiserror.workspace = true
 zeroize = { workspace = true, optional = true }
 
 [dev-dependencies]
