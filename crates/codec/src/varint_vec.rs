@@ -281,9 +281,14 @@ impl<T: Codec, const BOUND: u32> Codec for VarVec<T, BOUND> {
             return Err(CodecError::OverflowContainer);
         }
 
-        let mut vec = Vec::with_capacity(len_usize);
+        let mut vec = Vec::new();
         for _ in 0..len_usize {
-            vec.push(T::decode(dec)?);
+            let value = T::decode(dec)?;
+            // Grow only after an element decodes, so a length prefix cannot force allocation.
+            if vec.len() == vec.capacity() {
+                vec.try_reserve(1).map_err(CodecError::AllocationFailed)?;
+            }
+            vec.push(value);
         }
 
         Ok(Self { inner: vec })

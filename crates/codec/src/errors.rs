@@ -1,8 +1,14 @@
+use std::collections::TryReserveError;
+
 use thiserror::Error;
 
 /// Errors from strata-codec.
 #[derive(Clone, Debug, Error)]
 pub enum CodecError {
+    /// Memory allocation failed.
+    #[error("allocation failed")]
+    AllocationFailed(#[source] TryReserveError),
+
     /// For use when we read a container length field that implies a container
     /// of a larger size than allowed in the context.
     #[error("overflow container")]
