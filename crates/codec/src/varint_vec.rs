@@ -97,13 +97,16 @@ impl<T, const BOUND: u32> VarVec<T, BOUND> {
         true
     }
 
-    /// Extends the vec by cloning out of a slice.  Does nothing if there is not
-    /// enough space.
+    /// Extends the vec by cloning a slice when the resulting length fits within the bound.
+    ///
+    /// Returns `false` without changing the vec if the total overflows or exceeds the bound.
     pub fn extend_from_slice_clone(&mut self, slice: &[T]) -> bool
     where
         T: Clone,
     {
-        let new_len = self.inner.len() + slice.len();
+        let Some(new_len) = self.inner.len().checked_add(slice.len()) else {
+            return false;
+        };
         if new_len > Self::max_len() {
             return false;
         }
@@ -142,10 +145,14 @@ impl<T, const BOUND: u32> VarVec<T, BOUND> {
         self.inner.capacity()
     }
 
-    /// Reserves additional space in the underlying vec.  This will not reserve
-    /// more space than the max length would allow.
+    /// Reserves additional space when the requested total fits within the length bound.
+    ///
+    /// Returns `false` without changing the vec if the total overflows or exceeds the bound.
     pub fn reserve(&mut self, additional: usize) -> bool {
-        if self.inner.len() + additional > Self::max_len() {
+        let Some(new_len) = self.inner.len().checked_add(additional) else {
+            return false;
+        };
+        if new_len > Self::max_len() {
             return false;
         }
 
@@ -524,6 +531,19 @@ mod tests {
     }
 
     #[test]
+    fn test_varvec_extend_from_slice_clone_overflow_returns_false() {
+        let mut vec = VarVec::<(), 8>::from_vec(vec![()]).unwrap();
+        let capacity = vec.capacity();
+        // One existing element makes `len + usize::MAX` overflow.
+        // Zero-sized elements allow this length without a large allocation.
+        let oversized = vec![(); usize::MAX];
+
+        assert!(!vec.extend_from_slice_clone(&oversized));
+        assert_eq!(vec.as_slice(), &[()]);
+        assert_eq!(vec.capacity(), capacity);
+    }
+
+    #[test]
     fn test_varvec_extend_from_slice_clone_at_limit() {
         let data = vec![42u8; VARINT_MAX as usize];
         let mut vec: VarVec<u8> = VarVec::from_vec(data).unwrap();
@@ -613,15 +633,39 @@ mod tests {
 
     #[test]
     fn test_varvec_bound_reserve() {
-        type BoundedVec = VarVec<u32, 15>;
-        let mut vec = BoundedVec::from_vec(vec![1u32; 10]).unwrap();
+        const BOUND: u32 = 15;
+        const INITIAL_LEN: usize = 10;
+        type BoundedVec = VarVec<u32, BOUND>;
+        let mut vec = BoundedVec::from_vec(vec![1u32; INITIAL_LEN]).unwrap();
+        let remaining = BoundedVec::max_len() - vec.len();
+
+        // Reserving nothing is a no-op.
+        let initial_capacity = vec.capacity();
+        assert!(vec.reserve(0));
+        assert_eq!(vec.capacity(), initial_capacity);
 
         // Should succeed to reserve up to bound
-        assert!(vec.reserve(5));
+        assert!(vec.reserve(remaining));
+        assert!(vec.capacity() >= BoundedVec::max_len());
+        let capacity = vec.capacity();
 
-        // Should fail to reserve beyond bound
-        assert!(!vec.reserve(6));
-        assert_eq!(vec.len(), 10);
+        // Reserving does not change the length, so one past the remaining allowance still fails.
+        assert!(!vec.reserve(remaining + 1));
+        assert_eq!(vec.as_slice(), &[1u32; INITIAL_LEN]);
+        assert_eq!(vec.capacity(), capacity);
+    }
+
+    #[test]
+    fn test_varvec_reserve_overflow_returns_false() {
+        let mut vec = VarVec::<u8, 8>::from_vec(vec![1, 2]).unwrap();
+        let capacity = vec.capacity();
+
+        // With two elements, `usize::MAX - 1` is the smallest request that overflows.
+        for additional in [usize::MAX - 1, usize::MAX] {
+            assert!(!vec.reserve(additional), "additional = {additional}");
+            assert_eq!(vec.as_slice(), &[1, 2], "additional = {additional}");
+            assert_eq!(vec.capacity(), capacity, "additional = {additional}");
+        }
     }
 
     #[test]
