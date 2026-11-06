@@ -10,7 +10,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 use ssz::DecodeError;
-use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
+use strata_identifiers::{SszDelegate, SszDelegateRef, impl_ssz_via_delegate};
 
 /// A compressed secp256k1 public key (33 bytes).
 ///
@@ -43,6 +43,9 @@ impl SszDelegate for CompressedPublicKey {
 }
 
 impl_ssz_via_delegate!(CompressedPublicKey);
+
+/// SSZ view naming [`CompressedPublicKey`] for an `external_kind: container` field.
+pub type CompressedPublicKeyRef<'a> = SszDelegateRef<'a, CompressedPublicKey>;
 
 impl CompressedPublicKey {
     /// Create a new `CompressedPublicKey` from a byte slice.
@@ -156,7 +159,14 @@ impl<'de> Deserialize<'de> for CompressedPublicKey {
 
 #[cfg(test)]
 mod tests {
+    use strata_ssz_tests::assert_ssz_view_traits;
+
     use super::*;
+
+    #[test]
+    fn test_compressed_public_key_view_alias_implements_view_traits() {
+        assert_ssz_view_traits::<CompressedPublicKey, CompressedPublicKeyRef<'_>>();
+    }
 
     #[test]
     fn test_compressed_pubkey_roundtrip() {

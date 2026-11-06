@@ -19,7 +19,6 @@ borsh = { workspace = true, optional = true }
 const-hex.workspace = true
 hex.workspace = true
 int-enum.workspace = true
-paste = { workspace = true, optional = true }
 proptest = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
@@ -41,7 +40,6 @@ ssz = [
   "dep:ssz_primitives",
   "dep:ssz_types",
   "dep:tree_hash",
-  "dep:paste",
 ]
 zeroize = ["dep:zeroize"]
 arbitrary = ["dep:arbitrary"]

@@ -23,7 +23,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use ssz::DecodeError;
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_identifiers::{Buf32, SszDelegate, impl_ssz_transparent_wrapper, impl_ssz_via_delegate};
+use strata_identifiers::{
+    Buf32, SszDelegate, SszDelegateRef, impl_ssz_transparent_wrapper, impl_ssz_via_delegate,
+};
 
 use crate::ParseError;
 use crate::ssz_generated::ssz::btc::{
@@ -75,6 +77,9 @@ impl SszDelegate for BitcoinOutPoint {
 }
 
 impl_ssz_via_delegate!(BitcoinOutPoint);
+
+/// SSZ view naming `BitcoinOutPoint` for an `external_kind: container` field.
+pub type BitcoinOutPointRef<'a> = SszDelegateRef<'a, BitcoinOutPoint>;
 
 impl From<OutPoint> for BitcoinOutPoint {
     fn from(value: OutPoint) -> Self {
@@ -317,6 +322,9 @@ impl SszDelegate for BitcoinAmount {
 
 impl_ssz_via_delegate!(BitcoinAmount);
 
+/// SSZ view naming [`BitcoinAmount`] for an `external_kind: container` field.
+pub type BitcoinAmountRef<'a> = SszDelegateRef<'a, BitcoinAmount>;
+
 /// Bitcoin [`Txid`] wrapper with optional Borsh serialization.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitcoinTxid(Txid);
@@ -336,6 +344,9 @@ impl SszDelegate for BitcoinTxid {
 }
 
 impl_ssz_via_delegate!(BitcoinTxid);
+
+/// SSZ view naming `BitcoinTxid` for an `external_kind: container` field.
+pub type BitcoinTxidRef<'a> = SszDelegateRef<'a, BitcoinTxid>;
 
 impl From<Txid> for BitcoinTxid {
     fn from(value: Txid) -> Self {
@@ -467,6 +478,9 @@ impl SszDelegate for BitcoinTxOut {
 }
 
 impl_ssz_via_delegate!(BitcoinTxOut);
+
+/// SSZ view naming [`BitcoinTxOut`] for an `external_kind: container` field.
+pub type BitcoinTxOutRef<'a> = SszDelegateRef<'a, BitcoinTxOut>;
 
 impl BitcoinTxOut {
     /// Returns a reference to the inner [`TxOut`].
@@ -759,6 +773,9 @@ impl SszDelegate for BitcoinScriptBuf {
 
 impl_ssz_via_delegate!(BitcoinScriptBuf);
 
+/// SSZ view naming `BitcoinScriptBuf` for an `external_kind: container` field.
+pub type BitcoinScriptBufRef<'a> = SszDelegateRef<'a, BitcoinScriptBuf>;
+
 impl BitcoinScriptBuf {
     /// Returns a reference to the inner [`ScriptBuf`].
     pub fn inner(&self) -> &ScriptBuf {
@@ -830,14 +847,24 @@ mod tests {
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
     use strata_identifiers::Buf32;
-    use strata_ssz_tests::ssz_proptest;
+    use strata_ssz_tests::{assert_ssz_view_traits, ssz_proptest};
 
     use super::{
-        BitcoinAmount, BitcoinOutPoint, BitcoinScriptBuf, BitcoinTxOut, BitcoinTxid,
+        BitcoinAmount, BitcoinAmountRef, BitcoinOutPoint, BitcoinOutPointRef, BitcoinScriptBuf,
+        BitcoinScriptBufRef, BitcoinTxOut, BitcoinTxOutRef, BitcoinTxid, BitcoinTxidRef,
         BitcoinXOnlyPublicKey, MAX_SCRIPT_SIZE, RawBitcoinTx,
     };
     use crate::ParseError;
     use crate::test_helpers::ArbitraryGenerator;
+
+    #[test]
+    fn test_delegate_view_aliases_implement_view_traits() {
+        assert_ssz_view_traits::<BitcoinOutPoint, BitcoinOutPointRef<'_>>();
+        assert_ssz_view_traits::<BitcoinAmount, BitcoinAmountRef<'_>>();
+        assert_ssz_view_traits::<BitcoinTxid, BitcoinTxidRef<'_>>();
+        assert_ssz_view_traits::<BitcoinTxOut, BitcoinTxOutRef<'_>>();
+        assert_ssz_view_traits::<BitcoinScriptBuf, BitcoinScriptBufRef<'_>>();
+    }
 
     #[cfg(feature = "borsh")]
     #[test]
@@ -1036,6 +1063,34 @@ mod tests {
             BitcoinTxOut::try_from(too_big),
             Err(ParseError::ScriptTooLarge { .. })
         ));
+    }
+
+    #[test]
+    fn test_bitcoin_txout_view_defers_script_bound_validation() {
+        use ssz::view::DecodeView;
+        use ssz_types::view::ToOwnedSsz;
+
+        let owned = BitcoinTxOut::try_from(TxOut {
+            value: Amount::from_sat(1),
+            script_pubkey: ScriptBuf::from_bytes(vec![0x51; MAX_SCRIPT_SIZE as usize]),
+        })
+        .expect("script is within the bound");
+        let mut bytes = owned.as_ssz_bytes();
+
+        let view = BitcoinTxOutRef::from_ssz_bytes(&bytes).expect("view borrows");
+        assert_eq!(ToOwnedSsz::<BitcoinTxOut>::try_to_owned(&view), Ok(owned));
+
+        bytes.push(0x51);
+        let view = BitcoinTxOutRef::from_ssz_bytes(&bytes).expect("script bound is checked lazily");
+        let expected_error = view
+            .as_delegate()
+            .script_pubkey()
+            .expect_err("script exceeds the bound by one byte");
+
+        assert_eq!(
+            ToOwnedSsz::<BitcoinTxOut>::try_to_owned(&view),
+            Err(expected_error)
+        );
     }
 
     #[test]

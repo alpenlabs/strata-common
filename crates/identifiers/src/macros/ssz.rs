@@ -1,33 +1,39 @@
-//! SSZ view trait macros for identifier and wrapper types.
+//! SSZ implementations for hand-written types used in ssz-gen schemas.
 //!
-//! These macros generate the boilerplate trait implementations (`DecodeView`,
-//! `SszTypeInfo`, `TreeHash`, `ToOwnedSsz`) that the SSZ view layer requires.
-//! Three macros are provided, each targeting a different structural pattern:
+//! ssz-gen emits `Encode`/`Decode`/`TreeHash` and a byte-backed `{Type}Ref` view
+//! only for types a schema declares. Types written in Rust get theirs from here.
 //!
-//! | Macro | Use when… |
+//! Four macros cover different structural patterns:
+//!
+//! | Macro | Use when |
 //! |---|---|
-//! | [`impl_ssz_fixed_container!`] | Multi-field struct with `#[ssz(struct_behaviour = "container")]` |
-//! | [`impl_ssz_transparent_wrapper!`] | Newtype whose inner type already implements `DecodeView` |
-//! | [`impl_ssz_transparent_byte_array_wrapper!`] | Newtype wrapping a raw `[u8; N]` (which lacks `DecodeView`) |
+//! | [`impl_ssz_fixed_container!`] | Struct with `#[ssz(struct_behaviour = "container")]` and only fixed-size fields |
+//! | [`impl_ssz_transparent_wrapper!`] | Newtype whose inner type implements `DecodeView`, `SszTypeInfo`, and `TreeHash` |
+//! | [`impl_ssz_transparent_byte_array_wrapper!`] | Newtype wrapping a raw `[u8; N]`, which lacks `DecodeView` |
+//! | [`impl_ssz_via_delegate!`] | `Clone` type whose encoding is defined through [`SszDelegate`] |
 //!
 //! ## Choosing the right macro
 //!
 //! ```text
-//!  Is the type a multi-field container?
-//!    ├─ Yes → impl_ssz_fixed_container!
-//!    └─ No (newtype / transparent wrapper)
-//!         ├─ Inner type has DecodeView? (Buf32, RBuf32, u64, …)
-//!         │    └─ Yes → impl_ssz_transparent_wrapper!
-//!         └─ Inner type is [u8; N]?
-//!              └─ Yes → impl_ssz_transparent_byte_array_wrapper!
+//! Does the type implement SszDelegate?
+//!   ├─ Yes → impl_ssz_via_delegate!
+//!   └─ No
+//!        ├─ Container with only fixed-size fields?
+//!        │    └─ Yes → impl_ssz_fixed_container!
+//!        └─ Transparent newtype?
+//!             ├─ Inner type is [u8; N]?
+//!             │    └─ Yes → impl_ssz_transparent_byte_array_wrapper!
+//!             └─ Inner type implements DecodeView, SszTypeInfo, and TreeHash?
+//!                  └─ Yes → impl_ssz_transparent_wrapper!
 //! ```
 //!
-//! The split between the two transparent-wrapper macros exists because `[u8; N]`
-//! does **not** implement `DecodeView` in the `ssz` crate — only
-//! `FixedBytes<N>` does. Since both `[u8; N]` and `DecodeView` are foreign,
-//! the orphan rule prevents adding that impl locally, so
-//! `impl_ssz_transparent_byte_array_wrapper!` provides a manual `DecodeView`
-//! via `TryInto` plus `From` conversions with `FixedBytes<N>`.
+//! Use at most one macro per type; their trait implementations overlap.
+//!
+//! ## Naming an external container view
+//!
+//! ssz-gen resolves `external_kind: container` to `{Type}Ref<'a>`.
+//! For delegate wrappers, provide that name as an alias to [`SszDelegateRef`].
+//! The delegate type must implement [`ssz_types::view::SszHasView`].
 
 /// Generates SSZ view trait implementations for a fixed-size container type.
 ///
@@ -35,9 +41,9 @@
 /// whose fields are all fixed-size. Generates:
 /// - `TreeHash` implementation
 /// - `SszTypeInfo` implementation (computes fixed size from field types)
-/// - A `{Type}Ref` view type with `DecodeView`, `SszTypeInfo`, `TreeHash`, and `ToOwnedSsz`
-///
-/// The `{Type}Ref` name is auto-generated via [`paste`].
+/// - A view type named by the second argument, with `DecodeView`, `SszTypeInfo`, `TreeHash`, and
+///   `ToOwnedSsz`, which decodes rather than borrowing. An `external_kind: container` field
+///   resolves only to a view named `{Type}Ref`.
 ///
 /// # Example
 ///
@@ -49,106 +55,109 @@
 ///     pub b: Buf32,
 /// }
 ///
-/// impl_ssz_fixed_container!(MyContainer, [a: u64, b: Buf32]);
+/// impl_ssz_fixed_container!(MyContainer, MyContainerRef, [a: u64, b: Buf32]);
 /// // Generates: MyContainerRef<'a>
 /// ```
 #[macro_export]
 macro_rules! impl_ssz_fixed_container {
-    ($type:ident, [$($field:ident: $field_ty:ty),+ $(,)?]) => {
-        ::paste::paste! {
-            // TreeHash implementation
-            impl ::tree_hash::TreeHash for $type {
-                fn tree_hash_type() -> ::tree_hash::TreeHashType {
-                    ::tree_hash::TreeHashType::Container
-                }
+    ($type:ident, $view:ident, [$($field:ident: $field_ty:ty),+ $(,)?]) => {
+        // TreeHash implementation
+        impl ::tree_hash::TreeHash for $type {
+            fn tree_hash_type() -> ::tree_hash::TreeHashType {
+                ::tree_hash::TreeHashType::Container
+            }
 
-                fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
-                    unreachable!("Container should never be packed")
-                }
+            fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
+                unreachable!("Container should never be packed")
+            }
 
-                fn tree_hash_packing_factor() -> usize {
-                    unreachable!("Container should never be packed")
-                }
+            fn tree_hash_packing_factor() -> usize {
+                unreachable!("Container should never be packed")
+            }
 
-                fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
-                    let mut hasher = ::tree_hash::MerkleHasher::<H>::with_leaves(
-                        $crate::impl_ssz_fixed_container!(@count $($field),+)
-                    );
-                    $(
-                        hasher
-                            .write(
-                                <$field_ty as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.$field)
-                                    .as_ref(),
-                            )
-                            .expect("tree hash derive should not apply too many leaves");
-                    )+
+            fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
+                let mut hasher = ::tree_hash::MerkleHasher::<H>::with_leaves(
+                    $crate::impl_ssz_fixed_container!(@count $($field),+)
+                );
+                $(
                     hasher
-                        .finish()
-                        .expect("tree hash derive should not have a remaining buffer")
-                }
+                        .write(
+                            <$field_ty as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.$field)
+                                .as_ref(),
+                        )
+                        .expect("tree hash derive should not apply too many leaves");
+                )+
+                hasher
+                    .finish()
+                    .expect("tree hash derive should not have a remaining buffer")
+            }
+        }
+
+        // SszTypeInfo implementation
+        impl ::ssz::view::SszTypeInfo for $type {
+            fn is_ssz_fixed_len() -> bool {
+                true
             }
 
-            // SszTypeInfo implementation
-            impl ::ssz::view::SszTypeInfo for $type {
-                fn is_ssz_fixed_len() -> bool {
-                    true
-                }
+            fn ssz_fixed_len() -> usize {
+                0 $(+ <$field_ty as ::ssz::view::SszTypeInfo>::ssz_fixed_len())+
+            }
+        }
 
-                fn ssz_fixed_len() -> usize {
-                    0 $(+ <$field_ty as ::ssz::view::SszTypeInfo>::ssz_fixed_len())+
-                }
+        // Ref view type
+        /// Adapts the parent type to the SSZ view interface.
+        ///
+        /// Decodes during `DecodeView::from_ssz_bytes` and holds the value;
+        /// it does not borrow the input. `'a` is present only because
+        /// ssz-gen resolves an `external_kind: container` field to a
+        /// `{Type}Ref<'a>` path.
+        #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
+        pub struct $view<'a> {
+            inner: $type,
+            _phantom: ::std::marker::PhantomData<&'a ()>,
+        }
+
+        impl<'a> ::ssz::view::DecodeView<'a> for $view<'a> {
+            fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ::ssz::DecodeError> {
+                let inner = <$type as ::ssz::Decode>::from_ssz_bytes(bytes)?;
+                Ok(Self {
+                    inner,
+                    _phantom: ::std::marker::PhantomData,
+                })
+            }
+        }
+
+        impl<'a> ::ssz::view::SszTypeInfo for $view<'a> {
+            fn is_ssz_fixed_len() -> bool {
+                <$type as ::ssz::view::SszTypeInfo>::is_ssz_fixed_len()
             }
 
-            // Ref view type
-            /// SSZ zero-copy view reference for the parent type.
-            #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
-            pub struct [<$type Ref>]<'a> {
-                inner: $type,
-                _phantom: ::std::marker::PhantomData<&'a ()>,
+            fn ssz_fixed_len() -> usize {
+                <$type as ::ssz::view::SszTypeInfo>::ssz_fixed_len()
+            }
+        }
+
+        impl<'a> ::tree_hash::TreeHash for $view<'a> {
+            fn tree_hash_type() -> ::tree_hash::TreeHashType {
+                <$type as ::tree_hash::TreeHash>::tree_hash_type()
             }
 
-            impl<'a> ::ssz::view::DecodeView<'a> for [<$type Ref>]<'a> {
-                fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ::ssz::DecodeError> {
-                    let inner = <$type as ::ssz::Decode>::from_ssz_bytes(bytes)?;
-                    Ok(Self {
-                        inner,
-                        _phantom: ::std::marker::PhantomData,
-                    })
-                }
+            fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
+                <$type as ::tree_hash::TreeHash>::tree_hash_packed_encoding(&self.inner)
             }
 
-            impl<'a> ::ssz::view::SszTypeInfo for [<$type Ref>]<'a> {
-                fn is_ssz_fixed_len() -> bool {
-                    <$type as ::ssz::view::SszTypeInfo>::is_ssz_fixed_len()
-                }
-
-                fn ssz_fixed_len() -> usize {
-                    <$type as ::ssz::view::SszTypeInfo>::ssz_fixed_len()
-                }
+            fn tree_hash_packing_factor() -> usize {
+                <$type as ::tree_hash::TreeHash>::tree_hash_packing_factor()
             }
 
-            impl<'a> ::tree_hash::TreeHash for [<$type Ref>]<'a> {
-                fn tree_hash_type() -> ::tree_hash::TreeHashType {
-                    <$type as ::tree_hash::TreeHash>::tree_hash_type()
-                }
-
-                fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
-                    <$type as ::tree_hash::TreeHash>::tree_hash_packed_encoding(&self.inner)
-                }
-
-                fn tree_hash_packing_factor() -> usize {
-                    <$type as ::tree_hash::TreeHash>::tree_hash_packing_factor()
-                }
-
-                fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
-                    <$type as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.inner)
-                }
+            fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
+                <$type as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.inner)
             }
+        }
 
-            impl<'a> ::ssz_types::view::ToOwnedSsz<$type> for [<$type Ref>]<'a> {
-                fn to_owned(&self) -> $type {
-                    self.inner
-                }
+        impl<'a> ::ssz_types::view::ToOwnedSsz<$type> for $view<'a> {
+            fn to_owned(&self) -> $type {
+                self.inner
             }
         }
     };
@@ -269,17 +278,138 @@ pub trait SszDelegate: Sized {
     fn from_delegate(delegate: Self::Delegate) -> Result<Self, ::ssz::DecodeError>;
 }
 
+/// The delegate's canonical view, as ssz-gen declares it.
+type DelegateView<'a, T> = <<T as SszDelegate>::Delegate as ::ssz_types::view::SszHasView>::Ref<'a>;
+
+/// Borrowed SSZ view over a delegate wrapper.
+///
+/// Decoding performs only the delegate view's up-front checks; wrapper invariants
+/// and bounds the delegate's view checks lazily are not validated.
+/// [`SszDelegate::from_delegate`] runs during `try_to_owned`, which returns
+/// delegate decoding and wrapper validation errors.
+///
+/// # Panics
+///
+/// `ToOwnedSsz::to_owned` panics where `try_to_owned` would return an error.
+/// `TreeHash` methods panic when the bytes break a bound the delegate's view
+/// checks lazily.
+// Not `Copy`: it would overlap `ssz_types`' `impl<T: Copy> ToOwnedSsz<T> for T`.
+pub struct SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+{
+    delegate: DelegateView<'a, T>,
+}
+
+impl<'a, T> SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+{
+    /// Returns the borrowed delegate view.
+    pub fn as_delegate(&self) -> &DelegateView<'a, T> {
+        &self.delegate
+    }
+}
+
+impl<'a, T> ::core::clone::Clone for SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+    DelegateView<'a, T>: ::core::clone::Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            delegate: ::core::clone::Clone::clone(&self.delegate),
+        }
+    }
+}
+
+impl<'a, T> ::core::fmt::Debug for SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+    DelegateView<'a, T>: ::core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("SszDelegateRef")
+            .field("delegate", &self.delegate)
+            .finish()
+    }
+}
+
+impl<'a, T> ::ssz::view::DecodeView<'a> for SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+{
+    fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ::ssz::DecodeError> {
+        Ok(Self {
+            delegate: <DelegateView<'a, T> as ::ssz::view::DecodeView<'a>>::from_ssz_bytes(bytes)?,
+        })
+    }
+}
+
+impl<'a, T> ::ssz::view::SszTypeInfo for SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+{
+    fn is_ssz_fixed_len() -> bool {
+        <DelegateView<'a, T> as ::ssz::view::SszTypeInfo>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <DelegateView<'a, T> as ::ssz::view::SszTypeInfo>::ssz_fixed_len()
+    }
+}
+
+impl<'a, T> ::tree_hash::TreeHash for SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+{
+    fn tree_hash_type() -> ::tree_hash::TreeHashType {
+        <DelegateView<'a, T> as ::tree_hash::TreeHash>::tree_hash_type()
+    }
+
+    fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
+        <DelegateView<'a, T> as ::tree_hash::TreeHash>::tree_hash_packed_encoding(&self.delegate)
+    }
+
+    fn tree_hash_packing_factor() -> usize {
+        <DelegateView<'a, T> as ::tree_hash::TreeHash>::tree_hash_packing_factor()
+    }
+
+    fn tree_hash_root<H: ::tree_hash::TreeHashDigest>(&self) -> H::Output {
+        <DelegateView<'a, T> as ::tree_hash::TreeHash>::tree_hash_root::<H>(&self.delegate)
+    }
+}
+
+impl<'a, T> ::ssz_types::view::ToOwnedSsz<T> for SszDelegateRef<'a, T>
+where
+    T: SszDelegate + 'a,
+    T::Delegate: ::ssz_types::view::SszHasView,
+{
+    fn to_owned(&self) -> T {
+        <Self as ::ssz_types::view::ToOwnedSsz<T>>::try_to_owned(self)
+            .expect("bytes fail delegate or wrapper validation; use try_to_owned")
+    }
+
+    fn try_to_owned(&self) -> Result<T, ::ssz::DecodeError> {
+        let delegate =
+            <DelegateView<'a, T> as ::ssz_types::view::ToOwnedSsz<T::Delegate>>::try_to_owned(
+                &self.delegate,
+            )?;
+        <T as SszDelegate>::from_delegate(delegate)
+    }
+}
+
 /// Generates [`ssz::Encode`], [`ssz::Decode`], and [`tree_hash::TreeHash`]
 /// implementations for a type that implements [`SszDelegate`], delegating the
 /// entire byte layout and merkleization to its
 /// [`Delegate`](SszDelegate::Delegate) type.
-///
-/// This is the "correct by construction" replacement for hand-written
-/// `Encode`/`Decode` impls: the wrapper supplies only the value-level conversion
-/// to/from a well-defined SSZ type via [`SszDelegate`], and this macro wires up
-/// the trait methods so the wrapper inherits the delegate's (spec-compliant)
-/// layout and tree-hash root verbatim. Because the tree hash is delegated too,
-/// the wrapper can be used as a field inside other SSZ containers.
 ///
 /// # Requirements
 ///
@@ -372,12 +502,13 @@ macro_rules! impl_ssz_via_delegate {
     };
 }
 
+// Both `[u8; N]` and `DecodeView` are foreign, so orphan rules prevent adding
+// the missing array implementation here. Implement the trait on the local wrapper instead.
 /// Generates SSZ view trait implementations for transparent wrappers around
 /// raw `[u8; N]` arrays.
 ///
-/// This exists because `[u8; N]` does not implement `DecodeView` in the `ssz`
-/// crate (only `FixedBytes<N>` does), so [`impl_ssz_transparent_wrapper!`]
-/// cannot be used. This macro provides:
+/// Raw arrays lack `DecodeView`, so use this macro instead of
+/// [`impl_ssz_transparent_wrapper!`]. This macro provides:
 /// - A manual `DecodeView` implementation via `bytes.try_into()`
 /// - `SszTypeInfo` (fixed-length)
 /// - `TreeHash` delegating to `[u8; N]`
