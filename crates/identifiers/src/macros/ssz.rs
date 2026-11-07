@@ -383,6 +383,8 @@ macro_rules! impl_ssz_via_delegate {
 /// - `TreeHash` delegating to `[u8; N]`
 /// - Bidirectional `From` conversions with `FixedBytes<N>` for SSZ codegen interop
 ///
+/// Conversions from borrowed inputs copy the bytes into an owned value.
+///
 /// # Example
 ///
 /// ```ignore
@@ -446,10 +448,9 @@ macro_rules! impl_ssz_transparent_byte_array_wrapper {
             }
         }
 
-        impl ::core::convert::From<&::ssz_primitives::FixedBytes<$len>> for &$wrapper {
+        impl ::core::convert::From<&::ssz_primitives::FixedBytes<$len>> for $wrapper {
             fn from(value: &::ssz_primitives::FixedBytes<$len>) -> Self {
-                // SAFETY: FixedBytes<N> and the wrapper have the same layout
-                unsafe { &*(value as *const ::ssz_primitives::FixedBytes<$len> as *const $wrapper) }
+                Self(value.0)
             }
         }
 
@@ -459,10 +460,9 @@ macro_rules! impl_ssz_transparent_byte_array_wrapper {
             }
         }
 
-        impl ::core::convert::From<&$wrapper> for &::ssz_primitives::FixedBytes<$len> {
+        impl ::core::convert::From<&$wrapper> for ::ssz_primitives::FixedBytes<$len> {
             fn from(value: &$wrapper) -> Self {
-                // SAFETY: the wrapper and FixedBytes<N> have the same layout
-                unsafe { &*(value as *const $wrapper as *const ::ssz_primitives::FixedBytes<$len>) }
+                Self(value.0)
             }
         }
     };
