@@ -80,6 +80,54 @@ mod tests {
     }
 
     #[cfg(feature = "ssz")]
+    mod fixed_bytes_conversion_tests {
+        use ssz::Encode;
+        use ssz_primitives::FixedBytes;
+        use tree_hash::{Sha256Hasher, TreeHash};
+
+        use crate::{Buf32, Buf64, RBuf32};
+
+        macro_rules! conversion_test {
+            ($test_name:ident, $wrapper:ty, $len:literal) => {
+                #[test]
+                fn $test_name() {
+                    // Distinct first and last bytes catch truncation or reordering.
+                    let mut bytes = [0x5a; $len];
+                    bytes[0] = 0x11;
+                    bytes[$len - 1] = 0x22;
+                    let fixed = FixedBytes(bytes);
+                    let from_owned = <$wrapper>::from(fixed);
+                    let from_borrowed = <$wrapper>::from(&fixed);
+                    assert_eq!(from_borrowed, from_owned);
+                    assert_eq!(FixedBytes::<$len>::from(&from_borrowed), fixed);
+                    assert_eq!(FixedBytes::<$len>::from(from_borrowed), fixed);
+                    assert_eq!(from_borrowed.as_ssz_bytes(), bytes);
+                    assert_eq!(
+                        from_borrowed.tree_hash_root::<Sha256Hasher>(),
+                        fixed.tree_hash_root::<Sha256Hasher>()
+                    );
+                }
+            };
+        }
+
+        conversion_test!(
+            buf32_conversions_preserve_bytes_and_tree_hash_root,
+            Buf32,
+            32
+        );
+        conversion_test!(
+            rbuf32_conversions_preserve_bytes_and_tree_hash_root,
+            RBuf32,
+            32
+        );
+        conversion_test!(
+            buf64_conversions_preserve_bytes_and_tree_hash_root,
+            Buf64,
+            64
+        );
+    }
+
+    #[cfg(feature = "ssz")]
     mod ssz_wrapper_tests {
         use ssz::{Decode, Encode};
         use ssz_derive::{Decode, Encode};
