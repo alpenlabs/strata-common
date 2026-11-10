@@ -11,7 +11,7 @@ here are cross-repo interfaces.
 | --- | --- | --- |
 | SSZ | `ssz`, `ssz_derive`, and `tree_hash` from [ssz-gen](https://github.com/alpenlabs/ssz-gen) | Consensus and proof types, and their tree hash roots |
 | `strata-codec` | [`crates/codec`](../crates/codec) | Compact, explicitly laid-out binary messages |
-| Borsh | `borsh`, behind the `borsh` feature | Older encodings that consumers still opt into |
+| Borsh (deprecated) | `borsh`, behind the `borsh` feature | Older encodings that existing consumers still opt into |
 | serde | `serde`, with shims in [`crates/serde-utils`](../crates/serde-utils) | JSON configs and RPC, and binary serde formats such as CBOR |
 
 ### SSZ
@@ -40,9 +40,11 @@ and `VarVec` give compact length prefixes. `decode_buf_exact` fails on trailing 
 
 ### Borsh
 
-Borsh is off by default in every crate. The `borsh` feature on a crate brings back its
-Borsh implementations with the same bytes as before. Don't add Borsh to a new boundary. The
-[README](../README.md#optional-borsh-support) lists which crates have the feature.
+Borsh is deprecated. It is off by default in every crate, and the `borsh` feature on a
+crate brings back its Borsh implementations with the same bytes as before, so existing
+consumers keep working. Don't add Borsh implementations to new types or use Borsh at a new
+boundary; use SSZ or `strata-codec` instead. The
+[README](../README.md#deprecated-borsh-support) lists which crates have the feature.
 
 ## Adapters
 
@@ -52,7 +54,7 @@ matches the boundary.
 | Adapter | Crate | What it does |
 | --- | --- | --- |
 | `CodecSsz<T>` | [`codec-utils`](../crates/codec-utils/src/ssz_shim.rs) | Puts an SSZ value inside a `Codec` stream, with a varint length prefix |
-| `CodecBorsh<T>` | [`codec-utils`](../crates/codec-utils/src/borsh_shim.rs) | Puts a Borsh value inside a `Codec` stream. Needs the `borsh` feature |
+| `CodecBorsh<T>` | [`codec-utils`](../crates/codec-utils/src/borsh_shim.rs) | Puts a Borsh value inside a `Codec` stream. Needs the `borsh` feature. Deprecated with Borsh |
 | `SerdeSsz<T>` | [`serde-utils`](../crates/serde-utils/src/ssz_shim.rs) | Raw SSZ bytes in binary serde formats, hex in human-readable ones |
 | `SerdeCodec<T>` | [`serde-utils`](../crates/serde-utils/src/codec_shim.rs) | The same for `Codec` bytes |
 

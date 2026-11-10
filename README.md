@@ -17,9 +17,11 @@ Several Strata repos, such as [asm](https://github.com/alpenlabs/asm), [alpen](h
 - **Pure where it can be.** Encoding, protocol, and data structure crates do no I/O and keep no global state, so they can run in zkVM guests and consensus code.
 - **Opt-in extras.** Optional formats and helpers sit behind feature flags, so consumers only pull in what they use.
 
-## Optional Borsh support
+## Deprecated Borsh support
 
-Borsh support is disabled by default. Consumers that need it can enable the `borsh` feature on `strata-btc-types`, `strata-codec-utils`, `strata-crypto`, `strata-identifiers`, `strata-l1-txfmt`, `strata-merkle`, or `strata-predicate`:
+Borsh is deprecated. It stays behind opt-in features only so existing consumers can keep reading and writing the encodings they already use. New types and new boundaries should use SSZ or `strata-codec` instead, and consumers still on Borsh should plan to move off it.
+
+Borsh support is disabled by default. Consumers that still need it can enable the `borsh` feature on `strata-btc-types`, `strata-codec-utils`, `strata-crypto`, `strata-identifiers`, `strata-l1-txfmt`, `strata-merkle`, or `strata-predicate`:
 
 ```toml
 strata-btc-types = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0", features = ["borsh"] }

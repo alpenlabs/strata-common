@@ -86,7 +86,7 @@ Libraries emit `tracing` events and `metrics` instruments and leave export to th
 ## Feature flags
 
 Many crates gate optional formats and helpers behind features, and the defaults differ
-from crate to crate. For example, `borsh` is off everywhere, `ssz` is on by default in
+from crate to crate. For example, the deprecated `borsh` feature is off everywhere, `ssz` is on by default in
 `strata-identifiers` but off in `strata-merkle`, and `test-utils` exposes fixtures and
 generators. Check the crate's `Cargo.toml` before assuming a feature is on.
 

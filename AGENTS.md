@@ -95,6 +95,8 @@ See [`docs/layout.md`](docs/layout.md) for every crate.
 - **Encodings**: changing an encoded field, its order, a tag, a length bound, or a hash
   input is a protocol change. Mark it `!` and add vectors for the new bytes. See
   [`docs/serialization.md`](docs/serialization.md).
+- **Borsh is deprecated**: it stays behind opt-in `borsh` features only for existing
+  consumers. New encodings use SSZ or `strata-codec`.
 - **SSZ schemas**: `crates/btc-types`, `crates/crypto`, `crates/merkle`, `crates/ol-logs`,
   and `crates/predicate` generate SSZ types in `build.rs` from the `.ssz` files in their
   `ssz/` directory. For those types, edit the schema, not the generated code.
@@ -144,6 +146,8 @@ See [`docs/layout.md`](docs/layout.md) for every crate.
 
 - Use the format the boundary already uses. The workspace has SSZ, `strata-codec`, Borsh,
   and serde adapters; that doesn't make them interchangeable.
+- Borsh is deprecated. Keep existing Borsh implementations behind their `borsh` features
+  with unchanged bytes, but don't add Borsh to new types or boundaries.
 - Keep domain types separate from wire or storage types when their fields or invariants
   differ. Convert and validate at the boundary.
 - Decoders reject malformed, truncated, trailing, and oversized input.
