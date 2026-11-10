@@ -15,7 +15,7 @@ use secp256k1::{Parity, PublicKey, SECP256K1, SecretKey, XOnlyPublicKey};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Serialize};
 use ssz::DecodeError;
-use strata_identifiers::{Buf32, SszDelegate, impl_ssz_via_delegate};
+use strata_identifiers::{Buf32, SszDelegate, SszDelegateRef, impl_ssz_via_delegate};
 
 /// Represents a secret key whose x-only public key has even parity.
 ///
@@ -77,6 +77,9 @@ impl SszDelegate for EvenPublicKey {
 }
 
 impl_ssz_via_delegate!(EvenPublicKey);
+
+/// SSZ view naming [`EvenPublicKey`] for an `external_kind: container` field.
+pub type EvenPublicKeyRef<'a> = SszDelegateRef<'a, EvenPublicKey>;
 
 impl Deref for EvenPublicKey {
     type Target = PublicKey;
@@ -215,8 +218,14 @@ mod tests {
     use borsh::{from_slice, to_vec};
     use secp256k1::{Parity, PublicKey, SECP256K1, SecretKey};
     use strata_identifiers::Buf32;
+    use strata_ssz_tests::assert_ssz_view_traits;
 
-    use super::{EvenPublicKey, EvenSecretKey, even_kp};
+    use super::{EvenPublicKey, EvenPublicKeyRef, EvenSecretKey, even_kp};
+
+    #[test]
+    fn test_even_public_key_view_alias_implements_view_traits() {
+        assert_ssz_view_traits::<EvenPublicKey, EvenPublicKeyRef<'_>>();
+    }
 
     fn sample_secret_keys() -> (SecretKey, SecretKey) {
         let sk = SecretKey::from_slice(&[0x01; 32]).expect("valid secret key");

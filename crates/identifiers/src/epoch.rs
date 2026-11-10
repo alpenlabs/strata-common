@@ -47,7 +47,11 @@ pub struct EpochCommitment {
 }
 
 #[cfg(feature = "ssz")]
-crate::impl_ssz_fixed_container!(EpochCommitment, [epoch: Epoch, last_slot: Slot, last_blkid: OLBlockId]);
+crate::impl_ssz_fixed_container!(
+    EpochCommitment,
+    EpochCommitmentRef,
+    [epoch: Epoch, last_slot: Slot, last_blkid: OLBlockId]
+);
 
 decl_array_key_struct_impl!(
     EpochCommitment,
