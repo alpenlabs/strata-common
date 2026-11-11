@@ -222,6 +222,24 @@ fn known_encodings_round_trip_unchanged() {
     }
 }
 
+#[test]
+fn noncanonical_count_prefix_is_rejected_before_any_element() {
+    // Count 0 written in two bytes, and count 2 written in four bytes ahead of
+    // two valid elements: the prefix itself fails, so nothing is read or
+    // allocated after it.
+    for bytes in [
+        &[0x80, 0x00][..],
+        &[0xc0, 0x00, 0x00, 0x02, 0x11, 0x22, 0x33, 0x44][..],
+    ] {
+        let (result, allocations) = track_allocations(|| decode_buf_exact::<VarVec<u16, 4>>(bytes));
+        assert!(
+            matches!(result, Err(CodecError::MalformedField("varint"))),
+            "{bytes:02x?}: {result:?}"
+        );
+        assert_eq!(allocations.attempts, 0, "{bytes:02x?}");
+    }
+}
+
 /// Encodes to zero bytes, so a count alone decodes into elements.
 #[derive(Debug)]
 struct ZeroByteElement;

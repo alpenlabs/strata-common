@@ -286,55 +286,60 @@ mod tests {
     }
 
     #[test]
+    fn test_varint_truncated_multibyte_input_is_an_overrun() {
+        // The tail is read before the layout check, so short input reports
+        // "need more bytes", not "malformed", even when the prefix would have
+        // spelled a noncanonical layout.
+        let truncated: [&[u8]; 3] = [&[0x80], &[0xc0], &[0xc0, 0x00, 0x00]];
+
+        for buf in truncated {
+            let res = decode_buf_exact::<Varint>(buf);
+            assert!(
+                matches!(res, Err(CodecError::OverrunInput)),
+                "{buf:02x?} must overrun, got {res:?}"
+            );
+        }
+    }
+
+    #[test]
     fn test_varint_every_accepted_encoding_is_the_one_it_reencodes_to() {
         // Sweep the whole one- and two-byte input space, and the four-byte
         // space at every value that sits on a layout boundary plus a stride
-        // through the rest: every byte string either fails to decode as a
-        // noncanonical layout or re-encodes to exactly itself.
-        fn check(buf: &[u8]) {
-            match decode_buf_exact::<Varint>(buf) {
-                Ok(v) => assert_eq!(
-                    encode_to_vec(&v).unwrap(),
-                    buf,
-                    "{buf:02x?} is not canonical"
-                ),
-                Err(CodecError::MalformedField("varint")) => {
-                    assert!(
-                        v_fits_shorter(buf),
-                        "{buf:02x?} was rejected but has no shorter layout"
-                    );
-                }
-                Err(e) => panic!("{buf:02x?}: unexpected error {e:?}"),
+        // through the rest.  The oracle is the layout minimum as a literal,
+        // not the decoder's own `width()`: a value below the minimum of the
+        // layout it is written in must be rejected, anything else decodes and
+        // re-encodes to exactly the input bytes.
+        fn check(buf: &[u8], value: u32, layout_min: u32) {
+            let res = decode_buf_exact::<Varint>(buf);
+            if value < layout_min {
+                assert!(
+                    matches!(res, Err(CodecError::MalformedField("varint"))),
+                    "{buf:02x?} must be rejected, got {res:?}"
+                );
+                return;
             }
+            let decoded = res.unwrap_or_else(|e| panic!("{buf:02x?}: {e:?}"));
+            assert_eq!(decoded.inner(), value, "{buf:02x?}");
+            assert_eq!(encode_to_vec(&decoded).unwrap(), buf, "{buf:02x?}");
         }
 
-        // Does the value spelled by `buf` fit a shorter layout than `buf` uses?
-        fn v_fits_shorter(buf: &[u8]) -> bool {
-            let value = match buf.len() {
-                1 => (buf[0] & 0x7f) as u32,
-                2 => u16::from_be_bytes([buf[0] & 0x3f, buf[1]]) as u32,
-                4 => u32::from_be_bytes([buf[0] & 0x3f, buf[1], buf[2], buf[3]]),
-                _ => unreachable!(),
-            };
-            Varint::new(value).unwrap().byte_len() < buf.len()
+        for v in 0u32..=0x7f {
+            check(&[v as u8], v, 0);
         }
-
-        for b in 0x00u8..=0x7f {
-            check(&[b]);
-        }
-        for w in 0x8000u16..=0xbfff {
-            check(&w.to_be_bytes());
+        for v in 0u32..=0x3fff {
+            check(&((v as u16) | 0x8000).to_be_bytes(), v, 128);
         }
         let mut four_byte = vec![0u32, 1, 127, 128, 16383, 16384, 16385, VARINT_MAX];
         four_byte.extend((0..VARINT_MAX).step_by(0x1_0007));
-        for value in four_byte {
-            check(&(value | 0xc000_0000).to_be_bytes());
+        for v in four_byte {
+            check(&(v | 0xc000_0000).to_be_bytes(), v, 16384);
         }
     }
 
     #[test]
     fn test_varint_accepts_shortest_layout_at_each_boundary() {
-        // The smallest value of each layout decodes; it has no shorter layout.
+        // Each value at a layout boundary decodes in its shortest layout and
+        // re-encodes to the same bytes.
         let canonical: [(&[u8], u32); 3] = [
             (&[0x7f], 127),
             (&[0x80, 0x80], 128),

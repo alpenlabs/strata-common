@@ -99,6 +99,24 @@ mod tests {
     }
 
     #[test]
+    fn test_noncanonical_length_prefix_is_rejected() {
+        let wrapped = CodecSsz::new(TestStruct { a: 42, b: 1337 });
+        let encoded = encode_to_vec(&wrapped).expect("Failed to encode");
+
+        // The 12-byte body takes a one-byte length; spell the same length in
+        // two bytes and the prefix must fail before the body is looked at.
+        assert_eq!(encoded[0], 12);
+        let mut noncanonical = vec![0x80, 0x0c];
+        noncanonical.extend_from_slice(&encoded[1..]);
+
+        let res = decode_buf_exact::<CodecSsz<TestStruct>>(&noncanonical);
+        assert!(
+            matches!(res, Err(CodecError::MalformedField("varint"))),
+            "{res:?}"
+        );
+    }
+
+    #[test]
     fn test_empty_encode_decode() {
         #[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
         struct EmptyStruct;
