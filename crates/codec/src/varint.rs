@@ -1,4 +1,4 @@
-//! Codecable vec with varint length tag.
+//! Compact big-endian varint with a canonical shortest-layout encoding.
 //!
 //! The varints are optimized to short lengths, since most payloads will be
 //! small.  Below are the permitted layouts, always encoded big-endian.
@@ -8,6 +8,12 @@
 //! 10bbbbbb_bbbbbbbb
 //! 11bbbbbb_bbbbbbbb_bbbbbbbb_bbbbbbbb
 //! ```
+//!
+//! The encoding is canonical: a value is always written in the shortest
+//! layout that holds it, and decoding rejects a longer layout for a value a
+//! shorter one would hold.  Every value therefore has exactly one byte
+//! representation, so bytes covered by a hash or a signature cannot be
+//! rewritten without changing what they decode to.
 
 use crate::errors::CodecError;
 use crate::types::{Codec, Decoder, Encoder};
@@ -94,28 +100,35 @@ impl Codec for Varint {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let first_byte = u8::decode(dec)?;
 
-        let value = match first_byte >> 6 {
+        let (value, width) = match first_byte >> 6 {
             // 0b00xxxxxx or 0b01xxxxxx: single byte encoding
-            0 | 1 => first_byte as u32,
+            0 | 1 => (first_byte as u32, VarintWidth::U8),
 
             // 0b10xxxxxx: two-byte encoding
             2 => {
                 let second_byte = u8::decode(dec)?;
                 let bytes = [first_byte & 0x3f, second_byte];
-                u16::from_be_bytes(bytes) as u32
+                (u16::from_be_bytes(bytes) as u32, VarintWidth::U16)
             }
 
             // 0b11xxxxxx: four-byte encoding
             3 => {
                 let mut bytes = [first_byte & 0x3f, 0, 0, 0];
                 dec.read_buf(&mut bytes[1..4])?;
-                u32::from_be_bytes(bytes)
+                (u32::from_be_bytes(bytes), VarintWidth::U32)
             }
 
             _ => unreachable!(),
         };
 
         let vi = Varint::new_unchecked(value);
+
+        // Only the shortest layout for the value is valid, the one `encode`
+        // emits.  A longer layout for the same value would give it a second
+        // byte representation (see the module docs).
+        if vi.width() != width {
+            return Err(CodecError::MalformedField("varint"));
+        }
 
         #[cfg(test)]
         vi.sanity_check();
@@ -248,6 +261,95 @@ mod tests {
 
             let decoded: Varint = decode_buf_exact(&buf).unwrap();
             assert_eq!(decoded.inner(), val);
+        }
+    }
+
+    #[test]
+    fn test_varint_rejects_noncanonical_encodings() {
+        // Each value below fits a shorter layout than the one it is written in.
+        let noncanonical: [&[u8]; 6] = [
+            &[0x80, 0x00],             // 0 in two bytes
+            &[0x80, 0x7f],             // 127 in two bytes
+            &[0xc0, 0x00, 0x00, 0x00], // 0 in four bytes
+            &[0xc0, 0x00, 0x00, 0x7f], // 127 in four bytes
+            &[0xc0, 0x00, 0x00, 0x80], // 128 in four bytes
+            &[0xc0, 0x00, 0x3f, 0xff], // 16383 in four bytes
+        ];
+
+        for buf in noncanonical {
+            let res = decode_buf_exact::<Varint>(buf);
+            assert!(
+                matches!(res, Err(CodecError::MalformedField("varint"))),
+                "{buf:02x?} must be rejected, got {res:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_varint_truncated_multibyte_input_is_an_overrun() {
+        // The tail is read before the layout check, so short input reports
+        // "need more bytes", not "malformed", even when the prefix would have
+        // spelled a noncanonical layout.
+        let truncated: [&[u8]; 3] = [&[0x80], &[0xc0], &[0xc0, 0x00, 0x00]];
+
+        for buf in truncated {
+            let res = decode_buf_exact::<Varint>(buf);
+            assert!(
+                matches!(res, Err(CodecError::OverrunInput)),
+                "{buf:02x?} must overrun, got {res:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_varint_every_accepted_encoding_is_the_one_it_reencodes_to() {
+        // Sweep the whole one- and two-byte input space, and the four-byte
+        // space at every value that sits on a layout boundary plus a stride
+        // through the rest.  The oracle is the layout minimum as a literal,
+        // not the decoder's own `width()`: a value below the minimum of the
+        // layout it is written in must be rejected, anything else decodes and
+        // re-encodes to exactly the input bytes.
+        fn check(buf: &[u8], value: u32, layout_min: u32) {
+            let res = decode_buf_exact::<Varint>(buf);
+            if value < layout_min {
+                assert!(
+                    matches!(res, Err(CodecError::MalformedField("varint"))),
+                    "{buf:02x?} must be rejected, got {res:?}"
+                );
+                return;
+            }
+            let decoded = res.unwrap_or_else(|e| panic!("{buf:02x?}: {e:?}"));
+            assert_eq!(decoded.inner(), value, "{buf:02x?}");
+            assert_eq!(encode_to_vec(&decoded).unwrap(), buf, "{buf:02x?}");
+        }
+
+        for v in 0u32..=0x7f {
+            check(&[v as u8], v, 0);
+        }
+        for v in 0u32..=0x3fff {
+            check(&((v as u16) | 0x8000).to_be_bytes(), v, 128);
+        }
+        let mut four_byte = vec![0u32, 1, 127, 128, 16383, 16384, 16385, VARINT_MAX];
+        four_byte.extend((0..VARINT_MAX).step_by(0x1_0007));
+        for v in four_byte {
+            check(&(v | 0xc000_0000).to_be_bytes(), v, 16384);
+        }
+    }
+
+    #[test]
+    fn test_varint_accepts_shortest_layout_at_each_boundary() {
+        // Each value at a layout boundary decodes in its shortest layout and
+        // re-encodes to the same bytes.
+        let canonical: [(&[u8], u32); 3] = [
+            (&[0x7f], 127),
+            (&[0x80, 0x80], 128),
+            (&[0xc0, 0x00, 0x40, 0x00], 16384),
+        ];
+
+        for (buf, val) in canonical {
+            let decoded: Varint = decode_buf_exact(buf).unwrap();
+            assert_eq!(decoded.inner(), val, "{buf:02x?}");
+            assert_eq!(encode_to_vec(&decoded).unwrap(), buf);
         }
     }
 }
