@@ -14,6 +14,9 @@
 //! shorter one would hold.  Every value therefore has exactly one byte
 //! representation, so bytes covered by a hash or a signature cannot be
 //! rewritten without changing what they decode to.
+//!
+//! Decoding under [`DecodeRules::Lenient`](crate::DecodeRules::Lenient) takes a longer layout as
+//! the decoders did before this rule, for input fixed under them.
 
 use crate::errors::CodecError;
 use crate::types::{Codec, Decoder, Encoder};
@@ -125,8 +128,9 @@ impl Codec for Varint {
 
         // Only the shortest layout for the value is valid, the one `encode`
         // emits.  A longer layout for the same value would give it a second
-        // byte representation (see the module docs).
-        if vi.width() != width {
+        // byte representation (see the module docs).  Lenient rules take it,
+        // as the decoder did before the check existed.
+        if dec.rules().is_canonical() && vi.width() != width {
             return Err(CodecError::MalformedField("varint"));
         }
 
@@ -186,7 +190,7 @@ mod tests {
     // Most of these tests were written by Claude.
 
     use super::*;
-    use crate::{decode_buf_exact, encode_to_vec};
+    use crate::{DecodeRules, decode_buf_exact, decode_buf_exact_with_rules, encode_to_vec};
 
     #[test]
     fn test_varint_new() {
@@ -283,6 +287,52 @@ mod tests {
                 "{buf:02x?} must be rejected, got {res:?}"
             );
         }
+    }
+
+    /// Lenient rules read the layouts the pre-canonical decoder took, to the
+    /// value they always meant, and canonical rules keep refusing them.
+    #[test]
+    fn test_varint_lenient_rules_accept_longer_layouts() {
+        let longer: [(&[u8], u32); 6] = [
+            (&[0x80, 0x00], 0),
+            (&[0x80, 0x7f], 127),
+            (&[0xc0, 0x00, 0x00, 0x00], 0),
+            (&[0xc0, 0x00, 0x00, 0x7f], 127),
+            (&[0xc0, 0x00, 0x00, 0x80], 128),
+            (&[0xc0, 0x00, 0x3f, 0xff], 16383),
+        ];
+
+        for (buf, val) in longer {
+            let decoded: Varint = decode_buf_exact_with_rules(buf, DecodeRules::Lenient)
+                .unwrap_or_else(|e| panic!("{buf:02x?}: {e:?}"));
+            assert_eq!(decoded.inner(), val, "{buf:02x?}");
+            // Re-encoding gives the canonical bytes, not the input.
+            assert_eq!(
+                encode_to_vec(&decoded).unwrap(),
+                encode_to_vec(&Varint::new(val).unwrap()).unwrap()
+            );
+            assert!(
+                matches!(
+                    decode_buf_exact_with_rules::<Varint>(buf, DecodeRules::Canonical),
+                    Err(CodecError::MalformedField("varint"))
+                ),
+                "{buf:02x?} must still be rejected canonically"
+            );
+        }
+    }
+
+    /// Lenient rules only widen which layouts are taken; a truncated or
+    /// trailing input fails the same way.
+    #[test]
+    fn test_varint_lenient_rules_keep_the_length_checks() {
+        assert!(matches!(
+            decode_buf_exact_with_rules::<Varint>(&[0xc0, 0x00], DecodeRules::Lenient),
+            Err(CodecError::OverrunInput)
+        ));
+        assert!(matches!(
+            decode_buf_exact_with_rules::<Varint>(&[0x80, 0x00, 0x00], DecodeRules::Lenient),
+            Err(CodecError::ExtraInput)
+        ));
     }
 
     #[test]

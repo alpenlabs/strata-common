@@ -11,7 +11,8 @@ use std::mem::size_of;
 use std::ptr::null_mut;
 
 use strata_codec::{
-    Codec, CodecError, Decoder, Encoder, VarVec, Varint, decode_buf_exact, encode_to_vec,
+    Codec, CodecError, DecodeRules, Decoder, Encoder, VarVec, Varint, decode_buf_exact,
+    decode_buf_exact_with_rules, encode_to_vec,
 };
 #[cfg(feature = "derive")]
 use strata_codec_derive as _;
@@ -238,6 +239,21 @@ fn noncanonical_count_prefix_is_rejected_before_any_element() {
         );
         assert_eq!(allocations.attempts, 0, "{bytes:02x?}");
     }
+}
+
+/// The rules reach a container's count prefix through the decoder: lenient
+/// rules read the padded count the older decoder took, and the elements
+/// after it, re-encoding to the canonical bytes.
+#[test]
+fn lenient_rules_read_a_padded_count_prefix() {
+    let padded = [0xc0, 0x00, 0x00, 0x02, 0x11, 0x22, 0x33, 0x44];
+    let decoded: VarVec<u16, 4> =
+        decode_buf_exact_with_rules(&padded, DecodeRules::Lenient).expect("padded count decodes");
+    assert_eq!(decoded.as_slice(), &[0x1122, 0x3344]);
+    assert_eq!(
+        encode_to_vec(&decoded).unwrap(),
+        [0x02, 0x11, 0x22, 0x33, 0x44]
+    );
 }
 
 /// Encodes to zero bytes, so a count alone decodes into elements.

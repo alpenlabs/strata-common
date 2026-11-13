@@ -13,8 +13,8 @@ pub use errors::CodecError;
 // Re-export the derive macro when the "derive" feature is enabled
 #[cfg(feature = "derive")]
 pub use strata_codec_derive::Codec;
-pub use types::{Codec, Decoder, Encoder};
-pub use util::{decode_buf_exact, encode_to_vec};
+pub use types::{Codec, DecodeRules, Decoder, Encoder};
+pub use util::{decode_buf_exact, decode_buf_exact_with_rules, encode_to_vec};
 pub use varint::{VARINT_MAX, Varint, VarintInner, VarintWidth};
 pub use varint_vec::VarVec;
 

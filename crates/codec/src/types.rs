@@ -9,6 +9,34 @@ pub trait Codec: Sized {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError>;
 }
 
+/// Which byte spellings of a value a decoder accepts.
+///
+/// Canonical decoding is the rule: every value has the one encoding `encode`
+/// writes, so bytes under a hash or a signature cannot be rewritten without
+/// changing what they decode to. Data that was proven or signed before the
+/// decoders enforced that rule must still decode as it did then, so a decoder
+/// can be told to take the spellings they accepted at the time. Which rules an
+/// input decodes under is the caller's decision, made where the input's
+/// provenance is known.
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum DecodeRules {
+    /// Only the bytes `encode` writes.
+    #[default]
+    Canonical,
+
+    /// Also the longer or padded spellings the decoders accepted before
+    /// canonical decoding was enforced. The value decodes the same; only the
+    /// one-encoding guarantee is given up.
+    Lenient,
+}
+
+impl DecodeRules {
+    /// Returns whether only canonical encodings are accepted.
+    pub const fn is_canonical(self) -> bool {
+        matches!(self, Self::Canonical)
+    }
+}
+
 /// Generic decoder trait that reads inputs.
 pub trait Decoder {
     /// Reads a variable-size buf.  This does NOT include length tagging.
@@ -16,6 +44,16 @@ pub trait Decoder {
 
     /// Reads a fixed size buf.  This does NOT include length tagging.
     fn read_arr<const N: usize>(&mut self) -> Result<[u8; N], CodecError>;
+
+    /// Returns the rules this decoder reads under.
+    ///
+    /// Codecs with more than one possible spelling per value consult this and
+    /// reject the noncanonical ones unless the rules are
+    /// [`DecodeRules::Lenient`]. A decoder that does not choose reads
+    /// canonically.
+    fn rules(&self) -> DecodeRules {
+        DecodeRules::Canonical
+    }
 }
 
 /// Generic encoder trait that writes outputs.

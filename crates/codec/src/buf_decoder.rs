@@ -1,7 +1,7 @@
 //! Simple decoder for a flat buffer.
 
 use crate::errors::CodecError;
-use crate::types::Decoder;
+use crate::types::{DecodeRules, Decoder};
 
 /// Decoder for an arbitrary [`AsRef`] on a byte slice.
 ///
@@ -12,13 +12,19 @@ use crate::types::Decoder;
 pub struct BufDecoder<B> {
     buf: B,
     at: usize,
+    rules: DecodeRules,
 }
 
 impl<B: AsRef<[u8]>> BufDecoder<B> {
     /// Constructs a new instance by wrapping a buffer and starting at the
-    /// beginning.
+    /// beginning, reading under [`DecodeRules::Canonical`].
     pub fn new(buf: B) -> Self {
-        Self { buf, at: 0 }
+        Self::with_rules(buf, DecodeRules::Canonical)
+    }
+
+    /// Constructs a new instance that reads the buffer under the given rules.
+    pub fn with_rules(buf: B, rules: DecodeRules) -> Self {
+        Self { buf, at: 0, rules }
     }
 
     /// Returns the length of the underlying buffer.
@@ -65,6 +71,10 @@ impl<B: AsRef<[u8]>> Decoder for BufDecoder<B> {
         buf.copy_from_slice(src);
         self.at += N;
         Ok(buf)
+    }
+
+    fn rules(&self) -> DecodeRules {
+        self.rules
     }
 }
 
