@@ -40,10 +40,6 @@ lints: toml-check-fmt toml-lint check-fmt clippy
 # Rust all tests
 test: unit-test doctest
 
-# Publish crate to crates.io
-publish:
-  cargo publish --token $CARGO_REGISTRY_TOKEN
-
 # Check supply chain security analsis with `cargo-audit`
 audit:
   cargo audit
