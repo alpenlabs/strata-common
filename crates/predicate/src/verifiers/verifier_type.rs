@@ -52,6 +52,22 @@ impl TryFrom<PredicateTypeId> for VerifierType {
 }
 
 impl VerifierType {
+    /// Checks that `condition` parses for this predicate type, without verifying anything.
+    ///
+    /// `NeverAccept` and `AlwaysAccept` ignore their condition, so any bytes pass.
+    pub(crate) fn validate_condition(&self, condition: &[u8]) -> Result<(), PredicateError> {
+        match self {
+            VerifierType::NeverAccept | VerifierType::AlwaysAccept => {
+                let _ = condition;
+                Ok(())
+            }
+            #[cfg(feature = "schnorr")]
+            VerifierType::Schnorr(schnorr) => schnorr.parse_condition(condition).map(|_| ()),
+            #[cfg(feature = "sp1-groth16")]
+            VerifierType::Sp1Groth16(sp1) => sp1.parse_condition(condition).map(|_| ()),
+        }
+    }
+
     /// Verifies that a witness satisfies the predicate for a given claim.
     ///
     /// This method dispatches to the appropriate predicate-specific verification logic.

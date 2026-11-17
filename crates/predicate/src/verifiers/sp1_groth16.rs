@@ -61,6 +61,7 @@ mod tests {
     use zkaleido::ProofReceiptWithMetadata;
 
     use super::*;
+    use crate::PredicateKey;
     use crate::test_utils::{
         assert_predicate_parsing_failed, assert_verification_failed, assert_witness_parsing_failed,
     };
@@ -185,5 +186,31 @@ mod tests {
         claim[0] = claim[0].wrapping_add(1);
         let res = verifier.verify(&condition, &claim, &witness);
         assert_verification_failed(res, PredicateTypeId::Sp1Groth16);
+    }
+
+    fn sp1_key(condition: Vec<u8>) -> PredicateKey {
+        PredicateKey::try_new(PredicateTypeId::Sp1Groth16, condition).unwrap()
+    }
+
+    #[test]
+    fn test_validate_condition_accepts_valid_key() {
+        let (condition, _, _) = load_condition_claim_witness();
+        sp1_key(condition).validate_condition().unwrap();
+    }
+
+    #[test]
+    fn test_validate_condition_rejects_malformed_key() {
+        let (condition, _, _) = load_condition_claim_witness();
+
+        for malformed in [
+            Vec::new(),
+            vec![0],
+            condition[..condition.len() - 1].to_vec(),
+            condition[1..].to_vec(),
+            [condition.as_slice(), &[0]].concat(),
+        ] {
+            let res = sp1_key(malformed).validate_condition();
+            assert_predicate_parsing_failed(res, PredicateTypeId::Sp1Groth16);
+        }
     }
 }
