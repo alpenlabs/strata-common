@@ -100,6 +100,8 @@
 //! - [`PredicateKey`]: Core predicate key type with serialization support
 //! - [`PredicateKeyBuf`]: Zero-copy borrowed variant of predicate key
 //! - [`verify_claim_witness`]: Main verification function
+//! - [`PredicateKey::validate_condition`]: Checks that a key's condition parses, without verifying
+//!   a claim
 //! - [`PredicateTypeId`]: Enum representing all supported predicate types
 
 mod errors;

@@ -83,6 +83,7 @@ impl PredicateVerifier for SchnorrVerifier {
 mod tests {
     use k256::elliptic_curve::Generate;
     use k256::schnorr::SigningKey;
+    use proptest::prelude::*;
     use rand::RngCore;
     use rand::rngs::OsRng;
     use signature::Signer;
@@ -94,6 +95,7 @@ mod tests {
     use crate::type_ids::PredicateTypeId;
     use crate::verifier::PredicateVerifier;
     use crate::verifiers::schnorr::{BIP340_PUBKEY_SIZE, BIP340_SIGNATURE_SIZE};
+    use crate::{PredicateError, PredicateKey};
 
     fn load_predicate_claim_witness() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
         // Generate random message
@@ -265,5 +267,47 @@ mod tests {
             signing_key.sign(&[0u8; 32]).to_bytes().len(),
             BIP340_SIGNATURE_SIZE
         );
+    }
+
+    fn schnorr_key(condition: Vec<u8>) -> PredicateKey {
+        PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, condition).unwrap()
+    }
+
+    #[test]
+    fn test_validate_condition_accepts_valid_key() {
+        let (predicate, _, _) = load_predicate_claim_witness();
+        schnorr_key(predicate).validate_condition().unwrap();
+    }
+
+    #[test]
+    fn test_validate_condition_rejects_malformed_key() {
+        let (predicate, _, _) = load_predicate_claim_witness();
+
+        for condition in [
+            Vec::new(),
+            predicate[1..].to_vec(),
+            [predicate.as_slice(), &[0]].concat(),
+            // Right length, but x is above the field modulus, so it's not a curve point.
+            vec![0xff; BIP340_PUBKEY_SIZE],
+        ] {
+            let res = schnorr_key(condition).validate_condition();
+            assert_predicate_parsing_failed(res, PredicateTypeId::Bip340Schnorr);
+        }
+    }
+
+    proptest! {
+        /// A condition passes validation exactly when verification gets past parsing it.
+        #[test]
+        fn proptest_validate_condition_matches_verify(
+            condition in prop_oneof![
+                prop::collection::vec(any::<u8>(), BIP340_PUBKEY_SIZE),
+                prop::collection::vec(any::<u8>(), 0..2 * BIP340_PUBKEY_SIZE),
+            ],
+        ) {
+            let key = schnorr_key(condition);
+            let verify_res = key.verify_claim_witness(b"claim", &[0; BIP340_SIGNATURE_SIZE]);
+            let parse_failed = matches!(verify_res, Err(PredicateError::ConditionParsingFailed { .. }));
+            prop_assert_eq!(key.validate_condition().is_ok(), !parse_failed);
+        }
     }
 }

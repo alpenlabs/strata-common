@@ -83,6 +83,17 @@ impl PredicateKey {
         })
     }
 
+    /// Checks that the condition bytes parse for this key's predicate type.
+    ///
+    /// See [`PredicateKeyBuf::validate_condition`].
+    ///
+    /// # Errors
+    /// The errors of [`PredicateKeyBuf::validate_condition`], and
+    /// [`PredicateError::InvalidPredicateType`] if the raw type identifier isn't registered.
+    pub fn validate_condition(&self) -> PredicateResult<()> {
+        self.try_as_buf_ref()?.validate_condition()
+    }
+
     /// Verifies that a witness satisfies this predicate key for a given claim.
     ///
     /// # Arguments
@@ -228,6 +239,26 @@ impl<'b> PredicateKeyBuf<'b> {
     pub fn verify_claim_witness(&self, claim: &[u8], witness: &[u8]) -> PredicateResult<()> {
         let verifier = VerifierType::try_from(self.id)?;
         verifier.verify_claim_witness(self.condition(), claim, witness)
+    }
+
+    /// Checks that the condition bytes parse for this key's predicate type.
+    ///
+    /// This parses the condition the same way verification does, but checks no claim or
+    /// witness. Use it to reject a malformed key where it enters the system, such as config or
+    /// an update, instead of at its first verification. Decoding and construction don't run
+    /// this check, so a key can hold a condition that never verifies.
+    ///
+    /// A key that passes can still be the wrong key. For example, it can be a well-formed SP1
+    /// verifying key for a different program.
+    ///
+    /// `NeverAccept` and `AlwaysAccept` ignore their condition, so any condition passes.
+    ///
+    /// # Errors
+    /// - [`PredicateError::ConditionParsingFailed`] if the condition doesn't parse.
+    /// - [`PredicateError::UnsupportedPredicateType`] if the feature for this predicate type is
+    ///   off. The condition is then unchecked, not valid.
+    pub fn validate_condition(&self) -> PredicateResult<()> {
+        VerifierType::try_from(self.id)?.validate_condition(self.condition)
     }
 }
 
@@ -405,20 +436,48 @@ mod tests {
     }
 
     #[test]
+    fn proptest_validate_condition_accepts_any_trivial_condition() {
+        proptest!(|(
+            id in prop_oneof![Just(PredicateTypeId::NeverAccept), Just(PredicateTypeId::AlwaysAccept)],
+            condition in bounded_condition_strategy(64),
+        )| {
+            let predkey = PredicateKey::try_new(id, condition).unwrap();
+            predkey.validate_condition().unwrap();
+            predkey.try_as_buf_ref().unwrap().validate_condition().unwrap();
+        });
+    }
+
+    #[test]
+    fn test_validate_condition_rejects_unregistered_type_id() {
+        let predkey = PredicateKey {
+            id: u8::MAX,
+            condition: Vec::new().try_into().unwrap(),
+        };
+
+        match predkey.validate_condition() {
+            Err(PredicateError::InvalidPredicateType(id)) => assert_eq!(id, u8::MAX),
+            res => panic!("Expected InvalidPredicateType, got: {res:?}"),
+        }
+    }
+
+    #[test]
     #[cfg(not(feature = "schnorr"))]
     fn test_unsupported_schnorr_gives_helpful_error() {
         let predkey = PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32]).unwrap();
         let claim = b"test claim";
         let witness = b"test witness";
 
-        let result = predkey.verify_claim_witness(claim, witness);
-
-        match result {
-            Err(PredicateError::UnsupportedPredicateType { id, reason }) => {
-                assert_eq!(id, PredicateTypeId::Bip340Schnorr);
-                assert!(reason.contains("schnorr"));
+        for result in [
+            predkey.verify_claim_witness(claim, witness),
+            predkey.validate_condition(),
+        ] {
+            match result {
+                Err(PredicateError::UnsupportedPredicateType { id, reason }) => {
+                    assert_eq!(id, PredicateTypeId::Bip340Schnorr);
+                    assert!(reason.contains("schnorr"));
+                }
+                _ => panic!("Expected UnsupportedPredicateType error, got: {result:?}"),
             }
-            _ => panic!("Expected UnsupportedPredicateType error, got: {result:?}"),
         }
     }
 
@@ -429,14 +488,17 @@ mod tests {
         let claim = b"test claim";
         let witness = b"test witness";
 
-        let result = predkey.verify_claim_witness(claim, witness);
-
-        match result {
-            Err(PredicateError::UnsupportedPredicateType { id, reason }) => {
-                assert_eq!(id, PredicateTypeId::Sp1Groth16);
-                assert!(reason.contains("sp1-groth16"));
+        for result in [
+            predkey.verify_claim_witness(claim, witness),
+            predkey.validate_condition(),
+        ] {
+            match result {
+                Err(PredicateError::UnsupportedPredicateType { id, reason }) => {
+                    assert_eq!(id, PredicateTypeId::Sp1Groth16);
+                    assert!(reason.contains("sp1-groth16"));
+                }
+                _ => panic!("Expected UnsupportedPredicateType error, got: {result:?}"),
             }
-            _ => panic!("Expected UnsupportedPredicateType error, got: {result:?}"),
         }
     }
 }
