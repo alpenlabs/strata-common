@@ -100,6 +100,9 @@ A release is a `v*` tag on `main`. The [release workflow](../.github/workflows/r
 creates the GitHub release with generated notes. Downstream repos consume the tag through
 git dependencies, not crates.io, and move their pins to it in their own PRs.
 
+Every crate shares one version, set in `[workspace.package]` in the root `Cargo.toml`. It
+matches the release tag, so bump it to the new version before tagging.
+
 A change that breaks an API or an encoding is marked with `!` in its commit title, so the
 release notes call it out. Pre-release tags (`-rc.N`) let downstream repos try a release
 before it is final.
