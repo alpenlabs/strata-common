@@ -15,7 +15,6 @@ use bitcoin::{
     Address, AddressType, Amount, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
     Txid, Witness,
 };
-use bitcoin_bosd::Descriptor;
 #[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::de::{self, Unexpected, Visitor};
@@ -611,12 +610,6 @@ impl BitcoinXOnlyPublicKey {
         ))
     }
 
-    /// Converts [`BitcoinXOnlyPublicKey`] to [`Descriptor`].
-    pub fn to_descriptor(&self) -> Result<Descriptor, ParseError> {
-        Descriptor::new_p2tr(&self.to_xonly_public_key().serialize())
-            .map_err(|_| ParseError::InvalidPoint(self.0))
-    }
-
     /// Checks if the [`Buf32`] is a valid [`XOnlyPublicKey`].
     fn is_valid_xonly_public_key(buf: &Buf32) -> bool {
         XOnlyPublicKey::from_slice(buf.as_bytes()).is_ok()
@@ -626,14 +619,6 @@ impl BitcoinXOnlyPublicKey {
 impl From<XOnlyPublicKey> for BitcoinXOnlyPublicKey {
     fn from(value: XOnlyPublicKey) -> Self {
         Self(Buf32(value.serialize()))
-    }
-}
-
-impl TryFrom<BitcoinXOnlyPublicKey> for Descriptor {
-    type Error = ParseError;
-
-    fn try_from(value: BitcoinXOnlyPublicKey) -> Result<Self, Self::Error> {
-        value.to_descriptor()
     }
 }
 
@@ -841,18 +826,16 @@ mod tests {
     #[cfg(feature = "borsh")]
     use bitcoin::script::Builder;
     use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
-    use bitcoin_bosd::DescriptorType;
     #[cfg(feature = "borsh")]
     use borsh::{BorshDeserialize, BorshSerialize};
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
-    use strata_identifiers::Buf32;
     use strata_ssz_tests::{assert_ssz_view_traits, ssz_proptest};
 
     use super::{
         BitcoinAmount, BitcoinAmountRef, BitcoinOutPoint, BitcoinOutPointRef, BitcoinScriptBuf,
         BitcoinScriptBufRef, BitcoinTxOut, BitcoinTxOutRef, BitcoinTxid, BitcoinTxidRef,
-        BitcoinXOnlyPublicKey, MAX_SCRIPT_SIZE, RawBitcoinTx,
+        MAX_SCRIPT_SIZE, RawBitcoinTx,
     };
     use crate::ParseError;
     use crate::test_helpers::ArbitraryGenerator;
@@ -983,17 +966,6 @@ mod tests {
         let raw_tx = RawBitcoinTx::from_raw_bytes(generator.generate());
         let res: Result<Transaction, _> = raw_tx.try_into();
         assert!(res.is_err());
-    }
-
-    #[test]
-    fn test_xonly_pk_to_descriptor() {
-        let xonly_pk = BitcoinXOnlyPublicKey::new(Buf32::from([2u8; 32])).unwrap();
-        let descriptor = xonly_pk.to_descriptor().unwrap();
-        assert_eq!(descriptor.type_tag(), DescriptorType::P2tr);
-
-        let payload = descriptor.payload();
-        assert_eq!(payload.len(), 32);
-        assert_eq!(payload, xonly_pk.0.as_bytes());
     }
 
     #[cfg(feature = "borsh")]

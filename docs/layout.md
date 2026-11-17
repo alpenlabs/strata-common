@@ -91,7 +91,6 @@ See [serialization.md](serialization.md) for how these fit together.
   crates.io dependencies.
 - [`rust-toolchain.toml`](../rust-toolchain.toml): the pinned nightly toolchain.
 
-External protocol libraries come from [ssz-gen](https://github.com/alpenlabs/ssz-gen),
-[zkaleido](https://github.com/alpenlabs/zkaleido), and
-[bitcoin-bosd](https://github.com/alpenlabs/bitcoin-bosd). All three are pinned by tag in
-the root `Cargo.toml`.
+External protocol libraries come from [ssz-gen](https://github.com/alpenlabs/ssz-gen) and
+[zkaleido](https://github.com/alpenlabs/zkaleido). Both are pinned by tag in the root
+`Cargo.toml`.
