@@ -1,6 +1,6 @@
 [package]
 name = "strata-merkle-node-store"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 description = "Node-storing Merkle Mountain Range: persists every node for O(log n) proofs with no leaf replay"
 

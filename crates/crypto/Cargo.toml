@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "strata-crypto"
-version = "0.3.0-alpha.1"
+version.workspace = true
 
 [lints]
 workspace = true

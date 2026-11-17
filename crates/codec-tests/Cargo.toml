@@ -1,6 +1,6 @@
 [package]
 name = "strata-codec-tests"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 description = "Property testing macros and utilities for strata-codec"
 
