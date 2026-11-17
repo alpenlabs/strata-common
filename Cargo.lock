@@ -233,16 +233,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bitcoin-bosd"
-version = "0.12.0"
-source = "git+https://github.com/alpenlabs/bitcoin-bosd?tag=v0.12.0#499fd5d8940a9e40ae632d5a770a57a82a1f289f"
-dependencies = [
- "bitcoin",
- "hex-conservative 0.2.2",
- "secp256k1",
-]
-
-[[package]]
 name = "bitcoin-consensus-encoding"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4203,7 +4193,6 @@ dependencies = [
  "arbitrary",
  "bincode",
  "bitcoin",
- "bitcoin-bosd",
  "borsh",
  "proptest",
  "rand_core 0.6.4",
